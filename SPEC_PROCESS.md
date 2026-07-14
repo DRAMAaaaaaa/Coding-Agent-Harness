@@ -160,14 +160,54 @@ Agent 比较了三种方案：
 
 ## 8. 陌生智能体冷启动门禁
 
-冷启动验证尚未执行，因为课程要求它只能在 `SPEC.md` 与 `PLAN.md` 均完成后开始。当前阶段没有 `PLAN.md`，因此任何“冷启动通过”声明都会是伪造证据。
+### 8.1 第一次冷启动试运行
 
-后续必须使用与主开发 Codex 不同类型的智能体，新建无记忆会话，仅提供 `SPEC.md` 和 `PLAN.md`，选择 1–2 个任务；遇到不确定处必须暂停提问。执行后本文将追加：
+主 Agent 在提交 `PLAN.md` 后创建隔离分支 `codex/cold-start-audit`，启动无先前会话历史的“冷启动实施审计员”。初始材料只有 `SPEC.md` 和 `PLAN.md`，并要求其选择 1—2 个 Task、按 TDD 推进、遇到不确定处立即暂停、不提交也不推送。
 
-- 暂停位置与问题。
-- 暴露的 spec 缺陷。
-- 与原意不一致的解读及责任判断。
-- 产出差距。
-- `SPEC.md`/`PLAN.md` 修订前后的关键 diff。
+审计员选择 Task 1，新建了与计划一致的 `tests/test_config.py`，随后运行计划给出的 RED 命令：
 
-在这些证据写入并由用户复核前，禁止开始正式实现。
+```text
+python -m pytest tests/test_config.py -v
+```
+
+实际输出不是预期的产品导入失败，而是：
+
+```text
+E:\python3.9\python.exe: No module named pytest
+```
+
+审计员正确把它判定为环境错误而非有效 RED，并在 Task 1 步骤 2 暂停；没有创建生产代码，没有安装依赖，没有提交或推送。因为 Task 2—14 都有前置依赖，它没有越级选择第二个 Task。
+
+### 8.2 暂停问题、责任与差距
+
+| 发现 | 责任判断 | 处理 |
+|---|---|---|
+| Task 1 在 RED 之后才安排依赖准备，干净环境没有 pytest | `PLAN.md` 顺序缺陷 | 在失败测试前增加 Python 3.11/pytest 前置检查与安装步骤；环境错误不得算 RED |
+| PATH 中 `python` 实际为 3.9，计划只写 `python` | `PLAN.md` 命令不精确 + 宿主环境差异 | 规定所有命令必须使用项目 `.venv` 的 Python 3.11，并给出 Windows/POSIX 精确命令 |
+| Task 1 声明产出 `FeedbackBudget`、`CommandLimits`，却无字段与测试 | `PLAN.md` 接口范围错误 | Task 1 只产出 `HarnessSettings`；其余类型移到实际定义它们的 Task 6/7 |
+| 审计提示禁止读取除 SPEC/PLAN 外任何文件，但 Task 要修改 `.env.example`/`.gitignore` | 主 Agent 的冷启动提示过严，不是产品规约缺陷 | 澄清“仅提供 SPEC/PLAN”是初始上下文限制；选定 Task 后可读取其文件清单中的目标文件 |
+| 冷启动环境禁止联网且无 pytest | 外部前置条件，不能靠猜测解决 | 依赖安装前请求用户批准；批准后在新隔离 worktree 用全新审计员复验 |
+
+产出与预期的直接差距是：获得了正确的测试文件，但没有取得有效 RED，因此不能进入 GREEN。该结果证明计划初稿尚不足以支持干净环境自主执行。
+
+### 8.3 关键修订前后
+
+```diff
+- 产出：HarnessSettings、FeedbackBudget、CommandLimits
++ 产出：HarnessSettings；反馈预算与命令限制分别由 Task 7 与 Task 6 定义
+
+- 步骤 1：创建失败配置测试
++ 步骤 1：用 Python 3.11 创建 .venv，验证并安装 pytest==9.1.1
++ 步骤 2：创建失败配置测试
+
+- 运行：python -m pytest tests/test_config.py -v
++ Windows：& .\.venv\Scripts\python.exe -m pytest tests/test_config.py -v
++ POSIX：.venv/bin/python -m pytest tests/test_config.py -v
+
+- 审计员只能读取 SPEC.md 与 PLAN.md
++ 初始上下文只有 SPEC.md 与 PLAN.md；选定 Task 后可读取该 Task 明列的目标文件
+```
+
+### 8.4 当前门禁状态
+
+第一次冷启动已产生有效缺陷证据，但尚未通过：修订后的 Task 1 仍需在获得依赖安装授权后，由另一个全新无历史审计员复验。复验通过并由用户确认前，仍禁止开始正式 Harness 实现。

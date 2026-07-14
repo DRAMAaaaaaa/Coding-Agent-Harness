@@ -21,6 +21,7 @@
 - 文档和 Git 提交说明尽量使用中文；代码标识符、命令、标准文件名和第三方名称保留英文。
 - 每个 Task 使用独立 `codex/` 前缀分支和 worktree；完成后在本文件勾选状态并记录提交哈希与评审结论。
 - 每个 Task 固定执行顺序：失败测试 → 确认失败原因 → 最小实现 → 通过目标测试 → 重构 → 完整相关测试 → 规约符合性审查 → 代码质量审查 → 中文提交。
+- 所有 Python 命令必须使用项目 `.venv` 中的 Python 3.11，不得依赖 PATH 中含义不明的 `python`；Windows 对应 `& .\.venv\Scripts\python.exe`，POSIX 对应 `.venv/bin/python`。后文简写 `python` 时均指该已验证解释器。
 
 ## 锁定依赖
 
@@ -173,10 +174,34 @@ class TaskOrchestrator:
 
 **接口：**
 
-- 产出：`HarnessSettings`、`FeedbackBudget`、`CommandLimits`；基础阶段可用的 `make test-unit`、`make test` 与 `scripts/test.ps1`。本 Task 的 `test-unit` 只运行现有 pytest；Task 12 在真实前端测试存在后加入 Vitest，`make demo` 在 Task 9 加入，`make test-e2e` 在 Task 13 加入。
+- 产出：`HarnessSettings`；基础阶段可用的 `make test-unit`、`make test` 与 `scripts/test.ps1`。本 Task 的 `test-unit` 只运行现有 pytest；Task 7 定义反馈预算模型，Task 6 定义命令限制上下文；Task 12 在真实前端测试存在后加入 Vitest，`make demo` 在 Task 9 加入，`make test-e2e` 在 Task 13 加入。
 - 消费：无。
 
-- [ ] **步骤 1：创建失败配置测试**
+- [ ] **步骤 1：验证并准备 Python 3.11 测试环境**
+
+依赖安装属于需批准动作。执行以下 `pip install` 前必须取得用户明确批准；冷启动审计禁止联网时，应由宿主预装依赖或提供离线 wheelhouse，不能把安装失败计为 TDD RED。
+
+Windows PowerShell：
+
+```text
+py -3.11 -m venv .venv
+& .\.venv\Scripts\python.exe --version
+& .\.venv\Scripts\python.exe -m pip install pytest==9.1.1
+& .\.venv\Scripts\python.exe -c "import pytest; assert pytest.__version__ == '9.1.1'; print(pytest.__version__)"
+```
+
+POSIX：
+
+```text
+python3.11 -m venv .venv
+.venv/bin/python --version
+.venv/bin/python -m pip install pytest==9.1.1
+.venv/bin/python -c "import pytest; assert pytest.__version__ == '9.1.1'; print(pytest.__version__)"
+```
+
+预期：解释器输出 `Python 3.11.x`，pytest 输出 `9.1.1`。任一命令失败时暂停并报告环境问题，不得继续写生产实现。
+
+- [ ] **步骤 2：创建失败配置测试**
 
 ```python
 from coding_agent_harness.config import HarnessSettings
@@ -192,13 +217,15 @@ def test_safe_defaults_are_bounded() -> None:
     assert settings.max_concurrent_tasks == 3
 ```
 
-- [ ] **步骤 2：确认红色结果**
+- [ ] **步骤 3：确认红色结果**
 
-运行：`python -m pytest tests/test_config.py -v`
+Windows 运行：`& .\.venv\Scripts\python.exe -m pytest tests/test_config.py -v`
+
+POSIX 运行：`.venv/bin/python -m pytest tests/test_config.py -v`
 
 预期：收集失败，提示 `ModuleNotFoundError: No module named 'coding_agent_harness'`。
 
-- [ ] **步骤 3：写入锁定依赖和最小配置实现**
+- [ ] **步骤 4：写入锁定依赖和最小配置实现**
 
 ```python
 from pydantic import Field
@@ -217,19 +244,22 @@ class HarnessSettings(BaseSettings):
 
 `pyproject.toml` 使用“锁定依赖”中的 Python 精确版本，设置 `requires-python = ">=3.11,<3.12"`、`src` 包布局、pytest `asyncio_mode = "auto"`、Ruff 行宽 100 和 mypy strict。`web/package.json` 使用列出的 npm 精确版本，禁止 `^` 与 `~`。
 
-- [ ] **步骤 4：生成并校验锁文件**
+- [ ] **步骤 5：生成并校验锁文件**
 
 运行：
 
 ```text
 python -m pip install pip-tools==7.5.3
 python -m piptools compile --extra dev --generate-hashes --output-file requirements.lock pyproject.toml
+python -m pip install -r requirements.lock
+python -m pip install --no-deps -e .
 npm --prefix web install --package-lock-only
+npm --prefix web ci
 ```
 
-预期：生成包含哈希或精确传递版本的 `requirements.lock` 与 `web/package-lock.json`，命令退出码均为 0。
+这些安装命令沿用步骤 1 的同一次用户批准。预期：生成包含哈希和精确传递版本的 `requirements.lock` 与 `web/package-lock.json`，项目以 editable 方式安装，命令退出码均为 0。
 
-- [ ] **步骤 5：实现统一命令并转绿**
+- [ ] **步骤 6：实现统一命令并转绿**
 
 `Makefile` 在本 Task 提供 `test-unit`（pytest）和 `test`（Ruff、mypy、pytest、ESLint、TypeScript 配置检查）。后续 Task 只在实际能力存在时加入 Vitest、`demo` 和 `test-e2e`，禁止使用返回成功的空实现或临时跳过。
 
@@ -237,13 +267,13 @@ npm --prefix web install --package-lock-only
 
 预期：`1 passed`。
 
-- [ ] **步骤 6：执行质量检查与双阶段评审**
+- [ ] **步骤 7：执行质量检查与双阶段评审**
 
 运行：`ruff check src tests && mypy src && python -m pytest tests/test_config.py -v`
 
 预期：全部退出 0。规约符合性审查确认默认值与 `SPEC.md` 一致；代码质量审查确认锁文件无高层 Agent 框架、`.env.example` 无真实 Key。
 
-- [ ] **步骤 7：提交并回填状态**
+- [ ] **步骤 8：提交并回填状态**
 
 ```text
 git add pyproject.toml requirements.lock Makefile scripts/test.ps1 src tests web .env.example .gitignore PLAN.md AGENT_LOG.md
@@ -1244,4 +1274,4 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 
 ## 计划完成后的强制门禁
 
-本计划完成并提交后，正式实现仍不得开始。必须先启动一个不包含当前对话或记忆的不同类型智能体，仅向其提供 `SPEC.md` 和 `PLAN.md`，要求它选择 1—2 个 Task 尝试冷启动，并在任何不确定处立即暂停而不是猜测。主智能体必须把暂停点、误读、产出差距和修订 diff 写入 `SPEC_PROCESS.md`；修订完成并再次获得用户确认后，方可选择 `subagent-driven-development` 或 `executing-plans` 开始实现。
+本计划完成并提交后，正式实现仍不得开始。必须先启动一个不包含当前对话或记忆的不同类型智能体，初始上下文仅提供 `SPEC.md` 和 `PLAN.md`，要求它选择 1—2 个 Task 尝试冷启动，并在任何不确定处立即暂停而不是猜测。选定 Task 后，审计员可以读取该 Task “文件”清单中明确列出的目标文件，以便安全修改既有内容；不得读取其他过程文档、Git 历史或主对话。主智能体必须把暂停点、误读、产出差距和修订 diff 写入 `SPEC_PROCESS.md`；修订完成并再次获得用户确认后，方可选择 `subagent-driven-development` 或 `executing-plans` 开始实现。
