@@ -99,6 +99,7 @@ def test_shell_rules_cover_install_network_and_destructive_exact_tokens(
         ("shell", {"argv": ["docker", "push", "example/image"]}),
         ("shell", {"argv": ["gh", "release", "create", "v1"]}),
         ("shell", {"argv": ["npm", "publish"]}),
+        ("shell", {"argv": ["git", "push", "origin", "main"]}),
     ],
 )
 def test_remote_change_and_publish_require_approval(
@@ -110,6 +111,52 @@ def test_remote_change_and_publish_require_approval(
     assert policy.evaluate(
         _action(tool, arguments), _context(tmp_path / "workspace")
     ).decision is PolicyDecision.REQUIRE_APPROVAL
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("git", {"operation": ["push"]}),
+        ("delete_path", {}),
+        ("read_file", {}),
+        ("shell", {"argv": []}),
+    ],
+)
+def test_known_tools_with_invalid_required_arguments_are_denied(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    tool: str,
+    arguments: dict[str, object],
+) -> None:
+    result = policy.evaluate(
+        _action(tool, arguments),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "INVALID_ACTION"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["sudo", "rm", "-rf", "/"],
+        ["python", "-m", "pip", "install", "x"],
+        ["sudo", "git", "push", "origin", "main"],
+        ["bash", "-c", "curl https://example.com"],
+    ],
+)
+def test_shell_wrappers_cannot_bypass_exact_token_rules(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    argv: list[str],
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": argv}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
 
 
 def test_llm_authorization_and_spoofed_argument_do_not_authorize_tool_network(

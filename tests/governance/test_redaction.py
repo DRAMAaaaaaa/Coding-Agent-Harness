@@ -44,7 +44,7 @@ def test_sanitize_redacts_private_key_environment_name_and_value() -> None:
     )
 
     serialized = json.dumps(result.value, ensure_ascii=False, sort_keys=True)
-    assert result.value["DEPLOY_TOKEN"] == "[REDACTED]"
+    assert result.value["[REDACTED]"] == "[REDACTED]"
     assert private_key not in serialized
     assert secret_value not in serialized
     assert "DEPLOY_TOKEN" not in serialized
@@ -68,6 +68,13 @@ def test_sensitive_dict_key_replaces_entire_nested_value() -> None:
     )
 
     assert result.value == {"password": "[REDACTED]", "safe": 7}
+    assert result.rule_names == ("SECRET_ASSIGNMENT",)
+
+
+def test_quoted_json_secret_assignment_is_redacted() -> None:
+    result = Redactor().sanitize('{"client_secret": "quoted-secret"}')
+
+    assert result.value == "{[REDACTED]}"
     assert result.rule_names == ("SECRET_ASSIGNMENT",)
 
 

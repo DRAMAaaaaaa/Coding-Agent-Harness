@@ -316,3 +316,65 @@ async def test_two_connections_have_exactly_one_consume_winner_without_sleep(
     finally:
         await first.close()
         await second.close()
+
+
+async def test_persisted_task_cancellation_invalidates_approved_record(
+    tmp_path: Path,
+) -> None:
+    database, manager, task_id = await _manager(tmp_path / "cancelled.sqlite3")
+    context = _context()
+    try:
+        requested = await manager.request(
+            task_id, "DANGEROUS", context, NOW + timedelta(minutes=1)
+        )
+        await manager.decide(requested.id, ApprovalDecision.APPROVED, "reviewer", context)
+        await database.connection.execute(
+            "UPDATE tasks SET state = ? WHERE id = ?",
+            (TaskState.CANCELLED.value, str(task_id)),
+        )
+        await database.connection.commit()
+
+        with pytest.raises(ApprovalError) as captured:
+            await manager.consume(requested.id, context)
+        assert captured.value.reason_code == "TASK_CANCELLED"
+    finally:
+        await database.close()
+
+
+async def test_busy_lock_is_a_stable_approval_error(tmp_path: Path) -> None:
+    path = tmp_path / "busy.sqlite3"
+    first, manager, task_id = await _manager(path)
+    context = _context()
+    requested = await manager.request(
+        task_id, "DANGEROUS", context, NOW + timedelta(minutes=1)
+    )
+    await manager.decide(requested.id, ApprovalDecision.APPROVED, "reviewer", context)
+    second = await Database.open(path)
+    await second.connection.execute("PRAGMA busy_timeout=0")
+    try:
+        await first.connection.execute("BEGIN IMMEDIATE")
+        with pytest.raises(ApprovalError) as captured:
+            await ApprovalManager(second, _Clock(), uuid4).consume(requested.id, context)
+        assert captured.value.reason_code == "BUSY"
+        assert "locked" not in str(captured.value).casefold()
+    finally:
+        await first.connection.rollback()
+        await first.close()
+        await second.close()
+
+
+async def test_pending_and_missing_records_have_distinct_stable_errors(tmp_path: Path) -> None:
+    database, manager, task_id = await _manager(tmp_path / "states.sqlite3")
+    context = _context()
+    try:
+        requested = await manager.request(
+            task_id, "DANGEROUS", context, NOW + timedelta(minutes=1)
+        )
+        with pytest.raises(ApprovalError) as pending:
+            await manager.consume(requested.id, context)
+        with pytest.raises(ApprovalError) as missing:
+            await manager.consume(uuid4(), context)
+        assert pending.value.reason_code == "NOT_APPROVED"
+        assert missing.value.reason_code == "NOT_FOUND"
+    finally:
+        await database.close()
