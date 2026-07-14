@@ -120,3 +120,14 @@
 - **智能体产出与证据：** 建立 Python `src` 包、`HarnessSettings`、精确 Python/npm 依赖、Windows Python 3.11 哈希锁文件、React/Vite 工作区、`Makefile` 和固定参数契约的 `scripts/test.ps1`；RED 为预期导入失败，GREEN 为 `1 passed`，PowerShell `Unit`/`All` 、Ruff、mypy、pytest、ESLint 和 TypeScript 检查均退出 0。
 - **人工干预：** 控制器在实现者报告简报缺少精确依赖版本后，补充 `.superpowers/sdd/task-1-context.md`；用户已批准在本 worktree 的 `.venv` 与 `web/node_modules` 中安装锁定依赖。
 - **经验总结：** 在精确版本缺失时暂停猜测并请求有界上下文，可以在不扩大任务阅读范围的前提下维持可重现依赖；当前 Windows 主机未安装 GNU Make，因此 Makefile 只完成静态核对，PowerShell 实际入口已完整运行。
+
+### 2026-07-14 19:31 +08:00 — REVIEW-001
+
+- **任务：** 根据 Task 1 首轮规约与代码质量评审结果，修复全部 Important 问题并进入待复审状态。
+- **Superpowers 技能：** `receiving-code-review`、`test-driven-development`、`verification-before-completion`；先核对反馈与现有文件，再执行纠正性 RED—GREEN 和完整验证。
+- **评审发现：** 提交 `0aa862c` 的 `web/package.json` 及根锁依赖缺少 Vitest、Testing Library、jsdom 和 Playwright 六项精确版本；`tests/test_config.py` 只验证默认值，未保护五个整数字段的 `ge=1` 约束。首轮评审未通过，本条不将 Task 1 标记为完成。
+- **纠正性 TDD 证据：** 在工作树临时移除五个 `ge=1` 后新增参数化测试；`python -m pytest tests/test_config.py -v` 以五个 `DID NOT RAISE ValidationError` 得到 `5 failed, 1 passed`。恢复最小 `ge=1` 实现后，同一命令得到 `6 passed`。
+- **修复与提交：** 提交 `93863de` （`fix: 补齐基础依赖与配置边界测试（基础子智能体）`）补齐六项 npm 精确依赖与根锁文件，并增加五个零值拒绝回归用例；未提前添加 Vitest/E2E 脚本或伪能力。
+- **验证证据：** `.venv` Python 的目标和全量 pytest 均为 `6 passed`，Ruff、mypy、`pip check`、`npm.cmd --prefix web ci`、`npm ls --depth=0`、ESLint、TypeScript 及 `scripts/test.ps1` 的 Unit/All 均退出 0，npm 报告 `found 0 vulnerabilities`。
+- **平台与流程偏差：** 当前 Windows 主机仍未安装 GNU Make，因此未伪造 `make` 运行结果；当前平台的 `spawn_agent` 接口不提供 `model` 参数，无法显式指定不同模型，因此只能依靠新鲜子智能体与有界任务简报实现角色隔离，这一偏差已如实保留。
+- **经验总结：** “尚未加入测试命令”不等于“依赖可从锁文件省略”；预算字段的默认值测试也不能代替边界拒绝测试。当前状态是待复审，只有后续两阶段评审通过后才可标记完成。

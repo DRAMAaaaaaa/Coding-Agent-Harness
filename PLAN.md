@@ -149,7 +149,7 @@ class TaskOrchestrator:
 
 | Task | 交付单元 | 依赖 | 可并行关系 | 建议分支 | 状态/提交 |
 |---|---|---|---|---|---|
-| 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 进行中（实现子智能体） |
+| 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 待复审（0aa862c、93863de） |
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 待执行 |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 待执行 |
 | 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 待执行 |
