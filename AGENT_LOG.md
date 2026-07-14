@@ -111,3 +111,12 @@
 - **智能体产出与证据：** 从提交 `b364e19` 创建 `codex/foundation` 与 `.worktrees/foundation`，确认实现前基线干净；把 `.superpowers/` 加入忽略规则，供 SDD 进度账本和任务交接文件使用。
 - **人工干预：** 用户明确选择 Subagent-Driven 实施方式。
 - **经验总结：** 正式实现必须从干净分支重新执行 TDD；冷启动产物只能作为规约证据，不能成为绕过正式 RED 的实现来源。
+
+### 2026-07-14 19:09 +08:00 — IMPL-001
+
+- **任务：** 由基础子智能体实现 Task 1 的工程骨架、依赖锁定与一键质量门禁。
+- **Superpowers 技能：** `test-driven-development`；先创建配置测试并观察到预期 `ModuleNotFoundError`，再写入最小生产实现并取得 GREEN。
+- **提示与上下文：** 实现者只使用 Task 1 简报和控制器补充的精确版本上下文，未读取整份 `PLAN.md`，也未查看或复用冷启动 worktree 代码。
+- **智能体产出与证据：** 建立 Python `src` 包、`HarnessSettings`、精确 Python/npm 依赖、Windows Python 3.11 哈希锁文件、React/Vite 工作区、`Makefile` 和固定参数契约的 `scripts/test.ps1`；RED 为预期导入失败，GREEN 为 `1 passed`，PowerShell `Unit`/`All` 、Ruff、mypy、pytest、ESLint 和 TypeScript 检查均退出 0。
+- **人工干预：** 控制器在实现者报告简报缺少精确依赖版本后，补充 `.superpowers/sdd/task-1-context.md`；用户已批准在本 worktree 的 `.venv` 与 `web/node_modules` 中安装锁定依赖。
+- **经验总结：** 在精确版本缺失时暂停猜测并请求有界上下文，可以在不扩大任务阅读范围的前提下维持可重现依赖；当前 Windows 主机未安装 GNU Make，因此 Makefile 只完成静态核对，PowerShell 实际入口已完整运行。

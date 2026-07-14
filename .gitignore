@@ -38,6 +38,7 @@ build/
 
 # Node.js and frontend tooling
 node_modules/
+.eslintcache
 .npm/
 .pnpm-store/
 .yarn/

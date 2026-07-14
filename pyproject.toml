@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools==83.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coding-agent-harness"
+version = "0.1.0"
+description = "以确定性反馈闭环为核心的 Coding Agent Harness"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "fastapi==0.139.0",
+    "uvicorn==0.51.0",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.14.2",
+    "httpx==0.28.1",
+    "aiosqlite==0.22.1",
+    "keyring==25.7.0",
+    "cryptography==49.0.0",
+    "argon2-cffi==25.1.0",
+    "PyYAML==6.0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "pytest-cov==7.1.0",
+    "ruff==0.15.21",
+    "mypy==2.3.0",
+    "pip-tools==7.5.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
