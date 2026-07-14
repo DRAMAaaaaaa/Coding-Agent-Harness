@@ -153,3 +153,15 @@
 - **安全与范围：** 未使用高层 agent runner、未真实联网、未记录真实凭据；Provider 错误仅暴露固定 `kind`/`retryable` 与脱敏文本，不保留原始响应、请求头或网络异常对象；未实现 Agent 循环、工具执行、状态存储或后续任务能力。
 - **人工干预：** 控制器补充了 Task 2 的冻结状态集合、最小 Task/TaskEvent 约束和错误分类边界；用户重申每个 Task 完成后必须有明确提交，未新增接口选择。
 - **经验总结：** 环境失败不能冒充产品 RED；PowerShell 调用参数即使退出 0，也必须核对实际执行分支。当前 Task 2 状态为待复审，只有规约符合性与代码质量两阶段评审通过后才能标记完成。
+
+### 2026-07-14 21:37 +08:00 — REVIEW-003
+
+- **任务：** 修复 Task 2 首轮评审发现的 OpenAI-compatible 自动重定向请求边界问题，并回到待复审状态。
+- **Superpowers 技能：** `receiving-code-review`、`test-driven-development`、`verification-before-completion`；先核对 httpx 0.28.1 与当前调用行为，再执行纠正性 RED—GREEN 和完整验证。
+- **评审发现：** 注入的 `httpx.AsyncClient(follow_redirects=True)` 会被当前 `post` 默认继承；收到 307 时 Provider 会发送第二次实际 HTTP 请求，违反“一次 `/chat/completions` HTTP 请求”契约。首轮评审不通过，本条不将 Task 2 标记为完成。
+- **纠正性 TDD 证据：** 新增回归测试让 `MockTransport` 首次返回带 `Location` 的 307，并在第二次 handler 调用时明确失败；未改生产代码时单测得到 `1 failed`，失败信息为 `provider followed redirect; request count=2`，第二次 URL 为 `https://provider.example/redirected`。在该次 `post` 显式传入 `follow_redirects=False` 后，同一单测得到 `1 passed`，并断言 307 分类为 `ProviderError(kind="http_status", retryable=False)`。
+- **修复与提交：** 提交 `3d9cea0`（`fix: 禁止 Provider 自动跟随重定向（核心契约子智能体）`）只修改 Provider 单次请求参数和对应回归测试，没有扩大到重试、Agent 循环或其他能力。
+- **验证证据：** Provider 测试为 `16 passed`，Task 2 目标测试为 `29 passed`，全量 pytest 为 `35 passed`；Ruff、mypy（9 个源文件）、`pip check` 均退出 0；`scripts/test.ps1 -Mode Unit` 为 `35 passed`。
+- **书面一致性：** `PLAN.md` 总表 Task 2 已由“进行中（实现子智能体）”修正为“待复审”，任务状态行已回填修复提交；`.superpowers/sdd/task-2-report.md` 保留首轮证据并追加本次评审修复证据。
+- **人工干预：** 控制器转达并预先验证了首轮评审技术反馈，明确要求以纠正性 TDD 修复；没有新增接口或范围选择。
+- **经验总结：** “调用一次 `client.post`”不等于“只产生一次传输”；可注入客户端的默认重定向策略必须在安全边界调用点显式覆盖。当前状态仍为待复审，须经后续两阶段复审才能完成。

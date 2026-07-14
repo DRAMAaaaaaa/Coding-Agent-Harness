@@ -150,7 +150,7 @@ class TaskOrchestrator:
 | Task | 交付单元 | 依赖 | 可并行关系 | 建议分支 | 状态/提交 |
 |---|---|---|---|---|---|
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
-| 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 进行中（实现子智能体） |
+| 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 待复审（实现 326a4b6；首轮修复 3d9cea0） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 待执行 |
 | 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 待执行 |
 | 5 | 项目识别、扫描与 worktree | 1、2 | 可与 4 并行 | `codex/workspaces` | 待执行 |
@@ -341,7 +341,7 @@ git commit -m "构建：建立工程骨架与质量门禁（基础子智能体�
 
 **目标：** 冻结跨模块类型契约，让 Scripted Mock、DeepSeek/Qwen 适配器和非法动作拒绝都能离线测试。
 
-**状态：** 待复审。RED 提交：`80d6175`；实际实现提交：`326a4b6`。
+**状态：** 待复审。RED 提交：`80d6175`；实际实现提交：`326a4b6`；首轮评审修复提交：`3d9cea0`。
 
 **文件：**
 
