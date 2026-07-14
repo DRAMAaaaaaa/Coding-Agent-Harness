@@ -39,14 +39,15 @@ class Database:
         return self._connection
 
     @property
-    def write_lock(self) -> asyncio.Lock:
+    def operation_lock(self) -> asyncio.Lock:
         return self._write_lock
 
     async def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        await self._connection.close()
+        async with self.operation_lock:
+            if self._closed:
+                return
+            self._closed = True
+            await self._connection.close()
 
     async def __aenter__(self) -> Self:
         return self

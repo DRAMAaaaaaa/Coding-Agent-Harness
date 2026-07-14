@@ -2,6 +2,8 @@ import asyncio
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import TracebackType
+from typing import Self
 from uuid import UUID, uuid4
 
 import pytest
@@ -27,6 +29,37 @@ BUSINESS_TABLES = {
     "memory_records",
     "credential_references",
 }
+
+
+class _ObservableLock:
+    """让测试能用事件判断连接级锁是否发生竞争。"""
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self.contended = asyncio.Event()
+
+    async def acquire(self) -> None:
+        if self._lock.locked():
+            self.contended.set()
+        await self._lock.acquire()
+
+    def release(self) -> None:
+        self._lock.release()
+
+    def locked(self) -> bool:
+        return self._lock.locked()
+
+    async def __aenter__(self) -> Self:
+        await self.acquire()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.release()
 
 
 async def _open_database(path: Path) -> Database:
@@ -99,7 +132,8 @@ async def test_open_enables_pragmas_and_creates_all_tables(
     assert foreign_keys == (1,)
     assert journal_mode is not None and journal_mode[0].lower() == "wal"
     assert busy_timeout is not None and busy_timeout[0] > 0
-    assert BUSINESS_TABLES <= {row[0] for row in rows}
+    user_tables = {row[0] for row in rows if not row[0].startswith("sqlite_")}
+    assert user_tables == BUSINESS_TABLES
 
 
 async def test_reopening_database_runs_migrations_idempotently(tmp_path: Path) -> None:
@@ -147,6 +181,21 @@ async def test_task_repository_round_trips_strict_values(database: Database) -> 
     assert loaded == original
     assert updated == original.model_copy(update={"state": TaskState.SCANNING})
     assert await repository.get(uuid4()) is None
+
+
+async def test_task_repository_round_trips_null_deadline(database: Database) -> None:
+    workspace_id = uuid4()
+    await _insert_workspace(database, workspace_id)
+    original = _task(workspace_id).model_copy(
+        update={"id": uuid4(), "deadline_at": None}
+    )
+    repository = TaskRepository(database)
+
+    assert await repository.create(original) == original
+    assert await repository.get(original.id) == original
+    assert await repository.update_state(original.id, TaskState.SCANNING) == (
+        original.model_copy(update={"state": TaskState.SCANNING})
+    )
 
 
 async def test_task_repository_requires_existing_workspace(database: Database) -> None:
@@ -237,3 +286,165 @@ async def test_two_connections_concurrency_has_one_winner(tmp_path: Path) -> Non
     finally:
         await first_database.close()
         await second_database.close()
+
+
+async def test_busy_write_lock_becomes_stable_concurrency_error(tmp_path: Path) -> None:
+    path = tmp_path / "busy.sqlite3"
+    first_database = await _open_database(path)
+    workspace_id = uuid4()
+    await _insert_workspace(first_database, workspace_id)
+    task = await TaskRepository(first_database).create(_task(workspace_id))
+    second_database = await _open_database(path)
+    await second_database.connection.execute("PRAGMA busy_timeout=0")
+    try:
+        await first_database.connection.execute("BEGIN IMMEDIATE")
+        try:
+            with pytest.raises(ConcurrencyError) as captured:
+                await EventStore(second_database).append(
+                    _event(task.id),
+                    expected_sequence=0,
+                )
+            assert str(captured.value) == "SQLite 写入竞争"
+        finally:
+            await first_database.connection.rollback()
+
+        appended = await EventStore(second_database).append(
+            _event(task.id),
+            expected_sequence=0,
+        )
+        assert appended.sequence == 1
+    finally:
+        await first_database.close()
+        await second_database.close()
+
+
+async def test_non_busy_operational_error_is_not_misclassified(
+    database: Database,
+    persisted_task: Task,
+) -> None:
+    await database.connection.execute("DROP TABLE task_events")
+    await database.connection.commit()
+
+    with pytest.raises(sqlite3.OperationalError, match="no such table"):
+        await EventStore(database).append(_event(persisted_task.id), expected_sequence=0)
+
+
+async def test_task_read_waits_for_rollback_and_does_not_see_uncommitted_data(
+    database: Database,
+) -> None:
+    workspace_id = uuid4()
+    await _insert_workspace(database, workspace_id)
+    task = _task(workspace_id)
+    operation_lock = _ObservableLock()
+    database._write_lock = operation_lock
+    await operation_lock.acquire()
+    await database.connection.execute("BEGIN IMMEDIATE")
+    await database.connection.execute(
+        """
+        INSERT INTO tasks (
+            id, workspace_id, requirement, state, step_budget,
+            time_budget_seconds, created_at, deadline_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(task.id),
+            str(task.workspace_id),
+            task.requirement,
+            task.state.value,
+            task.step_budget,
+            task.time_budget_seconds,
+            task.created_at.isoformat(),
+            task.deadline_at.isoformat() if task.deadline_at else None,
+        ),
+    )
+    read_task = asyncio.create_task(TaskRepository(database).get(task.id))
+    contention_task = asyncio.create_task(operation_lock.contended.wait())
+    try:
+        done, _ = await asyncio.wait(
+            {read_task, contention_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        assert contention_task in done
+        assert read_task not in done
+        await database.connection.rollback()
+        operation_lock.release()
+        assert await read_task is None
+    finally:
+        if operation_lock.locked():
+            await database.connection.rollback()
+            operation_lock.release()
+        if not contention_task.done():
+            contention_task.cancel()
+        await asyncio.gather(read_task, contention_task, return_exceptions=True)
+
+
+async def test_event_read_waits_for_rollback_and_does_not_see_uncommitted_data(
+    database: Database,
+    persisted_task: Task,
+) -> None:
+    event = _event(persisted_task.id)
+    operation_lock = _ObservableLock()
+    database._write_lock = operation_lock
+    await operation_lock.acquire()
+    await database.connection.execute("BEGIN IMMEDIATE")
+    await database.connection.execute(
+        """
+        INSERT INTO task_events (
+            task_id, sequence, event_type, payload,
+            state_before, state_after, occurred_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(event.task_id),
+            1,
+            event.event_type,
+            "{}",
+            event.state_before.value if event.state_before else None,
+            event.state_after.value if event.state_after else None,
+            event.occurred_at.isoformat(),
+        ),
+    )
+    read_task = asyncio.create_task(EventStore(database).list_for_task(persisted_task.id))
+    contention_task = asyncio.create_task(operation_lock.contended.wait())
+    try:
+        done, _ = await asyncio.wait(
+            {read_task, contention_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        assert contention_task in done
+        assert read_task not in done
+        await database.connection.rollback()
+        operation_lock.release()
+        assert await read_task == []
+    finally:
+        if operation_lock.locked():
+            await database.connection.rollback()
+            operation_lock.release()
+        if not contention_task.done():
+            contention_task.cancel()
+        await asyncio.gather(read_task, contention_task, return_exceptions=True)
+
+
+async def test_close_waits_for_active_connection_operation(tmp_path: Path) -> None:
+    database = await _open_database(tmp_path / "close-lock.sqlite3")
+    operation_lock = _ObservableLock()
+    database._write_lock = operation_lock
+    await operation_lock.acquire()
+    close_task = asyncio.create_task(database.close())
+    contention_task = asyncio.create_task(operation_lock.contended.wait())
+    try:
+        done, _ = await asyncio.wait(
+            {close_task, contention_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        assert contention_task in done
+        assert close_task not in done
+        operation_lock.release()
+        await close_task
+    finally:
+        if operation_lock.locked():
+            operation_lock.release()
+        if not contention_task.done():
+            contention_task.cancel()
+        await asyncio.gather(close_task, contention_task, return_exceptions=True)
+        await database.close()

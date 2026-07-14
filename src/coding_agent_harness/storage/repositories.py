@@ -22,7 +22,7 @@ class TaskRepository:
         self._database = database
 
     async def create(self, task: Task) -> Task:
-        async with self._database.write_lock:
+        async with self._database.operation_lock:
             try:
                 await self._database.connection.execute(
                     f"""
@@ -47,17 +47,18 @@ class TaskRepository:
         return task
 
     async def get(self, task_id: UUID) -> Task | None:
-        cursor = await self._database.connection.execute(
-            f"SELECT {_TASK_COLUMNS} FROM tasks WHERE id = ?",
-            (str(task_id),),
-        )
-        row = await cursor.fetchone()
+        async with self._database.operation_lock:
+            cursor = await self._database.connection.execute(
+                f"SELECT {_TASK_COLUMNS} FROM tasks WHERE id = ?",
+                (str(task_id),),
+            )
+            row = await cursor.fetchone()
         if row is None:
             return None
         return _task_from_row(row)
 
     async def update_state(self, task_id: UUID, state: TaskState) -> Task:
-        async with self._database.write_lock:
+        async with self._database.operation_lock:
             try:
                 cursor = await self._database.connection.execute(
                     f"""

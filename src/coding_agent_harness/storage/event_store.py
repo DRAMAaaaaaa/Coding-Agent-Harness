@@ -20,7 +20,7 @@ class EventStore:
         if expected_sequence < 0:
             raise ValueError("expected_sequence 不能为负数")
 
-        async with self._database.write_lock:
+        async with self._database.operation_lock:
             try:
                 await self._database.connection.execute("BEGIN IMMEDIATE")
                 cursor = await self._database.connection.execute(
@@ -62,25 +62,38 @@ class EventStore:
                     ),
                 )
                 await self._database.connection.commit()
-            except BaseException:
+            except BaseException as error:
                 await self._database.connection.rollback()
+                if isinstance(error, sqlite3.OperationalError) and _is_lock_contention(
+                    error
+                ):
+                    raise ConcurrencyError("SQLite 写入竞争") from None
                 raise
 
         return event.model_copy(update={"sequence": next_sequence})
 
     async def list_for_task(self, task_id: UUID, after: int = 0) -> list[TaskEvent]:
-        cursor = await self._database.connection.execute(
-            """
-            SELECT task_id, sequence, event_type, payload,
-                   state_before, state_after, occurred_at
-            FROM task_events
-            WHERE task_id = ? AND sequence > ?
-            ORDER BY sequence ASC
-            """,
-            (str(task_id), after),
-        )
-        rows = await cursor.fetchall()
+        async with self._database.operation_lock:
+            cursor = await self._database.connection.execute(
+                """
+                SELECT task_id, sequence, event_type, payload,
+                       state_before, state_after, occurred_at
+                FROM task_events
+                WHERE task_id = ? AND sequence > ?
+                ORDER BY sequence ASC
+                """,
+                (str(task_id), after),
+            )
+            rows = await cursor.fetchall()
         return [_event_from_row(row) for row in rows]
+
+
+def _is_lock_contention(error: sqlite3.OperationalError) -> bool:
+    error_code = getattr(error, "sqlite_errorcode", None)
+    if not isinstance(error_code, int):
+        return False
+    base_code = error_code & 0xFF
+    return base_code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
 
 
 def _event_from_row(row: sqlite3.Row) -> TaskEvent:
