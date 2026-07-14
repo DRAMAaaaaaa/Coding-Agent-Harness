@@ -84,6 +84,9 @@ eslint-plugin-react-refresh@0.5.3
 ## 文件结构与职责
 
 ```text
+requirements/
+  windows-py311.lock                # Windows 本地开发传递依赖与哈希
+  linux-py311.lock                  # Linux 容器/CI 传递依赖与哈希（Task 14）
 src/coding_agent_harness/
   config.py                         # 全局与项目配置、预算、限制
   domain/{actions,events,models}.py # 共享枚举与不可变协议模型
@@ -169,7 +172,7 @@ class TaskOrchestrator:
 
 **文件：**
 
-- 新建：`pyproject.toml`、`requirements.lock`、`Makefile`、`scripts/test.ps1`
+- 新建：`pyproject.toml`、`requirements/windows-py311.lock`、`Makefile`、`scripts/test.ps1`
 - 新建：`src/coding_agent_harness/__init__.py`、`src/coding_agent_harness/config.py`
 - 新建：`tests/test_config.py`、`tests/conftest.py`
 - 新建：`web/package.json`、`web/package-lock.json`、`web/tsconfig.json`、`web/vite.config.ts`、`web/eslint.config.js`
@@ -263,8 +266,8 @@ build-backend = "setuptools.build_meta"
 
 ```text
 python -m pip install pip-tools==7.5.3
-python -m piptools compile --extra dev --generate-hashes --allow-unsafe --output-file requirements.lock pyproject.toml
-python -m pip install -r requirements.lock
+python -m piptools compile --extra dev --generate-hashes --allow-unsafe --strip-extras --output-file requirements/windows-py311.lock pyproject.toml
+python -m pip install -r requirements/windows-py311.lock
 python -m pip install --no-deps -e .
 ```
 
@@ -282,11 +285,38 @@ npm --prefix web install --package-lock-only
 npm --prefix web ci
 ```
 
-这些安装命令沿用步骤 1 的同一次用户批准。预期：生成包含哈希和精确传递版本的 `requirements.lock` 与 `web/package-lock.json`，项目以 editable 方式安装，命令退出码均为 0。
+这些安装命令沿用步骤 1 的同一次用户批准。预期：生成包含哈希和精确传递版本的 `requirements/windows-py311.lock` 与 `web/package-lock.json`，没有 extras 语义警告，项目以 editable 方式安装，命令退出码均为 0。Linux 传递依赖必须在 Task 14 的 Linux 容器中独立生成 `requirements/linux-py311.lock`，不得复制 Windows 解析结果。
 
 - [ ] **步骤 6：实现统一命令并转绿**
 
 `Makefile` 在本 Task 提供 `test-unit`（pytest）和 `test`（Ruff、mypy、pytest、ESLint、TypeScript 配置检查）。后续 Task 只在实际能力存在时加入 Vitest、`demo` 和 `test-e2e`，禁止使用返回成功的空实现或临时跳过。
+
+`scripts/test.ps1` 的基础参数契约固定为：
+
+```powershell
+param(
+    [ValidateSet("Unit", "All")]
+    [string]$Mode = "All"
+)
+$Python = (Resolve-Path ".venv\Scripts\python.exe").Path
+$Npm = (Get-Command npm.cmd -ErrorAction Stop).Source
+if ($Mode -eq "Unit") {
+    & $Python -m pytest
+    exit $LASTEXITCODE
+}
+& $Python -m ruff check src tests
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Python -m mypy src
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Python -m pytest
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Npm --prefix web run lint
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Npm --prefix web run typecheck
+exit $LASTEXITCODE
+```
+
+Task 13 在保持默认 `All` 的前提下，把 ValidateSet 扩展为 `Unit|E2E|All|Demo`。
 
 运行：`python -m pytest tests/test_config.py -v`
 
@@ -301,7 +331,7 @@ npm --prefix web ci
 - [ ] **步骤 8：提交并回填状态**
 
 ```text
-git add pyproject.toml requirements.lock Makefile scripts/test.ps1 src tests web .env.example .gitignore PLAN.md AGENT_LOG.md
+git add pyproject.toml requirements/windows-py311.lock Makefile scripts/test.ps1 src tests web .env.example .gitignore PLAN.md AGENT_LOG.md
 git commit -m "构建：建立工程骨架与质量门禁（基础子智能体）"
 ```
 
@@ -1199,7 +1229,7 @@ git commit -m "测试：完成离线端到端验证和三机制演示（测试�
 
 **文件：**
 
-- 新建：`Dockerfile`、`.dockerignore`、`compose.yaml`、`render.yaml`
+- 新建：`Dockerfile`、`.dockerignore`、`compose.yaml`、`render.yaml`、`requirements/linux-py311.lock`
 - 新建：`.github/workflows/ci.yml`、`.github/workflows/release.yml`、`.gitlab-ci.yml`
 - 新建：`docs/SECURITY.md`、`docs/DEPLOYMENT.md`、`docs/DEMO.md`
 - 新建：`REFLECTION.md`（仅建立用户填写框架，不代写用户个人反思）
@@ -1232,7 +1262,13 @@ def test_required_delivery_contract(repo_root: Path) -> None:
 
 - [ ] **步骤 3：实现 Docker 与本地运行文档**
 
-Docker 多阶段构建前端和 Python 运行层，最终非 root 用户运行；只暴露应用端口，项目与状态必须显式挂载。`docker run` 文档展示 localhost 模式、状态卷、单项目挂载和容器主密码的安全输入方式，不把密码写入镜像/命令历史。公网镜像固定 Mock 模式并禁用凭据、任意路径和外部网络工具。
+Docker 多阶段构建前端和 Python 运行层，最终非 root 用户运行；只暴露应用端口，项目与状态必须显式挂载。先在 `python:3.11` Linux 构建阶段用与 Task 1 相同的 pip-tools 命令生成 `requirements/linux-py311.lock`，再与仓库版本逐字比较；不一致时 CI 失败并要求显式更新。Windows 使用 `requirements/windows-py311.lock`，两者都由同一个 `pyproject.toml` 直接依赖集合生成。`docker run` 文档展示 localhost 模式、状态卷、单项目挂载和容器主密码的安全输入方式，不把密码写入镜像/命令历史。公网镜像固定 Mock 模式并禁用凭据、任意路径和外部网络工具。
+
+Linux 锁文件生成命令固定为：
+
+```text
+python -m piptools compile --extra dev --generate-hashes --allow-unsafe --strip-extras --output-file requirements/linux-py311.lock pyproject.toml
+```
 
 - [ ] **步骤 4：实现 GitHub/GitLab CI**
 
@@ -1272,7 +1308,7 @@ git log -p --all -- . ':!*.lock' | rg -n '(sk-[A-Za-z0-9_-]{16,}|PRIVATE KEY)'
 先执行规约符合性审查，逐条对照 `SPEC.md` 13 节验收标准；再执行代码质量审查与供应链审计。Critical 问题清零且上述证据仍为最新后，才调用 `finishing-a-development-branch`。
 
 ```text
-git add Dockerfile .dockerignore compose.yaml render.yaml .github .gitlab-ci.yml docs README.md .env.example REFLECTION.md tests/distribution PLAN.md AGENT_LOG.md
+git add Dockerfile .dockerignore compose.yaml render.yaml requirements/linux-py311.lock .github .gitlab-ci.yml docs README.md .env.example REFLECTION.md tests/distribution PLAN.md AGENT_LOG.md
 git commit -m "交付：完成容器、持续集成和项目文档（交付子智能体）"
 ```
 

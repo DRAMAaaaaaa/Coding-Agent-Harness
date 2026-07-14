@@ -93,3 +93,12 @@
 - **智能体产出与证据：** Python 3.11.9、pytest 9.1.1、预期 RED、Python 哈希锁文件和 editable install 均成功；PowerShell 将 `npm` 解析为受 ExecutionPolicy 阻止的 `npm.ps1`，审计员在该非预期错误处暂停，未取得 GREEN。它同时发现构建后端版本未锁定。
 - **人工干预：** 用户明确批准隔离依赖安装；主 Agent 根据审计结果把 Windows 命令改为 `npm.cmd`，并锁定 `pip==26.1.2`、`setuptools==83.0.0` 和构建后端。
 - **经验总结：** 跨平台计划不能把 `npm` 视为同一个可执行入口；即使应用依赖已锁定，构建后端和引导工具未锁定仍会迫使陌生执行者猜测。
+
+### 2026-07-14 18:53 +08:00 — COLD-003
+
+- **任务：** 使用第三个全新冷启动审计员验证修订后的 Task 1 能否从零取得有效 GREEN。
+- **Superpowers 技能：** `using-git-worktrees`；不同角色子智能体冷启动审计；主 Agent 使用 `verification-before-completion` 独立复验。
+- **提示与上下文：** v3 审计员从提交 `b17990f` 的干净 worktree 开始，初始只读 `SPEC.md` 与 `PLAN.md`，仅执行 Task 1 到首次 GREEN；沿用用户对隔离依赖安装的批准。
+- **智能体产出与证据：** Python/Node 引导、哈希锁、npm.cmd、预期 RED 和首次 GREEN 均成功；审计员报告 `1 passed in 0.16s`，主 Agent 独立重跑为 `1 passed in 0.09s`。审计分支无提交、无推送，试验代码未进入主分支。
+- **人工干预：** 用户批准隔离依赖安装；主 Agent 根据审计建议补充 `--strip-extras`、PowerShell 脚本参数契约和 Windows/Linux 双锁文件策略。
+- **经验总结：** 冷启动的价值不在一次成功，而在陌生执行者能否准确区分环境错误、计划缺陷和产品 RED；连续复验把隐性平台假设转成了可执行文字。

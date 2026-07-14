@@ -245,3 +245,45 @@ E:\python3.9\python.exe: No module named pytest
 ```
 
 第二次复验仍未取得 GREEN。下一步必须从本次修订提交创建第三个全新隔离 worktree，只复验 Task 1 到首次 GREEN；在其通过前，正式实现门禁仍关闭。
+
+### 8.7 第三次冷启动与客观结果
+
+主 Agent 提交第二轮修订后，从提交 `b17990f` 创建全新 `codex/cold-start-audit-v3`。第三个无历史审计员只执行 Task 1 到首次 GREEN，未复用 v2 的虚拟环境、锁文件或代码。
+
+实际证据：
+
+```text
+Python 3.11.9
+pip 26.1.2
+setuptools 83.0.0
+pytest 9.1.1
+pip-tools 7.5.3
+Node.js 24.15.0
+npm 11.12.1
+```
+
+依赖安装、Python 哈希锁、editable install、`npm.cmd --prefix web install --package-lock-only` 和 `npm.cmd --prefix web ci` 均退出 0。npm 审计 243 个包，报告 0 个漏洞。
+
+RED 与 GREEN 分别为：
+
+```text
+RED: ModuleNotFoundError: No module named 'coding_agent_harness'
+GREEN: tests/test_config.py::test_safe_defaults_are_bounded PASSED
+       1 passed in 0.16s
+```
+
+主 Agent 随后在 v3 worktree 独立重跑目标测试，结果为 `1 passed in 0.09s`；`b17990f..HEAD` 没有提交。所有试验实现只保留在隔离审计分支，没有进入主分支。
+
+### 8.8 第三次审计后的非阻塞改进
+
+v3 已证明修订后的陌生执行者能够从零取得正确 RED 和 GREEN。审计员同时提出三个不阻塞首次 GREEN、但会影响后续可复现性的改进，主 Agent 已写回计划：
+
+- 为 pip-tools 显式添加 `--strip-extras`，避免未来默认值变化。
+- 明确 `scripts/test.ps1` 基础阶段只接受 `Unit|All`，列出执行顺序；Task 13 再扩展为 `Unit|E2E|All|Demo`。
+- 不复用 Windows 解析出的传递依赖构建 Linux 容器；分别维护 `requirements/windows-py311.lock` 与 `requirements/linux-py311.lock`，后者在 Linux CI/容器内生成并比较。
+
+### 8.9 冷启动结论
+
+三轮冷启动形成了完整的“失败—修订—复验”证据：第一轮暴露测试环境和接口范围，第二轮暴露 PowerShell/构建后端，第三轮在全新 worktree 取得有效 RED 与 GREEN。`SPEC.md` 与 `PLAN.md` 已足以让无共享隐性上下文的执行者启动 Task 1；试验没有被合并，因此正式实现仍将从干净 worktree 按计划重新开始。
+
+冷启动技术门禁现已通过。开始正式实现前仍需用户复核本轮修订，并选择 `subagent-driven-development` 或 `executing-plans`。
