@@ -105,6 +105,29 @@ async def test_openai_compatible_provider_uses_injected_configuration(
     }
 
 
+async def test_openai_compatible_provider_never_follows_redirects() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) > 1:
+            pytest.fail(f"provider followed redirect; request count={len(requests)}")
+        return httpx.Response(307, headers={"Location": "/redirected"})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), follow_redirects=True
+    ) as client:
+        provider = OpenAICompatibleProvider(
+            client, "https://provider.example/v1", "model", "placeholder-api-key"
+        )
+        with pytest.raises(ProviderError) as captured:
+            await provider.complete(LLMRequest(messages=[]))
+
+    assert len(requests) == 1
+    assert captured.value.kind == "http_status"
+    assert captured.value.retryable is False
+
+
 @pytest.mark.parametrize(
     ("status_code", "retryable"),
     [(400, False), (408, True), (429, True), (503, True)],

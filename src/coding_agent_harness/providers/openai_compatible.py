@@ -41,6 +41,7 @@ class OpenAICompatibleProvider:
                 f"{self._base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 json={"model": self._model, "messages": request.messages, "temperature": 0},
+                follow_redirects=False,
             )
         except (httpx.NetworkError, httpx.TimeoutException):
             response = None
