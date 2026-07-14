@@ -152,7 +152,7 @@ class TaskOrchestrator:
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
-| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 待复审（RED `5a2b8cb`；实现 `c14d50d`） |
+| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 待复审（RED `5a2b8cb`；实现 `c14d50d`；首轮评审修复 `269c1ae`） |
 | 5 | 项目识别、扫描与 worktree | 1、2 | 可与 4 并行 | `codex/workspaces` | 待执行 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
@@ -543,7 +543,7 @@ git commit -m "功能：实现事件存储和可恢复状态机（状态存储�
 
 Task 3 交付了最小 `approvals` 表但没有审批仓储和版本化字段。Task 4 在不增加额外业务表的前提下，以 `002_governance_approvals.sql` 升级该表，并在 `governance/approvals.py` 内实现持久仓储；不得用仅进程内状态替代 SQLite 审批。
 
-**状态：** 待复审。RED 提交：`5a2b8cb`；实际实现提交：`c14d50d`。
+**状态：** 待复审。RED 提交：`5a2b8cb`；实际实现提交：`c14d50d`；首轮评审修复提交：`269c1ae`。独立双阶段复审尚未通过。
 
 - [x] **步骤 1：写六类危险动作与符号链接逃逸失败测试**
 
@@ -597,7 +597,7 @@ class PolicyEngine:
 
 预期：六类危险行为、路径穿越、符号链接逃逸、过期/重放/错版本审批和敏感字符串测试全部通过。
 
-- [x] **步骤 6：评审与提交**
+- [ ] **步骤 6：评审与提交**
 
 规约符合性审查重点：真实 Provider 的 LLM API 授权不扩展到工具网络。代码质量审查重点：规则次序无绕过、Windows 大小写路径、异常也先脱敏。
 

@@ -232,7 +232,7 @@
 - **人工干预：** 用户要求在已推送 Task 1—3 后继续执行，其他 TDD、双阶段复审、中文提交、逐 Task 完成提交和 push 审批要求保持不变。
 - **经验总结：** 当计划声称消费的底层接口并未实际交付时，应在实现前把必要的最小持久化演进写回计划；用内存替身掩盖缺口会破坏崩溃恢复和审批重放防护。
 
-### 2026-07-15 02:10 +08:00 — IMPL-004
+### 2026-07-15 01:10 +08:00 — IMPL-004
 
 - **任务：** 由治理子智能体实现 Task 4 的路径围栏、统一脱敏、确定性策略、SQLite 版本化迁移与一次性审批。
 - **Superpowers 技能：** `test-driven-development`、`verification-before-completion`；实现者只完整读取 Task 4 简报、控制器补充上下文、指定技能与 implementer 模板，未读取整份 `SPEC.md` 或 `PLAN.md`。
@@ -244,3 +244,17 @@
 - **安全与范围：** 未真实联网、未使用真实凭据、未使用 sleep 竞争或高层 Agent runner；真实 Provider 的 LLM 授权与工具网络规则完全分离，伪造 `provider_authorized` 不能绕过。未实现工具执行、Workspace 扫描、反馈、记忆、Agent 主循环或 Web API。
 - **人工干预：** 控制器在各安全检查点询问材料读取、RED/GREEN、静态门禁和分发状态，未改变冻结接口或安全语义。
 - **经验总结：** 安全规则不仅要识别直接命令，还必须用精确 token 覆盖 `sudo`、`python -m` 与 Shell 解释器包装；完成前新鲜全门禁能够发现局部测试未暴露的规则优先级回归。当前 Task 4 仅标为待复审，须先后通过独立规约符合性审查和代码质量审查。
+
+### 2026-07-15 01:35 +08:00 — REVIEW-007
+
+- **任务：** 修复 Task 4 首轮规格符合性与代码质量评审提出的治理绕过、审批异常泄漏、恶意异常脱敏、环境变量名边界和 legacy 证明缺口；修复后保持待复审。
+- **Superpowers 技能：** `receiving-code-review`、`test-driven-development`、`verification-before-completion`；先逐项核对评审意见与当前代码，再按 Critical→Important→Minor 分组执行纠正性 RED—GREEN。
+- **首轮评审结论：** Spec Fail / Changes requested。Critical 为策略仅依赖相邻 token 且未覆盖直接/字段网络动作；Important 为审批公开边界泄漏 FK/CHECK、非法输入及非锁 SQLite 异常，以及恶意异常 `__str__` 二次失败；Minor 为环境名无标识符/平台大小写语义和 legacy 仅查字段未通过公开管理器证明。由于独立双阶段复审未通过，`PLAN.md` 步骤 6 恢复为未完成。
+- **纠正性 TDD A：** 新增 `git -C . push`、带全局选项的 pip/docker、`npm.cmd`/`pnpm.cmd`、直接 curl、未知工具 `url/uri`、授权伪造和安全反例。旧实现得到 `11 failed, 4 passed`；最小修复统一剥离 `.exe/.cmd/.bat/.com/.ps1`，对已知命令保守扫描后续精确 operation，并显式分类工具名和网络字段，A 组转为 `15 passed`、完整策略转为 `56 passed`。随后直接 `git.cmd` operation 未进入 scope 的回归先 `1 failed`，修复后 `1 passed`。
+- **纠正性 TDD B：** 不存在 task、六类越界上下文、构造绕过、非法决定/actor/time 与非锁 SQLite 异常在旧实现共 `10 failed`，真实泄漏 `FOREIGN KEY constraint failed`、`CHECK constraint failed`、`ValueError` 和 `no such table`。修复后增加有界冻结字段与 `INVALID_CONTEXT/INVALID_DECISION/INVALID_TIME/STORAGE_ERROR`，不存在 task 固定 `NOT_FOUND`，公开数据库错误使用 `from None`；B 组 `10 passed`、审批文件 `24 passed`。BUSY/DUPLICATE 语义未改变，普通 `Exception` 与控制流 `BaseException` 分支明确分离。
+- **纠正性 TDD C/D/E：** 恶意异常 `__str__` 用例旧实现 `1 failed` 并传播含秘密二次异常，修复后固定消息并使脱敏文件先达 `8 passed`；环境名前缀/Windows 大小写用例旧实现 `2 failed`，改用 Unicode 标识符边界、Windows 不敏感/POSIX 敏感后脱敏文件 `10 passed`。UUID 旧审批 + 非取消 active task 的公开 `consume` 在旧实现已固定拒绝，因此 E 如实记录为 characterization `1 passed`，未伪造 RED。
+- **修复提交：** `269c1ae`（`fix: 封堵治理绕过并稳定审批错误（治理子智能体）`）只修改 Task 4 三个治理模块及对应测试，不实现工具执行、扫描、反馈、记忆、Agent 循环或 Web API。
+- **最终验证：** 治理目标 `97 passed, 1 skipped`；全量 pytest `199 passed, 1 skipped`；Ruff、mypy（17 个源文件）、`pip check`、`git diff --check` 均通过。`scripts/test.ps1 -Mode All` 收集 200 项并得到 `199 passed, 1 skipped`，Web ESLint 与 TypeScript 均通过。唯一 skip 仍是当前 Windows 账户不能创建目录符号链接的单一 OS 能力用例。
+- **分发检查：** wheel/sdist 重建成功；逐项检查归档，`001_initial.sql` 与 `002_governance_approvals.sql` 在两种产物中均各恰好一份。
+- **人工干预：** 控制器已按 `receiving-code-review` 独立验证评审成立并给出完整修复边界；未新增技术选择，未要求或发生真实网络与凭据操作。
+- **经验总结：** 安全策略不能把 argv 邻接当作语法保证；已知命令的全局选项和 Windows 启动器必须在不执行字符串的前提下规范化。公开审批边界也必须把所有可预期输入/存储失败收敛为不含 SQL 或业务值的固定领域错误。Task 4 当前仍待独立复审，不提前勾选步骤 6。
