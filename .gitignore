@@ -15,6 +15,7 @@ credentials/
 .harness/
 .runtime/
 .worktrees/
+.superpowers/
 *.pid
 *.log
 logs/

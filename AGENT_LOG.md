@@ -102,3 +102,12 @@
 - **智能体产出与证据：** Python/Node 引导、哈希锁、npm.cmd、预期 RED 和首次 GREEN 均成功；审计员报告 `1 passed in 0.16s`，主 Agent 独立重跑为 `1 passed in 0.09s`。审计分支无提交、无推送，试验代码未进入主分支。
 - **人工干预：** 用户批准隔离依赖安装；主 Agent 根据审计建议补充 `--strip-extras`、PowerShell 脚本参数契约和 Windows/Linux 双锁文件策略。
 - **经验总结：** 冷启动的价值不在一次成功，而在陌生执行者能否准确区分环境错误、计划缺陷和产品 RED；连续复验把隐性平台假设转成了可执行文字。
+
+### 2026-07-14 18:59 +08:00 — SDD-001
+
+- **任务：** 启动正式 Subagent-Driven Development，并为 Task 1 创建隔离 worktree 与持久进度账本。
+- **Superpowers 技能：** `subagent-driven-development`、`using-git-worktrees`。
+- **提示与上下文：** 用户选择 Subagent-Driven 方式正式实施下一步；冷启动试验代码不得复用。
+- **智能体产出与证据：** 从提交 `b364e19` 创建 `codex/foundation` 与 `.worktrees/foundation`，确认实现前基线干净；把 `.superpowers/` 加入忽略规则，供 SDD 进度账本和任务交接文件使用。
+- **人工干预：** 用户明确选择 Subagent-Driven 实施方式。
+- **经验总结：** 正式实现必须从干净分支重新执行 TDD；冷启动产物只能作为规约证据，不能成为绕过正式 RED 的实现来源。
