@@ -341,6 +341,8 @@ git commit -m "构建：建立工程骨架与质量门禁（基础子智能体�
 
 **目标：** 冻结跨模块类型契约，让 Scripted Mock、DeepSeek/Qwen 适配器和非法动作拒绝都能离线测试。
 
+**状态：** 待复审。RED 提交：`80d6175`；实际实现提交：`326a4b6`。
+
 **文件：**
 
 - 新建：`src/coding_agent_harness/domain/actions.py`、`events.py`、`models.py`
@@ -353,7 +355,7 @@ git commit -m "构建：建立工程骨架与质量门禁（基础子智能体�
 - 产出：`TaskState`、`ToolAction`、`CompleteAction`、`LLMRequest`、`LLMResponse`、`LLMProvider`、`ScriptedMockProvider`、`OpenAICompatibleProvider`、`ActionParser.parse(raw: str) -> AgentAction`。
 - 消费：Task 1 的 `HarnessSettings`。
 
-- [ ] **步骤 1：先写非法动作和 Mock 序列失败测试**
+- [x] **步骤 1：先写非法动作和 Mock 序列失败测试**
 
 ```python
 import pytest
@@ -376,13 +378,13 @@ async def test_scripted_mock_is_deterministic() -> None:
     assert provider.requests == [LLMRequest(messages=[])]
 ```
 
-- [ ] **步骤 2：确认红色结果**
+- [x] **步骤 2：确认红色结果**
 
 运行：`python -m pytest tests/domain tests/providers tests/agent/test_parser.py -v`
 
 预期：导入失败，指出 `domain.actions` 或 `providers.mock` 不存在。
 
-- [ ] **步骤 3：实现严格判别联合与 Provider 协议**
+- [x] **步骤 3：实现严格判别联合与 Provider 协议**
 
 ```python
 class ToolAction(BaseModel):
@@ -404,7 +406,7 @@ AgentAction = Annotated[ToolAction | CompleteAction, Field(discriminator="kind")
 
 `ActionParser` 必须先 `json.loads`，再用 Pydantic `TypeAdapter(AgentAction)` 校验，最后校验 `ToolAction.tool` 位于注入的工具名集合；JSON 中的 shell 字符串不得在解析阶段执行。
 
-- [ ] **步骤 4：实现 OpenAI-compatible 单次调用适配器契约**
+- [x] **步骤 4：实现 OpenAI-compatible 单次调用适配器契约**
 
 ```python
 class OpenAICompatibleProvider:
@@ -426,13 +428,13 @@ class OpenAICompatibleProvider:
 
 测试使用 `httpx.MockTransport` 分别断言 DeepSeek/Qwen base URL 配置和请求字段，不连接网络；错误按 `ProviderError(kind, retryable)` 分类。
 
-- [ ] **步骤 5：运行目标测试并重构**
+- [x] **步骤 5：运行目标测试并重构**
 
 运行：`python -m pytest tests/domain tests/providers tests/agent/test_parser.py -v`
 
 预期：全部通过；Scripted Mock 的脚本耗尽时抛出明确 `ScriptExhaustedError`。
 
-- [ ] **步骤 6：评审与提交**
+- [ ] **步骤 6：评审与提交（实现已提交，等待规约符合性与代码质量复审）**
 
 规约符合性审查重点：无高层 runner、Mock 完全可替换、未知字段拒绝。代码质量审查重点：模型不可变、Provider 不记录 API Key、异常不含请求头。
 

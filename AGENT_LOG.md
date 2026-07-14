@@ -141,3 +141,15 @@
 - **环境限制：** 当前 Windows 主机仍未安装 GNU Make，因此不伪造 `make` 执行证据；等价的 PowerShell 一键入口及其所调用的 Python、Node 质量门禁已有新鲜成功输出，该限制不阻塞 Task 1 复审。
 - **人工干预：** 无新增人工决策；用户已要求以 Subagent-Driven 方式连续推进。
 - **经验总结：** 任务状态只能在修复提交、完整验证和独立复审三者全部完成后从“待复审”改为“完成”；环境中缺少可选入口时应明确记录限制，并以实际执行的等价入口作为证据。
+
+### 2026-07-14 21:10 +08:00 — IMPL-002
+
+- **任务：** 由核心契约子智能体实现 Task 2 的领域模型、可注入 Provider 与严格动作解析。
+- **Superpowers 技能：** `test-driven-development`、`verification-before-completion`；先固化失败契约并观察产品模块缺失，再写最小实现、重构并运行完整门禁。
+- **提示与上下文：** 实现者只读取 Task 2 简报、控制器补充上下文和相关技能文件，未读取整份 `SPEC.md` 或 `PLAN.md`；Task 1 已提供 Python 3.11 虚拟环境与锁定依赖。
+- **RED 证据：** 宿主默认 `python` 首次解析到 Python 3.9 且缺少 pytest，该环境错误未计为 RED；改用仓库 `.venv` 后，目标命令收集阶段分别以 `coding_agent_harness.domain`、`providers`、`agent` 不存在产生 3 个预期错误。失败测试提交为 `80d6175`。
+- **GREEN 与实现：** 提交 `326a4b6`（`功能：建立领域契约和可注入模型接口（核心契约子智能体）`）新增 14 状态字符串枚举、严格冻结动作/任务/事件/LLM 契约、异步 Provider `Protocol`、确定性 Scripted Mock、单次 OpenAI-compatible HTTP 适配器及无副作用动作解析器；DeepSeek/Qwen 均只通过注入配置区分，测试只使用 `httpx.MockTransport`。
+- **验证证据：** 目标 pytest 为 `28 passed`，全量 pytest 为 `34 passed`；Ruff、mypy（9 个源文件）、`pip check` 均退出 0；`scripts/test.ps1 -Mode Unit` 为 `34 passed`。简报原样命令 `-Suite Unit` 也退出 0，但由于脚本参数实际名为 `Mode`，它走了默认 All 并额外通过 ESLint 与 TypeScript 检查，未将其误记为 Unit 证据。
+- **安全与范围：** 未使用高层 agent runner、未真实联网、未记录真实凭据；Provider 错误仅暴露固定 `kind`/`retryable` 与脱敏文本，不保留原始响应、请求头或网络异常对象；未实现 Agent 循环、工具执行、状态存储或后续任务能力。
+- **人工干预：** 控制器补充了 Task 2 的冻结状态集合、最小 Task/TaskEvent 约束和错误分类边界；用户重申每个 Task 完成后必须有明确提交，未新增接口选择。
+- **经验总结：** 环境失败不能冒充产品 RED；PowerShell 调用参数即使退出 0，也必须核对实际执行分支。当前 Task 2 状态为待复审，只有规约符合性与代码质量两阶段评审通过后才能标记完成。
