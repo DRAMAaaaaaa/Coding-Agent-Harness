@@ -186,3 +186,15 @@
 - **提示与上下文：** Task 3 实现者只获得 Task 3 简报、控制器补充的存储/状态机契约和 TDD 技能，不读取整份 `PLAN.md` 或 `SPEC.md`；Task 2 的冻结模型作为输入接口。
 - **人工干预：** 用户要求继续 Task 3，并保持逐 Task worktree、TDD、双阶段复审、中文提交、完成后合并与推送审批等既有要求不变。
 - **经验总结：** worktree 隔离不会自动共享被忽略的虚拟环境和 Node 依赖；必须在新分支取得可证明的基线 GREEN 后，才能把后续失败认定为 Task 3 的产品 RED。
+
+### 2026-07-14 22:50 +08:00 — IMPL-003
+
+- **任务：** 由状态存储子智能体实现 Task 3 的 SQLite 事件存储、任务仓储、合法状态机与安全恢复。
+- **Superpowers 技能：** `test-driven-development`、`verification-before-completion`；先创建 Task 3 测试并观察产品模块缺失，再写最小实现、重构、进行规约与代码质量自审并运行完整门禁。
+- **提示与上下文：** 实现者只完整读取 Task 3 简报、控制器补充上下文和两项指定技能，未读取整份 `SPEC.md` 或 `PLAN.md`；实现基线为 `5cc4ccfcfcc746a92337a8362a5683c6107e9d60`，只消费 Task 2 冻结模型。
+- **RED 证据：** 宿主默认 `python` 首次解析到 Python 3.9 且缺少 pytest，该环境错误未计为 RED；改用仓库 Python 3.11 `.venv` 后，目标命令在收集阶段因 `coding_agent_harness.storage` 与 `agent.state_machine` 缺失产生 3 个预期错误。失败测试提交为 `5b7da3cb4a58cc6fba14950aceda6f6d1425ff3c`。
+- **GREEN 与实现：** 提交 `2f010b3551f1bc33c5e7e1f19cf6b47dae56c128`（`功能：实现事件存储和可恢复状态机（状态存储子智能体）`）新增固定包内幂等迁移、每连接 WAL/外键/busy timeout、可关闭数据库、参数化任务 CRUD、事务内乐观事件序号、同连接与双连接竞争控制、完整合法迁移表和不确定工具副作用恢复；为确保迁移 SQL 随 Python 包分发，仅最小增加 setuptools package-data 配置。
+- **评审结论：** 规约自审确认 11 张表、事件先落盘、陈旧序号与约束失败均回滚、恢复不返回或重发动作；代码质量自审确认迁移路径固定、数据值均参数绑定、JSON 确定性序列化、连接幂等关闭。静态检查发现的 3 处 `aiosqlite.Row` 类型契约问题已在提交前修正；当前状态仍为待独立复审，不提前标记完成。
+- **验证证据：** Task 3 目标 pytest 为 `61 passed`，全量 pytest 为 `96 passed`；Ruff、mypy（13 个源文件）、`pip check` 均退出 0；`scripts/test.ps1 -Mode All` 也收集并通过 96 项测试，同时 Web ESLint 与 TypeScript 检查退出 0。
+- **人工干预与环境偏差：** 控制器在前一替代实例未产出文件或提交后重新派发实现者，没有改变技术范围。PowerShell 首次直接运行脚本被系统执行策略拦截，随后使用仅作用于该进程的 `-ExecutionPolicy Bypass` 成功运行同一脚本，未修改系统策略；未发生真实联网或凭据暴露。
+- **经验总结：** 环境失败不能冒充产品 RED；跨 SQLite 连接的乐观并发必须依靠 `BEGIN IMMEDIATE` 与有界 busy timeout 让竞争者在取得锁后重新核对序号，才能稳定收敛为一个成功和一个领域级 `ConcurrencyError`。

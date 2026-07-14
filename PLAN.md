@@ -151,7 +151,7 @@ class TaskOrchestrator:
 |---|---|---|---|---|---|
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
-| 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 进行中（实现子智能体） |
+| 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 待复审（RED 5b7da3c；实现 2f010b3） |
 | 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 待执行 |
 | 5 | 项目识别、扫描与 worktree | 1、2 | 可与 4 并行 | `codex/workspaces` | 待执行 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
@@ -449,6 +449,8 @@ git commit -m "功能：建立领域契约和可注入模型接口（核心契�
 
 **目标：** 以追加事件和乐观序号实现持久化、合法迁移与安全恢复。
 
+**状态：** 待复审。RED 提交：`5b7da3c`；实际实现提交：`2f010b3`。
+
 **文件：**
 
 - 新建：`src/coding_agent_harness/storage/migrations/001_initial.sql`
@@ -461,7 +463,7 @@ git commit -m "功能：建立领域契约和可注入模型接口（核心契�
 - 产出：`Database.open(path)`、`EventStore.append/list_for_task`、`TaskRepository.create/get/update_state`、`StateMachine.transition(current, event_type)`、`recover_task(events)`。
 - 消费：Task 2 的 `TaskState`、`TaskEvent`、`Task`。
 
-- [ ] **步骤 1：写事件并发和非法迁移失败测试**
+- [x] **步骤 1：写事件并发和非法迁移失败测试**
 
 ```python
 async def test_append_rejects_stale_sequence(event_store, task_event) -> None:
@@ -476,13 +478,13 @@ def test_state_machine_rejects_execution_before_plan_approval() -> None:
         StateMachine().transition(TaskState.PLANNING, "ACTION_PROPOSED")
 ```
 
-- [ ] **步骤 2：确认红色结果**
+- [x] **步骤 2：确认红色结果**
 
 运行：`python -m pytest tests/storage tests/agent/test_state_machine.py -v`
 
 预期：导入失败，存储与状态机模块不存在。
 
-- [ ] **步骤 3：实现事务、迁移和状态映射**
+- [x] **步骤 3：实现事务、迁移和状态映射**
 
 `001_initial.sql` 必须创建 `workspaces`、`tasks`、`task_events`、`plans`、`actions`、`approvals`、`tool_executions`、`verification_runs`、`artifacts`、`memory_records`、`credential_references`；启用外键和 WAL；`task_events(task_id, sequence)` 唯一。
 
@@ -504,7 +506,7 @@ LEGAL_TRANSITIONS: dict[TaskState, set[TaskState]] = {
 
 所有运行状态额外允许 `CANCELLED`；`COMPLETED`、`FAILED`、`CANCELLED` 为终态。
 
-- [ ] **步骤 4：实现恢复规则并转绿**
+- [x] **步骤 4：实现恢复规则并转绿**
 
 恢复时重放 TaskEvent；最后事件为“工具开始”但没有对应“工具完成/失败”时，状态必须变为 `WAITING_USER`，原因码 `UNCERTAIN_SIDE_EFFECT`，不得重发工具调用。
 
@@ -512,7 +514,7 @@ LEGAL_TRANSITIONS: dict[TaskState, set[TaskState]] = {
 
 预期：事件序号、WAL、重放、非法迁移和不确定副作用测试全部通过。
 
-- [ ] **步骤 5：评审与提交**
+- [x] **步骤 5：评审与提交**
 
 规约符合性审查重点：事件先落盘、恢复不重复副作用。代码质量审查重点：事务回滚、连接关闭、SQL 参数化、迁移幂等。
 
