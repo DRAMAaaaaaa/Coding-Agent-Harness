@@ -221,3 +221,13 @@
 - **提交规则：** 用户要求每个 Task 完成后创建明确提交；Task 3 的完成状态、复审结论与新鲜证据由本提交固化，实际哈希将在后续集成或进度记录中引用。
 - **人工干预：** 用户要求继续 Task 3 并保持既有要求不变；没有新增技术接口选择。分支合并到 `p1` 与远程 push 仍作为独立集成动作处理，其中 push 必须取得明确批准。
 - **经验总结：** 存储任务的完成证据不仅包括单元测试，还应验证迁移资源确实进入 wheel 与 sdist；否则源码树中的迁移成功不能证明安装后可用。
+
+### 2026-07-15 00:46 +08:00 — SDD-003
+
+- **任务：** 在独立 worktree 中启动 Task 4 的路径围栏、统一脱敏、确定性策略与版本化审批实现。
+- **Superpowers 技能：** `subagent-driven-development`、`using-git-worktrees`、`test-driven-development`。
+- **隔离环境：** 用户已把 `p1` 的 Task 1—3 历史推送到远程；控制器确认本地与 `origin/p1` 同为 `3861613` 后，从该提交创建 `codex/governance` 与 `E:\Coding Agent Harness\.worktrees\governance`。
+- **依赖与基线：** 在新 worktree 中使用 Windows 哈希锁文件重建 Python 3.11 `.venv`，使用 `npm.cmd --prefix web ci` 安装根锁依赖；npm 报告 0 个漏洞。`pip check` 通过，`scripts/test.ps1 -Mode All` 得到 102 项测试全通过，Ruff、mypy、ESLint、TypeScript 均退出 0。
+- **计划依赖修正：** Task 4 原文声称消费 Task 3 审批仓储，但 Task 3 实际只交付最小 `approvals` 表，没有审批仓储或版本化列。为遵守 SQLite 持久审批规约，Task 4 文件清单增加 `002_governance_approvals.sql`，并最小修改 `Database.open` 与 `001_initial.sql`，使用 `PRAGMA user_version` 幂等顺序升级；审批仓储仍封装在 `governance/approvals.py`，不扩展后续 API。
+- **人工干预：** 用户要求在已推送 Task 1—3 后继续执行，其他 TDD、双阶段复审、中文提交、逐 Task 完成提交和 push 审批要求保持不变。
+- **经验总结：** 当计划声称消费的底层接口并未实际交付时，应在实现前把必要的最小持久化演进写回计划；用内存替身掩盖缺口会破坏崩溃恢复和审批重放防护。
