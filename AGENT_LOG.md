@@ -231,3 +231,16 @@
 - **计划依赖修正：** Task 4 原文声称消费 Task 3 审批仓储，但 Task 3 实际只交付最小 `approvals` 表，没有审批仓储或版本化列。为遵守 SQLite 持久审批规约，Task 4 文件清单增加 `002_governance_approvals.sql`，并最小修改 `Database.open` 与 `001_initial.sql`，使用 `PRAGMA user_version` 幂等顺序升级；审批仓储仍封装在 `governance/approvals.py`，不扩展后续 API。
 - **人工干预：** 用户要求在已推送 Task 1—3 后继续执行，其他 TDD、双阶段复审、中文提交、逐 Task 完成提交和 push 审批要求保持不变。
 - **经验总结：** 当计划声称消费的底层接口并未实际交付时，应在实现前把必要的最小持久化演进写回计划；用内存替身掩盖缺口会破坏崩溃恢复和审批重放防护。
+
+### 2026-07-15 02:10 +08:00 — IMPL-004
+
+- **任务：** 由治理子智能体实现 Task 4 的路径围栏、统一脱敏、确定性策略、SQLite 版本化迁移与一次性审批。
+- **Superpowers 技能：** `test-driven-development`、`verification-before-completion`；实现者只完整读取 Task 4 简报、控制器补充上下文、指定技能与 implementer 模板，未读取整份 `SPEC.md` 或 `PLAN.md`。
+- **RED 证据：** 宿主默认 `python` 首次解析到 Python 3.9 且缺少 pytest，该环境错误未计为 RED；改用工作树 `.venv` 的 Python 3.11 后，`python -m pytest tests/governance -v` 在收集阶段因 `coding_agent_harness.governance` 不存在产生 4 个预期错误。四个治理测试文件的独立 RED 提交为 `5a2b8cb`。
+- **实现与迁移：** 提交 `c14d50d`（`安全：实现路径围栏和版本化审批（治理子智能体）`）新增基于 `Path.resolve`/`Path.is_relative_to` 的路径围栏、递归 JSON 脱敏副本、固定次序精确 token 策略、`PRAGMA user_version` 001→002 迁移，以及复用 `operation_lock + BEGIN IMMEDIATE` 的 SQLite 审批管理器。旧 v1 审批被保留为拒绝、已消费、已过期的 legacy 记录；审批绑定动作、事件序号、规范化范围、任务状态和配置版本，消费后持久拒绝重放。
+- **纠正性 TDD：** GREEN 后自审新增 JSON 引号密钥、Shell `git push`、任务落盘取消、SQLite BUSY、pending/not-found 区分等回归，旧实现得到 `5 failed, 7 passed`；补强后又用命令包装器和缺失参数用例得到 `6 failed, 2 passed`。最小修复覆盖带引号赋值、Shell 包装器精确 token、落盘取消检查与固定领域错误。最终门禁还捕获 `read_file` 五类路径字段优先级回归（4 failed），修正为至少一个受围栏字段后恢复 GREEN。
+- **验证证据：** 最新治理目标为 `68 passed, 1 skipped`；`pip check` 无损坏依赖；`scripts/test.ps1 -Mode All` 收集 171 项并得到 `170 passed, 1 skipped`，Ruff、mypy、Web ESLint 和 TypeScript 均退出 0。唯一跳过项是当前 Windows 账户不能创建目录符号链接；路径穿越、同前缀兄弟目录、非既有尾部和 Windows 大小写核心用例均实际通过。首次直接调用 PowerShell 脚本被系统执行策略阻止，随后使用仅当前进程生效的 `-ExecutionPolicy Bypass` 成功执行同一脚本。
+- **分发检查：** `python -m build --wheel --sdist` 成功构建 wheel 与 sdist；逐项检查归档，`001_initial.sql` 和 `002_governance_approvals.sql` 在两种产物中都各恰好出现一次。
+- **安全与范围：** 未真实联网、未使用真实凭据、未使用 sleep 竞争或高层 Agent runner；真实 Provider 的 LLM 授权与工具网络规则完全分离，伪造 `provider_authorized` 不能绕过。未实现工具执行、Workspace 扫描、反馈、记忆、Agent 主循环或 Web API。
+- **人工干预：** 控制器在各安全检查点询问材料读取、RED/GREEN、静态门禁和分发状态，未改变冻结接口或安全语义。
+- **经验总结：** 安全规则不仅要识别直接命令，还必须用精确 token 覆盖 `sudo`、`python -m` 与 Shell 解释器包装；完成前新鲜全门禁能够发现局部测试未暴露的规则优先级回归。当前 Task 4 仅标为待复审，须先后通过独立规约符合性审查和代码质量审查。
