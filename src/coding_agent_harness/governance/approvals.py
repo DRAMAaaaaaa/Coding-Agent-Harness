@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from coding_agent_harness.domain.actions import TaskState
 from coding_agent_harness.storage.database import Database
@@ -29,7 +29,17 @@ _ERROR_MESSAGES = {
     "TASK_CANCELLED": "任务已取消",
     "DUPLICATE": "审批目标已存在",
     "BUSY": "审批存储正忙",
+    "INVALID_CONTEXT": "审批上下文无效",
+    "INVALID_DECISION": "审批决定无效",
+    "INVALID_TIME": "审批时间无效",
+    "STORAGE_ERROR": "审批存储失败",
 }
+_MAX_ACTION_ID_LENGTH = 256
+_MAX_SCOPE_LENGTH = 8_192
+_MAX_CONFIG_VERSION_LENGTH = 128
+_MAX_REASON_CODE_LENGTH = 128
+_MAX_ACTOR_LENGTH = 256
+_MAX_EVENT_SEQUENCE = 2**63 - 1
 
 
 class ApprovalDecision(StrEnum):
@@ -41,11 +51,11 @@ class ApprovalDecision(StrEnum):
 class ApprovalContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    action_id: str
-    event_sequence: int
-    normalized_scope: str
+    action_id: str = Field(min_length=1, max_length=_MAX_ACTION_ID_LENGTH)
+    event_sequence: int = Field(ge=0, le=_MAX_EVENT_SEQUENCE)
+    normalized_scope: str = Field(min_length=1, max_length=_MAX_SCOPE_LENGTH)
     task_state: TaskState
-    config_version: str
+    config_version: str = Field(min_length=1, max_length=_MAX_CONFIG_VERSION_LENGTH)
 
 
 class ApprovalRecord(BaseModel):
@@ -94,6 +104,7 @@ class ApprovalManager:
         async with self._database.operation_lock:
             try:
                 await self._database.connection.execute("BEGIN IMMEDIATE")
+                self._validate_request(reason_code, context)
                 now = self._utc_now()
                 expiration = _require_aware(expires_at)
                 if expiration <= now:
@@ -128,9 +139,12 @@ class ApprovalManager:
                     _record_parameters(record),
                 )
                 await self._database.connection.commit()
-            except BaseException as error:
+            except Exception as error:
                 await self._database.connection.rollback()
                 self._raise_stable_write_error(error)
+            except BaseException:
+                await self._database.connection.rollback()
+                raise
         return record
 
     async def decide(
@@ -143,8 +157,14 @@ class ApprovalManager:
         async with self._database.operation_lock:
             try:
                 await self._database.connection.execute("BEGIN IMMEDIATE")
-                if decision not in {ApprovalDecision.APPROVED, ApprovalDecision.DENIED}:
-                    raise ValueError("审批决定必须是 APPROVED 或 DENIED")
+                self._validate_context(context)
+                if (
+                    not isinstance(decision, ApprovalDecision)
+                    or decision not in {ApprovalDecision.APPROVED, ApprovalDecision.DENIED}
+                    or not actor
+                    or len(actor) > _MAX_ACTOR_LENGTH
+                ):
+                    raise ApprovalError("INVALID_DECISION")
                 now = self._utc_now()
                 record = await self._load(approval_id)
                 await self._ensure_task_active(record.task_id)
@@ -162,9 +182,12 @@ class ApprovalManager:
                     (decision.value, actor, now.isoformat(), str(approval_id)),
                 )
                 await self._database.connection.commit()
-            except BaseException as error:
+            except Exception as error:
                 await self._database.connection.rollback()
                 self._raise_stable_write_error(error)
+            except BaseException:
+                await self._database.connection.rollback()
+                raise
         return record.model_copy(
             update={
                 "decision": decision,
@@ -181,6 +204,7 @@ class ApprovalManager:
         async with self._database.operation_lock:
             try:
                 await self._database.connection.execute("BEGIN IMMEDIATE")
+                self._validate_context(context)
                 now = self._utc_now()
                 record = await self._load(approval_id)
                 await self._ensure_task_active(record.task_id)
@@ -194,9 +218,12 @@ class ApprovalManager:
                     (now.isoformat(), str(approval_id)),
                 )
                 await self._database.connection.commit()
-            except BaseException as error:
+            except Exception as error:
                 await self._database.connection.rollback()
                 self._raise_stable_write_error(error)
+            except BaseException:
+                await self._database.connection.rollback()
+                raise
         return record.model_copy(update={"consumed_at": now})
 
     async def _load(self, approval_id: UUID) -> ApprovalRecord:
@@ -215,8 +242,28 @@ class ApprovalManager:
             (str(task_id),),
         )
         row = await cursor.fetchone()
-        if row is not None and str(row[0]) == TaskState.CANCELLED.value:
+        if row is None:
+            raise ApprovalError("NOT_FOUND")
+        if str(row[0]) == TaskState.CANCELLED.value:
             raise ApprovalError("TASK_CANCELLED")
+
+    @staticmethod
+    def _validate_request(reason_code: str, context: ApprovalContext) -> None:
+        ApprovalManager._validate_context(context)
+        if not reason_code or len(reason_code) > _MAX_REASON_CODE_LENGTH:
+            raise ApprovalError("INVALID_CONTEXT")
+
+    @staticmethod
+    def _validate_context(context: ApprovalContext) -> None:
+        valid = (
+            0 < len(context.action_id) <= _MAX_ACTION_ID_LENGTH
+            and 0 <= context.event_sequence <= _MAX_EVENT_SEQUENCE
+            and 0 < len(context.normalized_scope) <= _MAX_SCOPE_LENGTH
+            and 0 < len(context.config_version) <= _MAX_CONFIG_VERSION_LENGTH
+            and isinstance(context.task_state, TaskState)
+        )
+        if not valid:
+            raise ApprovalError("INVALID_CONTEXT")
 
     @staticmethod
     def _validate_live(
@@ -245,19 +292,21 @@ class ApprovalManager:
         return _require_aware(self._clock())
 
     @staticmethod
-    def _raise_stable_write_error(error: BaseException) -> None:
+    def _raise_stable_write_error(error: Exception) -> None:
         if isinstance(error, ApprovalError):
-            raise error
+            raise error from None
         if isinstance(error, sqlite3.OperationalError) and _is_lock_contention(error):
             raise ApprovalError("BUSY") from None
         if isinstance(error, sqlite3.IntegrityError) and _is_unique_violation(error):
             raise ApprovalError("DUPLICATE") from None
+        if isinstance(error, (sqlite3.Error, ValueError, TypeError)):
+            raise ApprovalError("STORAGE_ERROR") from None
         raise error
 
 
 def _require_aware(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("时间必须包含时区")
+        raise ApprovalError("INVALID_TIME")
     return value.astimezone(UTC)
 
 

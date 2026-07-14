@@ -243,3 +243,93 @@ def test_normalized_scope_is_redacted_before_return(
 
     assert "abc-123" not in result.normalized_scope
     assert "[REDACTED]" in result.normalized_scope
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["git", "-C", ".", "push", "origin", "main"],
+        ["pip", "--disable-pip-version-check", "install", "x"],
+        ["docker", "--config", "cfg", "push", "image"],
+        ["npm.cmd", "install", "x"],
+        ["pnpm.cmd", "add", "x"],
+    ],
+)
+def test_global_options_and_windows_launchers_cannot_bypass_policy(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    argv: list[str],
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": argv}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("curl", {"url": "https://example.com"}),
+        ("fetch_artifact", {"uri": "https://example.com/artifact"}),
+        ("special_network_tool", {"url": "https://example.com/api"}),
+    ],
+)
+@pytest.mark.parametrize("llm_api_authorized", [False, True])
+def test_direct_or_url_field_network_actions_always_require_approval(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    tool: str,
+    arguments: dict[str, object],
+    llm_api_authorized: bool,
+) -> None:
+    action = _action(
+        tool,
+        {**arguments, "provider_authorized": True},
+    )
+
+    result = policy.evaluate(
+        action,
+        _context(
+            tmp_path / "workspace",
+            llm_api_authorized=llm_api_authorized,
+        ),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["git", "status"],
+        ["git", "-C", ".", "log", "--oneline"],
+        ["pip", "--disable-pip-version-check", "list"],
+        ["docker", "--config", "cfg", "images"],
+    ],
+)
+def test_safe_inspection_operations_remain_allowed(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    argv: list[str],
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": argv}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert (result.decision, result.reason_code) == (PolicyDecision.ALLOW, "SAFE")
+
+
+def test_direct_windows_launcher_operation_is_bound_to_scope(
+    policy: PolicyEngine,
+    tmp_path: Path,
+) -> None:
+    result = policy.evaluate(
+        _action("git.cmd", {"operation": "push"}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert "push" in result.normalized_scope

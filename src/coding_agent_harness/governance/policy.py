@@ -11,6 +11,8 @@ from coding_agent_harness.governance.redaction import Redactor
 
 
 _PATH_FIELDS = ("path", "cwd", "source", "destination", "target")
+_NETWORK_FIELDS = ("url", "uri")
+_WINDOWS_LAUNCHER_SUFFIXES = (".exe", ".cmd", ".bat", ".com", ".ps1")
 _INSTALL_COMMANDS = frozenset({"pip", "pip3", "npm", "pnpm", "yarn", "poetry", "uv"})
 _INSTALL_OPERATIONS = frozenset({"install", "add"})
 _NETWORK_COMMANDS = frozenset({"curl", "wget"})
@@ -71,7 +73,7 @@ class PolicyEngine:
             )
 
         scope = self._scope(action, argv, safe_paths)
-        tool = action.tool.casefold()
+        tool = self._token(action.tool)
         tokens = tuple(self._token(token) for token in argv)
 
         if tool == "delete_path":
@@ -81,6 +83,10 @@ class PolicyEngine:
                 PolicyDecision.REQUIRE_APPROVAL, "DEPENDENCY_INSTALL", scope, context
             )
         if self._is_network(tokens):
+            return self._result(
+                PolicyDecision.REQUIRE_APPROVAL, "TOOL_NETWORK", scope, context
+            )
+        if self._is_direct_network(tool, action.arguments):
             return self._result(
                 PolicyDecision.REQUIRE_APPROVAL, "TOOL_NETWORK", scope, context
             )
@@ -134,10 +140,14 @@ class PolicyEngine:
             values["argv"] = argv
         if paths:
             values["paths"] = {key: str(value) for key, value in sorted(paths.items())}
-        if action.tool.casefold() == "git":
+        if self._token(action.tool) == "git":
             operation = action.arguments.get("operation")
             if isinstance(operation, str):
                 values["operation"] = operation
+        for field in _NETWORK_FIELDS:
+            value = action.arguments.get(field)
+            if isinstance(value, str):
+                values[field] = value
         sanitized = self._redactor.sanitize(values).value
         return json.dumps(sanitized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -157,7 +167,11 @@ class PolicyEngine:
 
     @staticmethod
     def _token(token: str) -> str:
-        return Path(token).name.casefold().removesuffix(".exe")
+        normalized = Path(token).name.casefold()
+        for suffix in _WINDOWS_LAUNCHER_SUFFIXES:
+            if normalized.endswith(suffix):
+                return normalized[: -len(suffix)]
+        return normalized
 
     @staticmethod
     def _git_operation(action: ToolAction) -> str:
@@ -166,7 +180,7 @@ class PolicyEngine:
 
     @staticmethod
     def _known_arguments_are_valid(action: ToolAction) -> bool:
-        tool = action.tool.casefold()
+        tool = PolicyEngine._token(action.tool)
         if tool == "git":
             return isinstance(action.arguments.get("operation"), str)
         if tool == "delete_path":
@@ -182,22 +196,18 @@ class PolicyEngine:
 
     @staticmethod
     def _is_shell_git_remote(tokens: tuple[str, ...]) -> bool:
-        return any(
-            command == "git" and operation in _GIT_REMOTE_OPERATIONS
-            for command, operation in zip(tokens, tokens[1:], strict=False)
+        return PolicyEngine._command_has_operation(
+            tokens,
+            frozenset({"git"}),
+            _GIT_REMOTE_OPERATIONS,
         )
 
     @staticmethod
     def _is_install(tokens: tuple[str, ...]) -> bool:
-        pairs = zip(tokens, tokens[1:], strict=False)
-        if any(
-            command in _INSTALL_COMMANDS and operation in _INSTALL_OPERATIONS
-            for command, operation in pairs
-        ):
-            return True
-        return any(
-            tokens[index : index + 3] == ("uv", "pip", "install")
-            for index in range(max(0, len(tokens) - 2))
+        return PolicyEngine._command_has_operation(
+            tokens,
+            _INSTALL_COMMANDS,
+            _INSTALL_OPERATIONS,
         )
 
     @staticmethod
@@ -210,13 +220,38 @@ class PolicyEngine:
 
     @staticmethod
     def _is_publish(tokens: tuple[str, ...]) -> bool:
-        pairs = {
-            ("twine", "upload"),
-            ("docker", "push"),
-            ("gh", "release"),
-            ("npm", "publish"),
+        operations = {
+            "twine": frozenset({"upload"}),
+            "docker": frozenset({"push"}),
+            "gh": frozenset({"release"}),
+            "npm": frozenset({"publish"}),
         }
-        return any(pair in pairs for pair in zip(tokens, tokens[1:], strict=False))
+        return any(
+            PolicyEngine._command_has_operation(
+                tokens,
+                frozenset({command}),
+                risky_operations,
+            )
+            for command, risky_operations in operations.items()
+        )
+
+    @staticmethod
+    def _is_direct_network(tool: str, arguments: Mapping[str, object]) -> bool:
+        return tool in _NETWORK_COMMANDS or any(
+            isinstance(arguments.get(field), str) for field in _NETWORK_FIELDS
+        )
+
+    @staticmethod
+    def _command_has_operation(
+        tokens: tuple[str, ...],
+        commands: frozenset[str],
+        operations: frozenset[str],
+    ) -> bool:
+        return any(
+            command in commands
+            and any(token in operations for token in tokens[index + 1 :])
+            for index, command in enumerate(tokens)
+        )
 
     @staticmethod
     def _is_high_risk_shell(tokens: tuple[str, ...]) -> bool:

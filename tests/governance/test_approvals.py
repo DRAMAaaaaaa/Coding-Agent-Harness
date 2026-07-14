@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from coding_agent_harness.domain.actions import TaskState
 from coding_agent_harness.governance.approvals import (
@@ -84,6 +85,9 @@ async def test_database_migrates_v1_legacy_approval_and_reopen_is_idempotent(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "legacy.sqlite3"
+    workspace_id = uuid4()
+    task_id = uuid4()
+    approval_id = uuid4()
     connection = sqlite3.connect(path)
     migration = (
         Path(__file__).parents[2]
@@ -95,7 +99,7 @@ async def test_database_migrates_v1_legacy_approval_and_reopen_is_idempotent(
     ).read_text(encoding="utf-8")
     connection.executescript(migration)
     connection.execute("PRAGMA user_version=1")
-    connection.execute("INSERT INTO workspaces (id) VALUES (?)", ("workspace-1",))
+    connection.execute("INSERT INTO workspaces (id) VALUES (?)", (str(workspace_id),))
     connection.execute(
         """
         INSERT INTO tasks (
@@ -104,10 +108,10 @@ async def test_database_migrates_v1_legacy_approval_and_reopen_is_idempotent(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            "task-1",
-            "workspace-1",
+            str(task_id),
+            str(workspace_id),
             "legacy",
-            TaskState.CANCELLED.value,
+            TaskState.WAITING_ACTION_APPROVAL.value,
             1,
             1.0,
             NOW.isoformat(),
@@ -116,7 +120,7 @@ async def test_database_migrates_v1_legacy_approval_and_reopen_is_idempotent(
     )
     connection.execute(
         "INSERT INTO approvals (id, task_id, decision, created_at) VALUES (?, ?, ?, ?)",
-        ("approval-1", "task-1", "APPROVED", NOW.isoformat()),
+        (str(approval_id), str(task_id), "APPROVED", NOW.isoformat()),
     )
     connection.commit()
     connection.close()
@@ -129,7 +133,7 @@ async def test_database_migrates_v1_legacy_approval_and_reopen_is_idempotent(
     legacy = await (
         await first.connection.execute(
             "SELECT decision, consumed_at, expires_at FROM approvals WHERE id = ?",
-            ("approval-1",),
+            (str(approval_id),),
         )
     ).fetchone()
     await first.close()
@@ -138,7 +142,7 @@ async def test_database_migrates_v1_legacy_approval_and_reopen_is_idempotent(
     try:
         count = await (
             await second.connection.execute(
-                "SELECT COUNT(*) FROM approvals WHERE id = ?", ("approval-1",)
+                "SELECT COUNT(*) FROM approvals WHERE id = ?", (str(approval_id),)
             )
         ).fetchone()
         assert version == (2,)
@@ -158,6 +162,19 @@ async def test_database_migrates_v1_legacy_approval_and_reopen_is_idempotent(
         assert legacy[0] == ApprovalDecision.DENIED.value
         assert legacy[1] is not None and legacy[2] is not None
         assert count == (1,)
+        legacy_context = ApprovalContext(
+            action_id=f"legacy:{approval_id}",
+            event_sequence=0,
+            normalized_scope="legacy",
+            task_state=TaskState.CANCELLED,
+            config_version="legacy-v1",
+        )
+        with pytest.raises(ApprovalError) as rejected:
+            await ApprovalManager(second, _Clock(), uuid4).consume(
+                approval_id,
+                legacy_context,
+            )
+        assert rejected.value.reason_code in {"REPLAYED", "DENIED", "EXPIRED"}
     finally:
         await second.close()
 
@@ -376,5 +393,137 @@ async def test_pending_and_missing_records_have_distinct_stable_errors(tmp_path:
             await manager.consume(uuid4(), context)
         assert pending.value.reason_code == "NOT_APPROVED"
         assert missing.value.reason_code == "NOT_FOUND"
+    finally:
+        await database.close()
+
+
+async def test_request_for_missing_task_is_a_stable_not_found_error(tmp_path: Path) -> None:
+    database = await Database.open(tmp_path / "missing-task.sqlite3")
+    try:
+        with pytest.raises(ApprovalError) as captured:
+            await ApprovalManager(database, _Clock(), uuid4).request(
+                uuid4(),
+                "DANGEROUS",
+                _context(),
+                NOW + timedelta(minutes=1),
+            )
+        assert captured.value.reason_code == "NOT_FOUND"
+        assert "FOREIGN KEY" not in str(captured.value)
+        assert "INSERT" not in str(captured.value)
+    finally:
+        await database.close()
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"action_id": ""},
+        {"action_id": "a" * 257},
+        {"event_sequence": -1},
+        {"event_sequence": 2**63},
+        {"normalized_scope": ""},
+        {"config_version": ""},
+    ],
+)
+def test_approval_context_rejects_empty_negative_or_unbounded_values(
+    updates: dict[str, object],
+) -> None:
+    values: dict[str, object] = {
+        "action_id": "action-1",
+        "event_sequence": 8,
+        "normalized_scope": "scope",
+        "task_state": TaskState.WAITING_ACTION_APPROVAL,
+        "config_version": "cfg-4",
+    }
+    values.update(updates)
+
+    with pytest.raises(ValidationError):
+        ApprovalContext.model_validate(values, strict=True)
+
+
+async def test_manager_rejects_constructed_invalid_context_with_fixed_code(
+    tmp_path: Path,
+) -> None:
+    database, manager, task_id = await _manager(tmp_path / "invalid-context.sqlite3")
+    invalid = ApprovalContext.model_construct(
+        action_id="",
+        event_sequence=-1,
+        normalized_scope="",
+        task_state=TaskState.WAITING_ACTION_APPROVAL,
+        config_version="",
+    )
+    try:
+        with pytest.raises(ApprovalError) as captured:
+            await manager.request(
+                task_id,
+                "",
+                invalid,
+                NOW + timedelta(minutes=1),
+            )
+        assert captured.value.reason_code == "INVALID_CONTEXT"
+    finally:
+        await database.close()
+
+
+async def test_invalid_decision_actor_and_time_have_fixed_codes(tmp_path: Path) -> None:
+    database, manager, task_id = await _manager(tmp_path / "invalid-inputs.sqlite3")
+    context = _context()
+    try:
+        with pytest.raises(ApprovalError) as invalid_time:
+            await manager.request(
+                task_id,
+                "DANGEROUS",
+                context,
+                NOW.replace(tzinfo=None),
+            )
+        assert invalid_time.value.reason_code == "INVALID_TIME"
+
+        requested = await manager.request(
+            task_id,
+            "DANGEROUS",
+            context,
+            NOW + timedelta(minutes=1),
+        )
+        with pytest.raises(ApprovalError) as invalid_decision:
+            await manager.decide(
+                requested.id,
+                ApprovalDecision.PENDING,
+                "reviewer",
+                context,
+            )
+        assert invalid_decision.value.reason_code == "INVALID_DECISION"
+
+        with pytest.raises(ApprovalError) as invalid_actor:
+            await manager.decide(
+                requested.id,
+                ApprovalDecision.APPROVED,
+                "",
+                context,
+            )
+        assert invalid_actor.value.reason_code == "INVALID_DECISION"
+    finally:
+        await database.close()
+
+
+async def test_non_lock_sqlite_error_is_sanitized_as_storage_error(tmp_path: Path) -> None:
+    database, manager, task_id = await _manager(tmp_path / "storage-error.sqlite3")
+    await database.connection.execute("DROP TABLE approvals")
+    await database.connection.commit()
+    try:
+        with pytest.raises(ApprovalError) as captured:
+            await manager.request(
+                task_id,
+                "DANGEROUS",
+                _context(),
+                NOW + timedelta(minutes=1),
+            )
+        error = captured.value
+        assert error.reason_code == "STORAGE_ERROR"
+        assert error.__cause__ is None
+        assert error.__suppress_context__
+        rendered = f"{error!s} {error!r}".casefold()
+        assert "sqlite" not in rendered
+        assert "approvals" not in rendered
+        assert "insert" not in rendered
     finally:
         await database.close()

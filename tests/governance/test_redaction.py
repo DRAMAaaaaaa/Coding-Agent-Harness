@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -104,3 +105,51 @@ class _SecretRepr:
 def test_unsupported_object_is_rejected_without_calling_repr() -> None:
     with pytest.raises(TypeError, match="^不支持的脱敏值类型$"):
         Redactor().sanitize(_SecretRepr())
+
+
+class _ExplodingMessageError(RuntimeError):
+    def __str__(self) -> str:
+        raise RuntimeError("Bearer nested-exception-secret")
+
+    def __repr__(self) -> str:
+        raise AssertionError("不得调用恶意异常的 repr")
+
+
+def test_exception_with_failing_str_becomes_fixed_safe_message() -> None:
+    result = Redactor().sanitize(_ExplodingMessageError())
+
+    assert result.value == {
+        "exception_type": "_ExplodingMessageError",
+        "message": "[REDACTED]",
+    }
+    assert result.rule_names == ()
+    rendered = json.dumps(result.value, ensure_ascii=False)
+    assert "nested-exception-secret" not in rendered
+
+
+def test_environment_name_uses_identifier_boundaries_and_platform_case() -> None:
+    result = Redactor(sensitive_env={"TOKEN": "exact-secret"}).sanitize(
+        "TOKENIZER TOKEN token"
+    )
+
+    expected = (
+        "TOKENIZER [REDACTED] [REDACTED]"
+        if os.name == "nt"
+        else "TOKENIZER [REDACTED] token"
+    )
+    assert result.value == expected
+    assert result.rule_names == ("SENSITIVE_ENV_NAME",)
+
+
+def test_environment_dict_key_uses_same_platform_case_semantics() -> None:
+    redactor = Redactor(sensitive_env={"DEPLOY_KEY": "exact-secret"})
+    boundary = redactor.sanitize({"DEPLOY_KEYSTONE": "visible"})
+    differently_cased = redactor.sanitize({"deploy_key": {"nested": "visible"}})
+
+    assert boundary.value == {"DEPLOY_KEYSTONE": "visible"}
+    if os.name == "nt":
+        assert differently_cased.value == {"[REDACTED]": "[REDACTED]"}
+        assert differently_cased.rule_names == ("SENSITIVE_ENV_NAME",)
+    else:
+        assert differently_cased.value == {"deploy_key": {"nested": "visible"}}
+        assert differently_cased.rule_names == ()

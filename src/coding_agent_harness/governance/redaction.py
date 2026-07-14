@@ -1,3 +1,4 @@
+import os
 import re
 from collections.abc import Mapping
 
@@ -38,8 +39,14 @@ class Redactor:
         self._environment_values = tuple(
             sorted({value for value in self._environment.values() if value}, key=len, reverse=True)
         )
-        self._environment_names = tuple(
-            sorted(self._environment, key=len, reverse=True)
+        self._environment_case_insensitive = os.name == "nt"
+        flags = re.IGNORECASE if self._environment_case_insensitive else 0
+        self._environment_name_patterns = tuple(
+            re.compile(rf"(?<!\w){re.escape(name)}(?!\w)", flags)
+            for name in sorted(self._environment, key=len, reverse=True)
+        )
+        self._environment_key_names = frozenset(
+            self._normalize_environment_name(name) for name in self._environment
         )
 
     def sanitize(self, value: object) -> RedactionResult:
@@ -49,9 +56,13 @@ class Redactor:
 
     def _sanitize_value(self, value: object, rules: set[str]) -> JsonValue:
         if isinstance(value, BaseException):
+            try:
+                message = str(value)
+            except Exception:
+                message = _REDACTED
             return {
                 "exception_type": type(value).__name__,
-                "message": self._sanitize_text(str(value), rules),
+                "message": self._sanitize_text(message, rules),
             }
         if value is None or isinstance(value, (bool, int, float)):
             return value
@@ -83,9 +94,9 @@ class Redactor:
         sanitized, count = _ASSIGNMENT.subn(_REDACTED, sanitized)
         if count:
             rules.add("SECRET_ASSIGNMENT")
-        for name in self._environment_names:
-            if name in sanitized:
-                sanitized = sanitized.replace(name, _REDACTED)
+        for pattern in self._environment_name_patterns:
+            sanitized, count = pattern.subn(_REDACTED, sanitized)
+            if count:
                 rules.add("SENSITIVE_ENV_NAME")
         for secret in self._environment_values:
             if secret in sanitized:
@@ -94,9 +105,15 @@ class Redactor:
         return sanitized
 
     def _is_sensitive_key(self, key: str) -> bool:
-        return key.casefold() in _SENSITIVE_KEYS or key in self._environment
+        return (
+            key.casefold() in _SENSITIVE_KEYS
+            or self._normalize_environment_name(key) in self._environment_key_names
+        )
 
     def _key_rule(self, key: str) -> str:
-        if key in self._environment:
+        if self._normalize_environment_name(key) in self._environment_key_names:
             return "SENSITIVE_ENV_NAME"
         return "SECRET_ASSIGNMENT"
+
+    def _normalize_environment_name(self, name: str) -> str:
+        return name.casefold() if self._environment_case_insensitive else name
