@@ -165,3 +165,14 @@
 - **书面一致性：** `PLAN.md` 总表 Task 2 已由“进行中（实现子智能体）”修正为“待复审”，任务状态行已回填修复提交；`.superpowers/sdd/task-2-report.md` 保留首轮证据并追加本次评审修复证据。
 - **人工干预：** 控制器转达并预先验证了首轮评审技术反馈，明确要求以纠正性 TDD 修复；没有新增接口或范围选择。
 - **经验总结：** “调用一次 `client.post`”不等于“只产生一次传输”；可注入客户端的默认重定向策略必须在安全边界调用点显式覆盖。当前状态仍为待复审，须经后续两阶段复审才能完成。
+
+### 2026-07-14 21:53 +08:00 — REVIEW-004
+
+- **任务：** 完成 Task 2 修复后的规格符合性复审、代码质量复审和控制器独立验证，并正式关闭任务。
+- **Superpowers 技能：** `subagent-driven-development`、`requesting-code-review`、`verification-before-completion`。
+- **评审范围：** 原任务基线 `f85f2b2` 到修复书面提交 `63ad107`；更新后的评审包包含 5 笔提交的顺序、文件统计和完整统一差异。
+- **复审结论：** 同一评审子智能体确认 `follow_redirects=False` 与 307 回归测试关闭了首轮 Important：即使注入客户端默认跟随重定向，Provider 仍只产生一次传输，并把 307 分类为不可重试 `http_status`。规格符合性为 Pass，代码质量为 Approved；没有新的 Critical、Important 或 Minor。
+- **控制器新鲜验证：** `.venv` 中 Provider 目标测试为 `16 passed`；Ruff 为 `All checks passed!`；mypy 为 9 个源文件无问题；`pip check` 为 `No broken requirements found.`；`scripts/test.ps1 -Mode All` 收集 35 项并全部通过，同时 Web ESLint 和 TypeScript 检查退出 0。全部命令于本条记录前实际运行成功。
+- **提交规则：** 用户要求每个 Task 完成后由控制器创建一次明确提交；Task 2 的最终完成状态、复审结论和验证证据在本提交中固化，实际哈希将在后续进度记录中引用。
+- **人工干预：** 用户只补充逐 Task 提交规则，没有改变 Task 2 技术接口或安全边界。
+- **经验总结：** 完成提交应位于实现、纠正性 TDD、完整验证和独立复审之后，作为可查阅、可回退的任务边界；提交自身无法预先记录自己的哈希，因此后续任务账本负责引用其实际值。
