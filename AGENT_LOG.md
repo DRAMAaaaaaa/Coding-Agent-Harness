@@ -1,41 +1,50 @@
-# Agent Log
+# 智能体工作日志
 
-This chronological log records process evidence for the AI4SE project. It must never contain credentials or fabricated actions.
+本日志按时间顺序记录 AI4SE 项目的过程证据。日志中严禁出现凭据或虚构行为。
 
-## Entries
+## 日志条目
 
 ### 2026-07-14 14:34 +08:00 — INIT-001
 
-- **Task:** Initialize the local workspace from the GitHub repository.
-- **Superpowers skill:** `using-superpowers`.
-- **Prompt / context:** The human supplied `https://github.com/DRAMAaaaaaa/Coding-Agent-Harness.git` and authorized repository initialization only.
-- **Agent output / evidence:** Cloned `origin/main`; verified clean tracking state at commit `d6b7f93` (`Initial commit`). No subagent was used.
-- **Human intervention:** The human selected a deterministic feedback loop as the project's main contribution in the initial README.
-- **Lesson:** Repository initialization must remain separate from product implementation because the required specification gates have not passed.
+- **任务：** 从 GitHub 仓库初始化本地工作区。
+- **Superpowers 技能：** `using-superpowers`。
+- **提示与上下文：** 用户提供了 `https://github.com/DRAMAaaaaaa/Coding-Agent-Harness.git`，并且只授权初始化仓库。
+- **智能体产出与证据：** 克隆 `origin/main`，确认提交 `d6b7f93`（`Initial commit`）处于干净的跟踪状态。未使用子智能体。
+- **人工干预：** 用户在初始 README 中选择确定性反馈闭环作为项目的主要贡献。
+- **经验总结：** 由于必需的规约门禁尚未通过，仓库初始化必须与产品实现保持分离。
 
 ### 2026-07-14 14:40 +08:00 — GOV-001
 
-- **Task:** Add the initial `.gitignore` security baseline.
-- **Superpowers skill:** `using-superpowers`; brainstorming and TDD were intentionally not invoked because this was repository governance rather than product behavior.
-- **Prompt / context:** The human explicitly requested a `.gitignore` file.
-- **Agent output / evidence:** Added ignore rules for credentials, local configuration, harness state, logs, Python/Node caches, build artifacts, IDE files, and local container overrides. `git diff --check` passed. No subagent was used.
-- **Human intervention:** The human limited the requested change to `.gitignore`.
-- **Lesson:** Secret exclusions should be established before any provider integration or local testing creates credential-bearing files.
+- **任务：** 添加初始 `.gitignore` 安全基线。
+- **Superpowers 技能：** `using-superpowers`；本次属于仓库治理而非产品行为，因此没有调用 Brainstorming 或 TDD。
+- **提示与上下文：** 用户明确要求添加 `.gitignore` 文件。
+- **智能体产出与证据：** 添加凭据、本地配置、Harness 状态、日志、Python/Node 缓存、构建产物、IDE 文件和本地容器覆盖配置的忽略规则。`git diff --check` 通过。未使用子智能体。
+- **人工干预：** 用户将本次变更范围限定为 `.gitignore`。
+- **经验总结：** 在 Provider 集成或本地测试产生可能包含凭据的文件前，应先建立秘密文件排除规则。
 
 ### 2026-07-14 14:43 +08:00 — GOV-002
 
-- **Task:** Establish the remaining pre-implementation process and security baseline.
-- **Superpowers skill:** `using-superpowers` with the Codex platform adaptation.
-- **Prompt / context:** The human approved execution of plan step 1 and asked whether Superpowers was required.
-- **Agent output / evidence:** Enabled Codex multi-agent support; added repository instructions, process-log structure, line-ending/editor rules, and a credential-free environment template. No subagent was used because this bounded governance task did not benefit from delegation.
-- **Human intervention:** The human authorized step 1 but not product implementation.
-- **Lesson:** Superpowers is required as a process gate even when specialized design or TDD skills do not apply to a governance-only change.
+- **任务：** 建立其余实现前流程与安全基线。
+- **Superpowers 技能：** `using-superpowers`，并采用 Codex 平台适配规则。
+- **提示与上下文：** 用户批准执行计划步骤 1，并询问是否必须使用 Superpowers。
+- **智能体产出与证据：** 启用 Codex 多智能体支持；添加仓库协作说明、过程日志结构、行尾与编辑器规则，以及不含凭据的环境变量示例。该治理任务范围明确，不需要委派，因此未使用子智能体。
+- **人工干预：** 用户授权步骤 1，但未授权产品实现。
+- **经验总结：** 即使治理任务不需要专门的设计或 TDD 技能，Superpowers 仍然是必须遵守的流程门禁。
 
 ### 2026-07-14 17:02 +08:00 — SPEC-001
 
-- **Task:** Complete the Superpowers brainstorming phase and write the approved product specification.
-- **Superpowers skill:** `brainstorming`.
-- **Prompt / context:** The human defined a programmer-focused coding agent that directly edits projects and delivers working code plus documentation. The dialogue resolved scope, providers, approvals, memory boundaries, feedback budgets, WebUI, deployment, testing, CI, Docker, and architecture.
-- **Agent output / evidence:** Added `SPEC.md`, `SPEC_PROCESS.md`, and `docs/superpowers/specs/2026-07-14-coding-agent-harness-design.md` in commit `72c8b23`. `git diff --cached --check`, placeholder scanning, and a credential-pattern scan passed before commit. No implementation code or cold-start result was produced.
-- **Human intervention:** The human approved each design section and the complete design; corrected the default planning rule to “plan unless explicitly skipped”; declined a visual companion; selected the event-driven recoverable state machine.
-- **Lesson:** Explicitly versioned approvals and bounded progress detection turn vague “agent autonomy” into deterministic, testable harness behavior. The cold-start gate must remain pending until `PLAN.md` exists.
+- **任务：** 完成 Superpowers Brainstorming 阶段并编写获得批准的产品规约。
+- **Superpowers 技能：** `brainstorming`。
+- **提示与上下文：** 用户定义了一个面向程序员、能够直接修改项目并交付可运行代码与文档的编码智能体。对话明确了范围、Provider、审批、记忆边界、反馈预算、WebUI、部署、测试、CI、Docker 和架构。
+- **智能体产出与证据：** 在提交 `72c8b23` 中添加 `SPEC.md`、`SPEC_PROCESS.md` 和 `docs/superpowers/specs/2026-07-14-coding-agent-harness-design.md`。提交前，`git diff --cached --check`、占位符扫描和凭据模式扫描均通过。没有生成实现代码或伪造冷启动检查结果。
+- **人工干预：** 用户批准每个设计章节和完整设计；把默认计划规则修正为“除非明确跳过，否则先生成计划”；拒绝视觉伴侣；选择事件驱动的可恢复状态机。
+- **经验总结：** 显式版本化审批与有界进展检测，可以把模糊的“智能体自主性”转化为确定、可测试的 Harness 行为。在 `PLAN.md` 生成前，冷启动门禁必须保持未完成状态。
+
+### 2026-07-14 17:05 +08:00 — DOC-001
+
+- **任务：** 将仓库协作说明和智能体工作日志改写为中文。
+- **Superpowers 技能：** `using-superpowers`；本次为不改变产品设计的治理文档本地化。
+- **提示与上下文：** 用户要求把 `AGENTS.md` 和 `AGENT_LOG.md` 重新写为中文。
+- **智能体产出与证据：** 中文化两份文档，保留原有流程门禁、安全规则、提交证据、人工决策和经验总结；同步澄清当前仍处于实现前治理阶段。
+- **人工干预：** 用户明确选择中文作为两份治理文档的正文语言。
+- **经验总结：** 治理文档本地化时必须保留技术标识、命令和提交哈希的原文形式，避免翻译改变约束语义或证据可追溯性。
