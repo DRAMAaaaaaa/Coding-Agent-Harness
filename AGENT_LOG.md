@@ -131,3 +131,13 @@
 - **验证证据：** `.venv` Python 的目标和全量 pytest 均为 `6 passed`，Ruff、mypy、`pip check`、`npm.cmd --prefix web ci`、`npm ls --depth=0`、ESLint、TypeScript 及 `scripts/test.ps1` 的 Unit/All 均退出 0，npm 报告 `found 0 vulnerabilities`。
 - **平台与流程偏差：** 当前 Windows 主机仍未安装 GNU Make，因此未伪造 `make` 运行结果；当前平台的 `spawn_agent` 接口不提供 `model` 参数，无法显式指定不同模型，因此只能依靠新鲜子智能体与有界任务简报实现角色隔离，这一偏差已如实保留。
 - **经验总结：** “尚未加入测试命令”不等于“依赖可从锁文件省略”；预算字段的默认值测试也不能代替边界拒绝测试。当前状态是待复审，只有后续两阶段评审通过后才可标记完成。
+
+### 2026-07-14 19:45 +08:00 — REVIEW-002
+
+- **任务：** 完成 Task 1 的规格符合性复审与代码质量复审，并正式关闭任务。
+- **Superpowers 技能：** `subagent-driven-development`、`requesting-code-review`、`verification-before-completion`。
+- **评审范围：** 从任务开始提交 `9fd2d2e` 到书面回填提交 `4325ecf`；复审材料包含任务简报、补充上下文、实现报告与完整差异包。
+- **智能体产出与证据：** 新鲜评审子智能体确认首轮 3 个 Important 均已关闭：Web 测试依赖及根锁文件版本齐全，五个预算整数均有零值拒绝回归测试，`PLAN.md` 与 `AGENT_LOG.md` 状态和证据一致。规格符合性结论为通过，代码质量结论为批准；未发现新的 Critical、Important 或 Minor 问题。
+- **环境限制：** 当前 Windows 主机仍未安装 GNU Make，因此不伪造 `make` 执行证据；等价的 PowerShell 一键入口及其所调用的 Python、Node 质量门禁已有新鲜成功输出，该限制不阻塞 Task 1 复审。
+- **人工干预：** 无新增人工决策；用户已要求以 Subagent-Driven 方式连续推进。
+- **经验总结：** 任务状态只能在修复提交、完整验证和独立复审三者全部完成后从“待复审”改为“完成”；环境中缺少可选入口时应明确记录限制，并以实际执行的等价入口作为证据。
