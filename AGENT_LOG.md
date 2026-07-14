@@ -210,3 +210,14 @@
 - **安全与边界：** 领域竞争异常固定为 `SQLite 写入竞争` 并使用 `from None`，不携带 SQL、任务数据或底层异常链；非 BUSY/LOCKED 的 “no such table” 回归测试确认不会误分类。并发测试只使用事件和任务调度，不依赖 wall-clock sleep；未真实联网或接触凭据。
 - **人工干预：** 控制器已独立核对四项评审反馈成立并限定修复范围；没有新增接口选择或范围扩张。
 - **经验总结：** 同一 aiosqlite 连接的串行 worker 不等于事务隔离：若方法只锁写入，读请求仍能排进未提交事务并看到脏数据；连接级操作锁必须覆盖 execute、fetch、commit/rollback 和 close 的完整生命周期。
+
+### 2026-07-14 23:27 +08:00 — REVIEW-006
+
+- **任务：** 完成 Task 3 修复后的规格符合性复审、代码质量复审、控制器独立验证与分发包检查，并正式关闭任务。
+- **Superpowers 技能：** `subagent-driven-development`、`requesting-code-review`、`verification-before-completion`。
+- **复审范围与结论：** 原实现派发基线 `5cc4ccf` 到修复书面提交 `7d8d462`；同一评审子智能体确认首轮两个 Important 与两个 Minor 全部关闭。规格符合性为 Pass，代码质量为 Approved；未发现新的 Critical、Important 或 Minor，允许 Task 3 完成。
+- **控制器新鲜验证：** Task 3 目标测试为 `67 passed`；Ruff 为 `All checks passed!`；mypy 为 13 个源文件无问题；`pip check` 无损坏依赖；`scripts/test.ps1 -Mode All` 收集并通过 102 项测试，同时 Web ESLint 和 TypeScript 检查退出 0。
+- **分发检查：** 使用 `python -m build --wheel --sdist` 成功构建 `coding_agent_harness-0.1.0-py3-none-any.whl` 与 `coding_agent_harness-0.1.0.tar.gz`；逐个检查归档，两者均且仅包含 1 个 `coding_agent_harness/storage/migrations/001_initial.sql` 条目。
+- **提交规则：** 用户要求每个 Task 完成后创建明确提交；Task 3 的完成状态、复审结论与新鲜证据由本提交固化，实际哈希将在后续集成或进度记录中引用。
+- **人工干预：** 用户要求继续 Task 3 并保持既有要求不变；没有新增技术接口选择。分支合并到 `p1` 与远程 push 仍作为独立集成动作处理，其中 push 必须取得明确批准。
+- **经验总结：** 存储任务的完成证据不仅包括单元测试，还应验证迁移资源确实进入 wheel 与 sdist；否则源码树中的迁移成功不能证明安装后可用。
