@@ -84,3 +84,12 @@
 - **智能体产出与证据：** 审计员选择 Task 1 并新增计划要求的 `tests/test_config.py`；运行 RED 命令时发现 PATH 中为 Python 3.9 且无 pytest，因此在生产实现前暂停。它没有把环境错误冒充有效 RED。试验代码只存在于 `codex/cold-start-audit`，未进入主分支。
 - **人工干预：** 尚需用户批准在新的隔离 worktree 安装 `pytest==9.1.1` 及 Task 1 锁定依赖，才能完成复验。
 - **经验总结：** TDD 计划必须把测试运行时作为 RED 的前置条件；“只提供 SPEC/PLAN”应限制初始上下文，而不能禁止读取选定 Task 明列的目标文件。
+
+### 2026-07-14 18:34 +08:00 — COLD-002
+
+- **任务：** 在获得依赖安装批准后，由第二个全新冷启动审计员复验 Task 1。
+- **Superpowers 技能：** `using-git-worktrees`；不同角色子智能体冷启动审计。
+- **提示与上下文：** 审计员初始只读 `SPEC.md` 与 `PLAN.md`，选定 Task 后只读其文件清单；允许在 `codex/cold-start-audit-v2` 内联网安装锁定依赖，禁止全局安装、提交和推送。
+- **智能体产出与证据：** Python 3.11.9、pytest 9.1.1、预期 RED、Python 哈希锁文件和 editable install 均成功；PowerShell 将 `npm` 解析为受 ExecutionPolicy 阻止的 `npm.ps1`，审计员在该非预期错误处暂停，未取得 GREEN。它同时发现构建后端版本未锁定。
+- **人工干预：** 用户明确批准隔离依赖安装；主 Agent 根据审计结果把 Windows 命令改为 `npm.cmd`，并锁定 `pip==26.1.2`、`setuptools==83.0.0` 和构建后端。
+- **经验总结：** 跨平台计划不能把 `npm` 视为同一个可执行入口；即使应用依赖已锁定，构建后端和引导工具未锁定仍会迫使陌生执行者猜测。

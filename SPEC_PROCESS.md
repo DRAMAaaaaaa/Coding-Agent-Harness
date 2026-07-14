@@ -211,3 +211,37 @@ E:\python3.9\python.exe: No module named pytest
 ### 8.4 当前门禁状态
 
 第一次冷启动已产生有效缺陷证据，但尚未通过：修订后的 Task 1 仍需在获得依赖安装授权后，由另一个全新无历史审计员复验。复验通过并由用户确认前，仍禁止开始正式 Harness 实现。
+
+### 8.5 第二次冷启动复验
+
+用户明确批准在新隔离 worktree 中创建 Python 3.11 `.venv`，并从 PyPI/npm 安装 Task 1 锁定依赖。主 Agent 创建 `codex/cold-start-audit-v2`，启动第二个无历史审计员。该审计员只选择 Task 1，并验证了：
+
+- Python 3.11.9 与 pytest 9.1.1 可用。
+- RED 命令精确失败为 `ModuleNotFoundError: No module named 'coding_agent_harness'`，符合计划预期。
+- `pip-tools==7.5.3`、Python 锁文件、锁定依赖和 editable install 均成功。
+- 没有执行提交、推送或全局安装。
+
+审计员随后在首个非预期错误处暂停：PowerShell 把 `npm` 解析为 `E:\nodejs\npm.ps1`，系统 ExecutionPolicy 禁止脚本运行，因此 `npm --prefix web install --package-lock-only` 退出 1。它没有擅自改用 `npm.cmd`，也没有把未验证实现宣称为 GREEN。
+
+审计员还指出，Task 1 没有指定 Python 构建后端及其精确版本。它为了试验选择 `setuptools>=80`，这是超出计划的猜测，应由计划负责，而不是归咎于执行者。
+
+### 8.6 第二次修订
+
+主 Agent 从 PyPI 官方注册表核对 `pip==26.1.2` 和 `setuptools==83.0.0`，并对 `PLAN.md` 做出以下修订：
+
+```diff
+- Windows 与 POSIX 均使用 npm
++ Windows PowerShell 必须显式使用 npm.cmd；POSIX 使用 npm
+
+- 未指定 Python 构建后端
++ [build-system]
++ requires = ["setuptools==83.0.0"]
++ build-backend = "setuptools.build_meta"
+
+- piptools compile --generate-hashes ...
++ piptools compile --generate-hashes --allow-unsafe ...
+
++ Python 引导工具锁定 pip==26.1.2 与 setuptools==83.0.0
+```
+
+第二次复验仍未取得 GREEN。下一步必须从本次修订提交创建第三个全新隔离 worktree，只复验 Task 1 到首次 GREEN；在其通过前，正式实现门禁仍关闭。

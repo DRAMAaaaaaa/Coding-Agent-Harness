@@ -22,6 +22,7 @@
 - 每个 Task 使用独立 `codex/` 前缀分支和 worktree；完成后在本文件勾选状态并记录提交哈希与评审结论。
 - 每个 Task 固定执行顺序：失败测试 → 确认失败原因 → 最小实现 → 通过目标测试 → 重构 → 完整相关测试 → 规约符合性审查 → 代码质量审查 → 中文提交。
 - 所有 Python 命令必须使用项目 `.venv` 中的 Python 3.11，不得依赖 PATH 中含义不明的 `python`；Windows 对应 `& .\.venv\Scripts\python.exe`，POSIX 对应 `.venv/bin/python`。后文简写 `python` 时均指该已验证解释器。
+- Windows PowerShell 中所有 npm 命令必须显式调用 `npm.cmd`，不得依赖可能被 ExecutionPolicy 拦截的 `npm.ps1`；POSIX 使用 `npm`。后文简写 npm 时必须按此平台规则展开，`scripts/test.ps1` 也必须通过 `Get-Command npm.cmd` 调用。
 
 ## 锁定依赖
 
@@ -45,6 +46,8 @@ PyYAML==6.0.3
 ### Python 开发依赖
 
 ```text
+pip==26.1.2
+setuptools==83.0.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
 pytest-cov==7.1.0
@@ -186,6 +189,7 @@ Windows PowerShell：
 ```text
 py -3.11 -m venv .venv
 & .\.venv\Scripts\python.exe --version
+& .\.venv\Scripts\python.exe -m pip install --upgrade pip==26.1.2 setuptools==83.0.0
 & .\.venv\Scripts\python.exe -m pip install pytest==9.1.1
 & .\.venv\Scripts\python.exe -c "import pytest; assert pytest.__version__ == '9.1.1'; print(pytest.__version__)"
 ```
@@ -195,6 +199,7 @@ POSIX：
 ```text
 python3.11 -m venv .venv
 .venv/bin/python --version
+.venv/bin/python -m pip install --upgrade pip==26.1.2 setuptools==83.0.0
 .venv/bin/python -m pip install pytest==9.1.1
 .venv/bin/python -c "import pytest; assert pytest.__version__ == '9.1.1'; print(pytest.__version__)"
 ```
@@ -242,7 +247,15 @@ class HarnessSettings(BaseSettings):
     max_concurrent_tasks: int = Field(default=3, ge=1)
 ```
 
-`pyproject.toml` 使用“锁定依赖”中的 Python 精确版本，设置 `requires-python = ">=3.11,<3.12"`、`src` 包布局、pytest `asyncio_mode = "auto"`、Ruff 行宽 100 和 mypy strict。`web/package.json` 使用列出的 npm 精确版本，禁止 `^` 与 `~`。
+`pyproject.toml` 使用“锁定依赖”中的 Python 精确版本，设置 `requires-python = ">=3.11,<3.12"`、`src` 包布局、pytest `asyncio_mode = "auto"`、Ruff 行宽 100 和 mypy strict。构建后端固定为以下内容，不得自行选择版本：
+
+```toml
+[build-system]
+requires = ["setuptools==83.0.0"]
+build-backend = "setuptools.build_meta"
+```
+
+`web/package.json` 使用列出的 npm 精确版本，禁止 `^` 与 `~`。
 
 - [ ] **步骤 5：生成并校验锁文件**
 
@@ -250,9 +263,21 @@ class HarnessSettings(BaseSettings):
 
 ```text
 python -m pip install pip-tools==7.5.3
-python -m piptools compile --extra dev --generate-hashes --output-file requirements.lock pyproject.toml
+python -m piptools compile --extra dev --generate-hashes --allow-unsafe --output-file requirements.lock pyproject.toml
 python -m pip install -r requirements.lock
 python -m pip install --no-deps -e .
+```
+
+Windows PowerShell：
+
+```text
+npm.cmd --prefix web install --package-lock-only
+npm.cmd --prefix web ci
+```
+
+POSIX：
+
+```text
 npm --prefix web install --package-lock-only
 npm --prefix web ci
 ```
@@ -1054,7 +1079,9 @@ it("危险动作展示原因和精确影响范围", () => {
 
 - [ ] **步骤 2：确认红色结果**
 
-运行：`npm --prefix web run test -- --run`
+Windows 运行：`npm.cmd --prefix web run test -- --run`
+
+POSIX 运行：`npm --prefix web run test -- --run`
 
 预期：组件模块不存在，测试因 `TaskPage` 不存在而失败。
 
@@ -1080,6 +1107,8 @@ npm --prefix web run typecheck
 npm --prefix web run test -- --run
 npm --prefix web run build
 ```
+
+Windows PowerShell 将上述四条命令中的 `npm` 全部替换为 `npm.cmd`；POSIX 保持 `npm`。
 
 预期：全部退出 0；页面测试覆盖键盘导航、断线补发、过期审批、凭据清空和非颜色状态表达。
 
