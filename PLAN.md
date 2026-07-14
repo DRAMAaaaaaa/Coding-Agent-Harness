@@ -151,7 +151,7 @@ class TaskOrchestrator:
 |---|---|---|---|---|---|
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
-| 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 进行中（准备独立 worktree） |
+| 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 进行中（实现子智能体） |
 | 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 待执行 |
 | 5 | 项目识别、扫描与 worktree | 1、2 | 可与 4 并行 | `codex/workspaces` | 待执行 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |

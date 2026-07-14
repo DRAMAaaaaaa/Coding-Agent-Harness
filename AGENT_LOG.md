@@ -176,3 +176,13 @@
 - **提交规则：** 用户要求每个 Task 完成后由控制器创建一次明确提交；Task 2 的最终完成状态、复审结论和验证证据在本提交中固化，实际哈希将在后续进度记录中引用。
 - **人工干预：** 用户只补充逐 Task 提交规则，没有改变 Task 2 技术接口或安全边界。
 - **经验总结：** 完成提交应位于实现、纠正性 TDD、完整验证和独立复审之后，作为可查阅、可回退的任务边界；提交自身无法预先记录自己的哈希，因此后续任务账本负责引用其实际值。
+
+### 2026-07-14 22:12 +08:00 — SDD-002
+
+- **任务：** 在独立 worktree 中启动 Task 3 的 SQLite 事件存储、任务仓储与可恢复状态机实现。
+- **Superpowers 技能：** `subagent-driven-development`、`using-git-worktrees`、`test-driven-development`。
+- **隔离环境：** 从提交 `04083df` 创建 `codex/event-state` 与 `E:\Coding Agent Harness\.worktrees\event-state`；根仓库的 `.worktrees/` 忽略规则已由 `git check-ignore` 验证。
+- **依赖与基线：** 使用 Python 3.11 在新 worktree 的 `.venv` 中安装 Windows 哈希锁文件及 editable 项目，使用 `npm.cmd --prefix web ci` 安装根锁依赖，npm 报告 0 个漏洞；`pip check` 无损坏依赖，`scripts/test.ps1 -Mode All` 得到 35 项测试全通过，Ruff、mypy、ESLint 和 TypeScript 均退出 0。
+- **提示与上下文：** Task 3 实现者只获得 Task 3 简报、控制器补充的存储/状态机契约和 TDD 技能，不读取整份 `PLAN.md` 或 `SPEC.md`；Task 2 的冻结模型作为输入接口。
+- **人工干预：** 用户要求继续 Task 3，并保持逐 Task worktree、TDD、双阶段复审、中文提交、完成后合并与推送审批等既有要求不变。
+- **经验总结：** worktree 隔离不会自动共享被忽略的虚拟环境和 Node 依赖；必须在新分支取得可证明的基线 GREEN 后，才能把后续失败认定为 Task 3 的产品 RED。
