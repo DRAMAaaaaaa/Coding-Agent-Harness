@@ -198,3 +198,15 @@
 - **验证证据：** Task 3 目标 pytest 为 `61 passed`，全量 pytest 为 `96 passed`；Ruff、mypy（13 个源文件）、`pip check` 均退出 0；`scripts/test.ps1 -Mode All` 也收集并通过 96 项测试，同时 Web ESLint 与 TypeScript 检查退出 0。
 - **人工干预与环境偏差：** 控制器在前一替代实例未产出文件或提交后重新派发实现者，没有改变技术范围。PowerShell 首次直接运行脚本被系统执行策略拦截，随后使用仅作用于该进程的 `-ExecutionPolicy Bypass` 成功运行同一脚本，未修改系统策略；未发生真实联网或凭据暴露。
 - **经验总结：** 环境失败不能冒充产品 RED；跨 SQLite 连接的乐观并发必须依靠 `BEGIN IMMEDIATE` 与有界 busy timeout 让竞争者在取得锁后重新核对序号，才能稳定收敛为一个成功和一个领域级 `ConcurrencyError`。
+
+### 2026-07-14 23:14 +08:00 — REVIEW-005
+
+- **任务：** 修复 Task 3 首轮评审发现的 SQLite 锁竞争异常泄漏和同连接读写插队问题，并回到待复审状态。
+- **Superpowers 技能：** `receiving-code-review`、`test-driven-development`、`verification-before-completion`；先逐项核对评审与当前实现，再执行纠正性 RED—GREEN 和完整验证。
+- **评审发现：** `BEGIN IMMEDIATE` 在 busy timeout 到期时会泄漏 `sqlite3.OperationalError`；`TaskRepository.get`、`EventStore.list_for_task` 与 `Database.close` 未使用写锁，可能在同连接未提交事务中插队。两个 Important 使首轮评审不通过；另有可空 deadline 往返与业务表严格集合两项 Minor 测试缺口。
+- **纠正性 TDD 证据：** 新增无 sleep 的显式持锁测试，把第二连接 `busy_timeout` 设为 0；旧实现准确泄漏 `sqlite3.OperationalError: database is locked`。使用 `asyncio.Event` 和可观测锁并以 `FIRST_COMPLETED` 调度读写交错，旧实现的任务读取、事件读取和关闭均在锁竞争事件前完成。存储测试 RED 为 `4 failed, 13 passed`；两个 Minor 断言在旧实现已通过。
+- **修复与提交：** 提交 `ec28b1b4f6d4ccdd6846e96dc2ea078842450d1a`（`fix: 稳定存储竞争并串行连接操作（状态存储子智能体）`）仅将 SQLite BUSY/LOCKED 及扩展错误码的基础码转换为固定文本 `ConcurrencyError`，其他 `OperationalError` 原样传播；把原 `_write_lock` 提升为连接级 `operation_lock`，覆盖 append/list/create/get/update/close 的完整数据库生命周期。异常路径仍先 rollback，不增加 sleep 或重试。
+- **GREEN 与验证证据：** 存储测试为 `17 passed`，Task 3 目标测试为 `67 passed`，全量 pytest 为 `102 passed`；Ruff、mypy（13 个源文件）、`pip check` 均退出 0；`scripts/test.ps1 -Mode All` 再次通过 102 项测试、Web ESLint 和 TypeScript 检查。
+- **安全与边界：** 领域竞争异常固定为 `SQLite 写入竞争` 并使用 `from None`，不携带 SQL、任务数据或底层异常链；非 BUSY/LOCKED 的 “no such table” 回归测试确认不会误分类。并发测试只使用事件和任务调度，不依赖 wall-clock sleep；未真实联网或接触凭据。
+- **人工干预：** 控制器已独立核对四项评审反馈成立并限定修复范围；没有新增接口选择或范围扩张。
+- **经验总结：** 同一 aiosqlite 连接的串行 worker 不等于事务隔离：若方法只锁写入，读请求仍能排进未提交事务并看到脏数据；连接级操作锁必须覆盖 execute、fetch、commit/rollback 和 close 的完整生命周期。
