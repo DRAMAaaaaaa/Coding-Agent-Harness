@@ -14,6 +14,7 @@ credentials/
 # Harness runtime state
 .harness/
 .runtime/
+.worktrees/
 *.pid
 *.log
 logs/
@@ -60,4 +61,3 @@ Desktop.ini
 # Local container overrides
 docker-compose.override.yml
 compose.override.yml
-
