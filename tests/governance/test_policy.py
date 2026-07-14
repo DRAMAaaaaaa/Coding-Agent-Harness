@@ -1,0 +1,198 @@
+from pathlib import Path
+
+import pytest
+
+from coding_agent_harness.domain.actions import TaskState, ToolAction
+from coding_agent_harness.governance.paths import PathGuard
+from coding_agent_harness.governance.policy import (
+    PolicyContext,
+    PolicyDecision,
+    PolicyEngine,
+)
+from coding_agent_harness.governance.redaction import Redactor
+
+
+def _action(tool: str, arguments: dict[str, object]) -> ToolAction:
+    return ToolAction.model_validate(
+        {
+            "tool": tool,
+            "arguments": arguments,
+            "idempotency_key": f"action-{tool}",
+        },
+        strict=True,
+    )
+
+
+def _context(root: Path, *, llm_api_authorized: bool = True) -> PolicyContext:
+    return PolicyContext(
+        workspace_root=root,
+        task_state=TaskState.EXECUTING,
+        event_sequence=17,
+        config_version="cfg-2",
+        llm_api_authorized=llm_api_authorized,
+    )
+
+
+@pytest.fixture
+def policy(tmp_path: Path) -> PolicyEngine:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    return PolicyEngine(PathGuard(root), Redactor())
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("delete_path", {"path": "src/a.py"}),
+        ("read_file", {"path": "../secret"}),
+        ("shell", {"argv": ["pip", "install", "x"]}),
+        ("shell", {"argv": ["curl", "https://example.com"]}),
+        ("git", {"operation": "push"}),
+        ("shell", {"argv": ["rm", "-rf", "/"]}),
+    ],
+)
+def test_dangerous_actions_require_approval(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    tool: str,
+    arguments: dict[str, object],
+) -> None:
+    result = policy.evaluate(_action(tool, arguments), _context(tmp_path / "workspace"))
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert result.event_sequence == 17
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["npm", "install", "left-pad"],
+        ["pnpm", "add", "x"],
+        ["yarn", "add", "x"],
+        ["poetry", "add", "x"],
+        ["uv", "pip", "install", "x"],
+        ["wget", "https://example.com"],
+        ["powershell", "Invoke-WebRequest", "https://example.com"],
+        ["mkfs.ext4", "/dev/sda"],
+        ["dd", "if=/dev/zero", "of=/dev/sda"],
+        ["shutdown", "/s"],
+    ],
+)
+def test_shell_rules_cover_install_network_and_destructive_exact_tokens(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    argv: list[str],
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": argv}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("git", {"operation": "merge"}),
+        ("shell", {"argv": ["twine", "upload", "dist/*"]}),
+        ("shell", {"argv": ["docker", "push", "example/image"]}),
+        ("shell", {"argv": ["gh", "release", "create", "v1"]}),
+        ("shell", {"argv": ["npm", "publish"]}),
+    ],
+)
+def test_remote_change_and_publish_require_approval(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    tool: str,
+    arguments: dict[str, object],
+) -> None:
+    assert policy.evaluate(
+        _action(tool, arguments), _context(tmp_path / "workspace")
+    ).decision is PolicyDecision.REQUIRE_APPROVAL
+
+
+def test_llm_authorization_and_spoofed_argument_do_not_authorize_tool_network(
+    policy: PolicyEngine,
+    tmp_path: Path,
+) -> None:
+    action = _action(
+        "shell",
+        {
+            "argv": ["curl", "https://example.com"],
+            "provider_authorized": True,
+        },
+    )
+
+    for authorized in (False, True):
+        result = policy.evaluate(
+            action,
+            _context(tmp_path / "workspace", llm_api_authorized=authorized),
+        )
+        assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+
+
+@pytest.mark.parametrize("field", ["path", "cwd", "source", "destination", "target"])
+def test_all_path_fields_are_guarded(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    field: str,
+) -> None:
+    result = policy.evaluate(
+        _action("read_file", {field: "../outside"}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert "outside" not in result.normalized_scope
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"argv": "pytest"},
+        {"argv": ["pytest", 7]},
+        {"path": ["src/a.py"]},
+    ],
+)
+def test_invalid_argument_shape_is_denied_without_exception(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    arguments: dict[str, object],
+) -> None:
+    result = policy.evaluate(
+        _action("shell", arguments),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "INVALID_ACTION"
+
+
+def test_safe_read_and_verification_are_allowed(
+    policy: PolicyEngine,
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path / "workspace")
+
+    read = policy.evaluate(_action("read_file", {"path": "src/main.py"}), context)
+    verify = policy.evaluate(_action("shell", {"argv": ["pytest", "-q"]}), context)
+
+    assert (read.decision, read.reason_code) == (PolicyDecision.ALLOW, "SAFE")
+    assert (verify.decision, verify.reason_code) == (PolicyDecision.ALLOW, "SAFE")
+
+
+def test_normalized_scope_is_redacted_before_return(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    policy = PolicyEngine(PathGuard(root), Redactor(sensitive_env={"TOKEN": "abc-123"}))
+
+    result = policy.evaluate(
+        _action("shell", {"argv": ["curl", "Authorization: Bearer abc-123"]}),
+        _context(root),
+    )
+
+    assert "abc-123" not in result.normalized_scope
+    assert "[REDACTED]" in result.normalized_scope
