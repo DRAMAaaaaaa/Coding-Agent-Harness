@@ -1,9 +1,11 @@
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID
 
+import aiosqlite
 from pydantic import BaseModel, ConfigDict, Field
 
 from coding_agent_harness.domain.actions import TaskState
@@ -83,6 +85,13 @@ class ApprovalError(RuntimeError):
         super().__init__(_ERROR_MESSAGES[reason_code])
 
 
+@dataclass(frozen=True)
+class _TaskAuthority:
+    state: TaskState
+    config_version: str
+    event_sequence: int
+
+
 class ApprovalManager:
     def __init__(
         self,
@@ -101,6 +110,30 @@ class ApprovalManager:
         context: ApprovalContext,
         expires_at: datetime,
     ) -> ApprovalRecord:
+        async def apply(
+            connection: aiosqlite.Connection,
+            record: ApprovalRecord,
+        ) -> None:
+            del connection, record
+
+        return await self.request_and_apply(
+            task_id,
+            reason_code,
+            context,
+            expires_at,
+            apply,
+        )
+
+    async def request_and_apply(
+        self,
+        task_id: UUID,
+        reason_code: str,
+        context: ApprovalContext,
+        expires_at: datetime,
+        apply: Callable[
+            [aiosqlite.Connection, ApprovalRecord], Awaitable[None]
+        ],
+    ) -> ApprovalRecord:
         async with self._database.operation_lock:
             try:
                 await self._database.connection.execute("BEGIN IMMEDIATE")
@@ -111,7 +144,8 @@ class ApprovalManager:
                     raise ApprovalError("EXPIRED")
                 if context.task_state is TaskState.CANCELLED:
                     raise ApprovalError("TASK_CANCELLED")
-                await self._ensure_task_active(task_id)
+                authority = await self._load_task_authority(task_id)
+                self._validate_authority(context, authority)
                 record = ApprovalRecord(
                     id=self._uuid_factory(),
                     task_id=task_id,
@@ -138,6 +172,7 @@ class ApprovalManager:
                     """,
                     _record_parameters(record),
                 )
+                await apply(self._database.connection, record)
                 await self._database.connection.commit()
             except Exception as error:
                 await self._database.connection.rollback()
@@ -167,20 +202,26 @@ class ApprovalManager:
                     raise ApprovalError("INVALID_DECISION")
                 now = self._utc_now()
                 record = await self._load(approval_id)
-                await self._ensure_task_active(record.task_id)
+                authority = await self._load_task_authority(record.task_id)
+                self._validate_authority(record, authority)
                 self._validate_live(record, context, now)
                 if record.decision is ApprovalDecision.DENIED:
                     raise ApprovalError("DENIED")
                 if record.decision is not ApprovalDecision.PENDING:
                     raise ApprovalError("NOT_APPROVED")
-                await self._database.connection.execute(
+                cursor = await self._database.connection.execute(
                     """
                     UPDATE approvals
                     SET decision = ?, decided_by = ?, decided_at = ?
-                    WHERE id = ?
+                    WHERE id = ? AND decision = 'PENDING'
                     """,
                     (decision.value, actor, now.isoformat(), str(approval_id)),
                 )
+                if cursor.rowcount != 1:
+                    current = await self._load(approval_id)
+                    if current.decision is ApprovalDecision.DENIED:
+                        raise ApprovalError("DENIED")
+                    raise ApprovalError("NOT_APPROVED")
                 await self._database.connection.commit()
             except Exception as error:
                 await self._database.connection.rollback()
@@ -201,22 +242,67 @@ class ApprovalManager:
         approval_id: UUID,
         context: ApprovalContext,
     ) -> ApprovalRecord:
+        async def apply(
+            connection: aiosqlite.Connection,
+            consumed_at: datetime,
+        ) -> None:
+            del connection, consumed_at
+
+        return await self.consume_and_apply(approval_id, context, apply)
+
+    async def consume_and_apply(
+        self,
+        approval_id: UUID,
+        context: ApprovalContext,
+        apply: Callable[[aiosqlite.Connection, datetime], Awaitable[None]],
+    ) -> ApprovalRecord:
         async with self._database.operation_lock:
             try:
                 await self._database.connection.execute("BEGIN IMMEDIATE")
                 self._validate_context(context)
                 now = self._utc_now()
                 record = await self._load(approval_id)
-                await self._ensure_task_active(record.task_id)
+                authority = await self._load_task_authority(record.task_id)
+                self._validate_authority(record, authority)
                 self._validate_live(record, context, now)
                 if record.decision is ApprovalDecision.DENIED:
                     raise ApprovalError("DENIED")
                 if record.decision is not ApprovalDecision.APPROVED:
                     raise ApprovalError("NOT_APPROVED")
-                await self._database.connection.execute(
-                    "UPDATE approvals SET consumed_at = ? WHERE id = ?",
-                    (now.isoformat(), str(approval_id)),
+                cursor = await self._database.connection.execute(
+                    """
+                    UPDATE approvals
+                    SET consumed_at = ?
+                    WHERE id = ?
+                      AND decision = 'APPROVED'
+                      AND consumed_at IS NULL
+                      AND expires_at > ?
+                      AND action_id = ?
+                      AND event_sequence = ?
+                      AND normalized_scope = ?
+                      AND task_state = ?
+                      AND config_version = ?
+                    """,
+                    (
+                        now.isoformat(),
+                        str(approval_id),
+                        now.isoformat(),
+                        context.action_id,
+                        context.event_sequence,
+                        context.normalized_scope,
+                        context.task_state.value,
+                        context.config_version,
+                    ),
                 )
+                if cursor.rowcount != 1:
+                    current = await self._load(approval_id)
+                    self._validate_live(current, context, now)
+                    if current.decision is ApprovalDecision.DENIED:
+                        raise ApprovalError("DENIED")
+                    if current.decision is not ApprovalDecision.APPROVED:
+                        raise ApprovalError("NOT_APPROVED")
+                    raise ApprovalError("REPLAYED")
+                await apply(self._database.connection, now)
                 await self._database.connection.commit()
             except Exception as error:
                 await self._database.connection.rollback()
@@ -236,9 +322,16 @@ class ApprovalManager:
             raise ApprovalError("NOT_FOUND")
         return _record_from_row(row)
 
-    async def _ensure_task_active(self, task_id: UUID) -> None:
+    async def _load_task_authority(self, task_id: UUID) -> _TaskAuthority:
         cursor = await self._database.connection.execute(
-            "SELECT state FROM tasks WHERE id = ?",
+            """
+            SELECT tasks.state, tasks.config_version,
+                   COALESCE(MAX(task_events.sequence), 0)
+            FROM tasks
+            LEFT JOIN task_events ON task_events.task_id = tasks.id
+            WHERE tasks.id = ?
+            GROUP BY tasks.id, tasks.state, tasks.config_version
+            """,
             (str(task_id),),
         )
         row = await cursor.fetchone()
@@ -246,6 +339,25 @@ class ApprovalManager:
             raise ApprovalError("NOT_FOUND")
         if str(row[0]) == TaskState.CANCELLED.value:
             raise ApprovalError("TASK_CANCELLED")
+        return _TaskAuthority(
+            state=TaskState(str(row[0])),
+            config_version=str(row[1]),
+            event_sequence=int(str(row[2])),
+        )
+
+    @staticmethod
+    def _validate_authority(
+        context: ApprovalContext | ApprovalRecord,
+        authority: _TaskAuthority,
+    ) -> None:
+        mismatches = (
+            (context.event_sequence != authority.event_sequence, "STALE_EVENT"),
+            (context.task_state is not authority.state, "STALE_STATE"),
+            (context.config_version != authority.config_version, "STALE_CONFIG"),
+        )
+        for mismatched, reason_code in mismatches:
+            if mismatched:
+                raise ApprovalError(reason_code)
 
     @staticmethod
     def _validate_request(reason_code: str, context: ApprovalContext) -> None:

@@ -301,7 +301,12 @@ async def test_database_migrates_v1_legacy_approval_and_reopen_is_idempotent(
                 approval_id,
                 legacy_context,
             )
-        assert rejected.value.reason_code in {"REPLAYED", "DENIED", "EXPIRED"}
+        assert rejected.value.reason_code in {
+            "REPLAYED",
+            "DENIED",
+            "EXPIRED",
+            "STALE_STATE",
+        }
     finally:
         await second.close()
 
@@ -557,6 +562,41 @@ async def test_two_connections_have_exactly_one_consume_winner_without_sleep(
         assert len(errors) == 1
         assert errors[0].reason_code == "REPLAYED"
         assert not any(isinstance(result, sqlite3.OperationalError) for result in results)
+    finally:
+        await first.close()
+        await second.close()
+
+
+async def test_two_connections_have_exactly_one_decision_winner_without_sleep(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "decision-race.sqlite3"
+    first, manager, task_id = await _manager(path)
+    context = _context()
+    requested = await manager.request(
+        task_id, "DANGEROUS", context, NOW + timedelta(minutes=1)
+    )
+    second = await Database.open(path)
+    try:
+        results = await asyncio.gather(
+            ApprovalManager(first, _Clock(), uuid4).decide(
+                requested.id,
+                ApprovalDecision.APPROVED,
+                "reviewer-one",
+                context,
+            ),
+            ApprovalManager(second, _Clock(), uuid4).decide(
+                requested.id,
+                ApprovalDecision.DENIED,
+                "reviewer-two",
+                context,
+            ),
+            return_exceptions=True,
+        )
+        assert sum(isinstance(result, ApprovalRecord) for result in results) == 1
+        errors = [result for result in results if isinstance(result, ApprovalError)]
+        assert len(errors) == 1
+        assert errors[0].reason_code in {"DENIED", "NOT_APPROVED"}
     finally:
         await first.close()
         await second.close()
