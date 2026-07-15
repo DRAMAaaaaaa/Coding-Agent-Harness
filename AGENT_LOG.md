@@ -404,3 +404,13 @@
 - **RED—GREEN：** RED `a58b962` 参数化覆盖 `é`、西里尔、汉字、`\\.\`、`\\?\Volume{...}\`、`\\?\GLOBALROOT\`、截断及嵌入前缀的原值保留，并增加 ASCII A/a/Z/z 折叠与路径键大小写等价正例；旧实现稳定得到 `3 failed, 12 passed, 63 deselected`，只失败于三种 Unicode 字母。GREEN `23e5f31` 仅把 `isalpha()` 改为显式 ASCII 字母成员判断，不改变其他条件或调用链；相同聚焦为 `15 passed, 63 deselected`，目标 Ruff 和 mypy 均通过。
 - **压力与完整门禁：** 门闩/WAL/路径键聚焦为 `32 passed, 46 deselected`。原真实双连接用例用外部 Python 驱动、每轮独立 pytest 子进程和 15 秒硬超时有效取得 `100/100`，总耗时 57.716 秒，单轮 0.539—1.248 秒，无超时或非零退出。governance 为 `228 passed, 1 skipped`，全量 pytest 与 PowerShell All 均为 `330 passed, 1 skipped`；Ruff 全通过，mypy 17 个源文件无问题，`pip check` 无破损依赖，Web ESLint/TypeScript 通过。
 - **构建与范围：** `python -m build --no-isolation` 成功生成 wheel/sdist，两个归档内 001/002 各 1、003 为 0。未联网、安装、推送、合并、删除工作树、接触凭据或扩展 Task 11/003；未改变门闩或 WAL 生命周期。Task 4 与 PLAN 步骤 7 继续待独立双重复审，不宣称完成。
+
+### 2026-07-16 03:57 +08:00 — REVIEW-004-POSTMERGE-FINAL
+
+- **任务：** 对 Task 4 首次本地合并后暴露的 WAL 并发回归、游标异常优先级、路径级初始化门闩和 Windows extended-path 键进行最终独立双重审查与控制器验证。
+- **Superpowers 技能：** `systematic-debugging`、`brainstorming`、`test-driven-development`、`subagent-driven-development`、`requesting-code-review`、`receiving-code-review`、`verification-before-completion`；每次真实失败均停止完成声明，按根因证据取得新的 RED 后再修复。
+- **独立审查：** 最终窄复审范围 `90187a9..c704c6b`，Critical、Important、Minor 均为 0；`Spec: PASS`，`Quality: APPROVED`。ASCII/extended drive 与 UNC、非 ASCII/设备命名空间负例、不同路径区分、初始化取消/异常释放、loop/path 弱引用门闩、WAL waiter 和游标主异常边界均符合冻结要求。
+- **稳定性证据：** 原真实双连接迁移用例由独立审查者以每轮新 pytest 子进程和 15 秒硬期限再次运行 `100/100`；没有超时或非零退出。此前无法定位轮次的外层重复器 124 超时仍保留为工具异常事实，没有计入产品通过证据。
+- **控制器新鲜验证：** `scripts/test.ps1 -Mode All` 得到 `330 passed, 1 skipped`，Ruff、mypy（17 个源文件）、Web ESLint 与 TypeScript 全部通过；`pip check` 无破损依赖；无隔离 wheel/sdist 构建成功，两个归档内 001/002 各 1、003 为 0；`git diff --check` 和工作树检查清洁。
+- **范围与安全：** 唯一 skip 仍是 Windows 符号链接权限；未联网、安装、推送、删除工作树或接触凭据，未新增锁文件、依赖、公共接口、003 migration 或 Task 11 实现。
+- **结论：** Task 4 合并后补充纠偏完成，可将 `codex/governance` 的新增提交本地补充合并回 `p1`；远端推送仍未获授权。

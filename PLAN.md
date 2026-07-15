@@ -819,7 +819,9 @@ Windows 扩展路径门闩纠偏（2026-07-16）：新一轮独立审查仍为 `
 
 Windows ASCII 盘符边界纠偏（2026-07-16）：窄复审结论为 `Spec: FAIL`、`Quality: CHANGES_REQUIRED`，唯一 Important 是 `_collapse_windows_extended_path` 使用 Unicode `str.isalpha()`，会把 `\\?\é:\...`、西里尔与汉字首字符误判为 Windows 盘符并移除扩展前缀。RED `a58b962` 参数化冻结非 ASCII 拉丁/西里尔/汉字、`\\.\`、`\\?\Volume{...}\`、`\\?\GLOBALROOT\` 以及截断/嵌入前缀必须原样保留，同时确认 ASCII `A-Z/a-z` 扩展盘符继续折叠且路径键大小写等价；旧实现精确得到 `3 failed, 12 passed, 63 deselected`。GREEN `23e5f31` 只把 `isalpha()` 改为显式 ASCII 字母成员判断，未改变前缀、后缀、路径键、门闩或 WAL 的其余逻辑；相同聚焦转为 `15 passed, 63 deselected`。包含门闩/WAL/路径键的聚焦集合为 `32 passed, 46 deselected`。原真实双连接用例以每轮新 pytest 子进程和 15 秒硬超时有效复验 `100/100`，总计 57.716 秒、单轮 0.539—1.248 秒。governance 为 `228 passed, 1 skipped`，全量与 PowerShell All 均为 `330 passed, 1 skipped`；独立 Ruff、mypy（17 个源文件）、`pip check`、Web ESLint/TypeScript、无隔离构建均通过，wheel/sdist 内 001/002 各 1、003 为 0。步骤 7 继续待新的独立双重复审。
 
-- [ ] **步骤 7：评审与提交（纠偏实现头 `23e5f31`，待新的独立双重复审）**
+合并后补充纠偏最终复审（2026-07-16）：独立窄复审覆盖 `90187a9..c704c6b`，Critical/Important/Minor 均为 0，结论为 `Spec: PASS`、`Quality: APPROVED`。审查确认 ASCII 盘符、extended drive/UNC、非 ASCII 与设备命名空间负例、初始化门闩、WAL owner–waiter 和游标异常边界均无回归；原真实双连接测试再次以每轮 15 秒硬期限取得 `100/100`。控制器随后重新运行 `scripts/test.ps1 -Mode All`，得到 `330 passed, 1 skipped`；Ruff、mypy、Web ESLint/TypeScript、`pip check`、无隔离 wheel/sdist 构建和归档矩阵全部通过，001/002 各 1、003 为 0，工作树与差异检查清洁。Task 4 的合并后纠偏至此完成，可补充合并回 `p1`。
+
+- [x] **步骤 7：评审与提交（纠偏实现头 `c704c6b`，补充完成证据见本提交）**
 
 规约符合性审查重点：真实 Provider 的 LLM API 授权不扩展到工具网络；所有依赖安装入口和解释器代码执行形态均不能绕过；并发迁移在锁内重读版本。代码质量审查重点：只解析实际命令位置、规则次序无绕过且安全命令无误报、Windows 大小写路径、异常也先脱敏。
 
