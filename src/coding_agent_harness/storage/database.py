@@ -93,7 +93,6 @@ def _split_migration_statements(sql: str) -> tuple[str, ...]:
 
 
 async def _ensure_wal_mode(connection: aiosqlite.Connection) -> None:
-    deadline = _wal_clock() + _WAL_WAIT_TIMEOUT_SECONDS
     try:
         row = await _fetchone_closed(connection, "PRAGMA journal_mode=WAL")
         if row is None or str(row[0]).casefold() != "wal":
@@ -101,6 +100,7 @@ async def _ensure_wal_mode(connection: aiosqlite.Connection) -> None:
     except sqlite3.OperationalError as error:
         if not _is_lock_contention(error):
             raise
+        deadline = _wal_clock() + _WAL_WAIT_TIMEOUT_SECONDS
         await _wait_for_wal_owner(connection, deadline, error)
 
 

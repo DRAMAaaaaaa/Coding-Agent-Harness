@@ -255,7 +255,7 @@ async def test_wal_waiter_times_out_with_one_fixed_error(
     _install_wal_clock(monkeypatch, clock)
     connection = _WalRecordingConnection(
         sqlite3.OperationalError("secret database is locked"),
-        ["delete"] * 500,
+        ["delete"] * 600,
         on_switch=lambda: clock.advance(5.5),
     )
 
