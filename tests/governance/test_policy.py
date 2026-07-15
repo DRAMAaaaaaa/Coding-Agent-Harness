@@ -1,8 +1,10 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from coding_agent_harness.domain.actions import TaskState, ToolAction
+from coding_agent_harness.governance import policy as policy_module
 from coding_agent_harness.governance.paths import PathGuard
 from coding_agent_harness.governance.policy import (
     PolicyContext,
@@ -23,11 +25,12 @@ def _action(tool: str, arguments: dict[str, object]) -> ToolAction:
     )
 
 
-def _internal_action(tool: str, arguments: dict[str, object]) -> ToolAction:
-    return ToolAction.model_construct(
-        tool=tool,
-        arguments=arguments,
-        idempotency_key=f"internal-{tool}",
+def _host_transfer_action(tool: str, source: str, target: str) -> Any:
+    action_type = getattr(policy_module, "HostTransferAction", None)
+    assert action_type is not None
+    return action_type.model_validate(
+        {"tool": tool, "source": source, "target": target},
+        strict=True,
     )
 
 
@@ -496,8 +499,8 @@ def test_host_transfer_uses_separate_exact_approval(
     target: str,
     direction: str,
 ) -> None:
-    result = policy.evaluate(
-        _internal_action(tool, {"source": source, "target": target}),
+    result = policy.evaluate_internal(
+        _host_transfer_action(tool, source, target),
         _context(tmp_path / "workspace"),
     )
 
@@ -521,13 +524,32 @@ def test_host_transfer_guards_only_its_workspace_side(
     tool: str,
     arguments: dict[str, object],
 ) -> None:
-    result = policy.evaluate(
-        _internal_action(tool, arguments),
+    result = policy.evaluate_internal(
+        _host_transfer_action(
+            tool,
+            str(arguments["source"]),
+            str(arguments["target"]),
+        ),
         _context(tmp_path / "workspace"),
     )
 
     assert result.decision is PolicyDecision.DENY
     assert result.reason_code == "PATH_ESCAPE"
+
+
+@pytest.mark.parametrize("tool", ["host_import", "host_export"])
+def test_agent_tool_action_cannot_claim_internal_host_provenance(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    tool: str,
+) -> None:
+    result = policy.evaluate(
+        _action(tool, {"source": "src/input.py", "target": "src/output.py"}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "INVALID_ACTION"
 
 
 @pytest.mark.parametrize(
