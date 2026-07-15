@@ -321,3 +321,9 @@ v3 已证明修订后的陌生执行者能够从零取得正确 RED 和 GREEN。
 第七名无历史审计智能体确认 Task 4 步骤 6 已足以独立安全启动，`env -S`、cwd、真实工具越界、002/003、审批原子绑定、目标身份、幂等和 `UNCERTAIN` 均清楚；但总体仍判 Fail，因为 Task 11 的 API 示例使用 workspace ID 而服务契约要求 task ID、源父目录身份没有字段、approval action ID 与 transfer ID 映射未冻结。
 
 计划修订为：API 只接受 `task_id` 并从持久任务定位 worktree；`TransferRecord` 增加 `source_parent_identity` 和 `action_id`；action ID 固定为 `transfer:<transfer_id>`，与 transfer、approval 和 scope 同时持久化，003 对 action/approval/idempotency 分别唯一。该轮仍是 Fail，须由新的审计智能体复验总体门禁。
+
+### 9.5 第八次冷启动复验通过
+
+第八名全新审计智能体从 `2fb6548` 的隔离工作树开始，完整且仅读取 `SPEC.md` 与 `PLAN.md`。它确认无 Critical、无 Important：Task 4 可从步骤 6 立即写纠正性 RED，不能复用历史模块缺失；Task 11 的依赖仍未满足、暂不实施，但 task/worktree、action/transfer/approval ID、四组文件身份、003、事务绑定、幂等、原子替换和 `UNCERTAIN` 不重放均已闭合。
+
+审计仅给出两项 Minor：三次身份校验的短句应显式列全四组身份；临时文件名可以固定包含 transfer ID。主 Agent 已把这两项无范围扩张的澄清写回计划。至此，新 `AGENTS.md` 要求的最终规约批准、writing-plans 自审和不同类型陌生智能体冷启动门禁均有当前证据，Task 4 可以恢复 Subagent-Driven 纠正性 TDD。

@@ -152,7 +152,7 @@ class TaskOrchestrator:
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
-| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 暂停返工（RED `5a2b8cb`；实现 `c14d50d`；首轮修复 `269c1ae`；等待新冷启动门禁） |
+| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 返工可恢复（RED `5a2b8cb`；实现 `c14d50d`；首轮修复 `269c1ae`；第八轮冷启动 Pass；从步骤 6 继续） |
 | 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 待执行 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
@@ -612,7 +612,7 @@ Task 3 只交付最小 `approvals` 表，没有审批仓储和版本化上下文
 
 `Database.operation_lock` 只串行同一个 Python `Database` 实例；跨实例互斥由 SQLite `BEGIN IMMEDIATE` 提供。每个连接固定 `busy_timeout=5000ms`；超时只返回固定 `MigrationBusyError("数据库迁移正忙")`，不得重试 DDL 或泄漏 SQL。002 对 legacy 审批的回填固定为：`action_id="legacy:<id>"`、`reason_code="LEGACY_APPROVAL"`、`event_sequence=0`、`task_state="CANCELLED"`、`config_version="legacy-v1"`、`decision="DENIED"`、`decided_by="migration"`、1970 UTC 过期且 `consumed_at` 非空；原 ID、task ID 和 created_at 保留。
 
-**状态：** 暂停返工。已有 RED `5a2b8cb`、实现 `c14d50d`、首轮修复 `269c1ae`；第二轮复审仍发现策略与迁移并发缺口。2026-07-15 用户重新批准 `SPEC.md`，当前等待新冷启动门禁通过后继续纠正性 TDD。
+**状态：** 返工可恢复。已有 RED `5a2b8cb`、实现 `c14d50d`、首轮修复 `269c1ae`；2026-07-15 用户重新批准 `SPEC.md`，第八轮陌生智能体冷启动以无 Critical/Important 的 Pass 结论关闭门禁。当前必须从步骤 6 继续纠正性 TDD。
 
 - [x] **步骤 1：历史初始 RED——写危险动作与符号链接逃逸测试（提交 `5a2b8cb`）**
 
@@ -1370,7 +1370,7 @@ def test_target_same_content_with_new_inode_is_stale(client, token, approved_tra
 
 启动生成随机会话令牌，只通过启动终端和首屏注入提供；所有 mutation 校验同源 Origin 与 `X-Harness-Session`。服务默认绑定 `127.0.0.1`；公网 demo 使用独立只读/受限配置。错误响应为 `{code, message, details, event_id}` 且先脱敏。`transfers.py` 只接受 `import|export`、单个普通文件和精确源/目标；创建请求计算并持久化源身份、目标现有摘要和幂等键，只生成审批，不复制。目录递归、通配符、设备路径、公网 demo 和 Agent 自发请求固定拒绝。
 
-执行状态机固定为：`WAITING_APPROVAL` → 在消费审批前首次校验两端解析路径、源身份、目标父目录身份和预期目标摘要 → 使用 `ApprovalManager.consume_and_apply` 在同一 SQLite 事务原子消费审批并把 transfer 改为 `EXECUTING` → 副作用前再次执行相同校验 → 在目标同目录写唯一临时文件、flush、`fsync`，第三次校验后用原子替换落盘 → 新事务记录 `COMPLETED/result_sha256`。首次校验失败不消费审批并返回 `STALE_TRANSFER`；进入 `EXECUTING` 后校验失败记录 `FAILED`。进入 `EXECUTING` 后若进程中断、临时文件残留、目标已替换但完成事件未落盘或结果无法确认，恢复时一律变为 `UNCERTAIN`、清理可确认未发布的临时文件且绝不自动重试，等待用户检查并创建新 transfer。import 的目标和 export 的源必须通过 `PathGuard` 位于 worktree；外部端及其既有父目录的解析身份在批准与执行时一致。覆盖已有目标必须把其批准时 SHA-256 纳入审批；目标从不存在变为存在同样固定 `STALE_TRANSFER`。
+执行状态机固定为：`WAITING_APPROVAL` → 在消费审批前首次校验两端解析路径、source parent/source identity、target parent/target identity 和预期目标摘要 → 使用 `ApprovalManager.consume_and_apply` 在同一 SQLite 事务原子消费审批并把 transfer 改为 `EXECUTING` → 副作用前再次执行相同校验 → 在目标同目录以 `.harness-transfer-<transfer_id>.tmp` 创建独占临时文件、flush、`fsync`，第三次执行全部身份校验后用原子替换落盘 → 新事务记录 `COMPLETED/result_sha256`。首次校验失败不消费审批并返回 `STALE_TRANSFER`；进入 `EXECUTING` 后校验失败记录 `FAILED`。进入 `EXECUTING` 后若进程中断、临时文件残留、目标已替换但完成事件未落盘或结果无法确认，恢复时一律变为 `UNCERTAIN`、清理可确认未发布的临时文件且绝不自动重试，等待用户检查并创建新 transfer。import 的目标和 export 的源必须通过 `PathGuard` 位于 worktree；外部端及其既有父目录的解析身份在批准与执行时一致。覆盖已有目标必须把其批准时 SHA-256 纳入审批；目标从不存在变为存在同样固定 `STALE_TRANSFER`。
 
 故障注入测试必须覆盖：原子绑定前失败仍可重新执行；绑定后、原子替换前崩溃恢复为 `UNCERTAIN` 且不复制；替换后、`COMPLETED` 落盘前崩溃恢复为 `UNCERTAIN` 且目标只变化一次；重启不得重放；普通工具携带 transfer 或 approval ID 仍不能越界。所有注入使用事件/Stub，不使用 `sleep`。
 

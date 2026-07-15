@@ -263,3 +263,10 @@
 - **结论：** Task 4 可安全启动，但总体 Fail；Task 11 的 workspace/task 身份入口、源父目录身份和 action ID 绑定仍有歧义。
 - **修订：** 传输 API 固定接收 `task_id`；记录并绑定 `source_parent_identity`；`action_id` 固定为 `transfer:<transfer_id>`，在 transfer、approval、scope 和 003 唯一约束中保持一致。
 - **安全与范围：** 仅修改计划和过程记录，未修改实现、安装依赖、联网或推送。等待新审计智能体复验。
+
+### 2026-07-15 13:09 +08:00 — COLD-008
+
+- **任务：** 第八次无历史冷启动复验 Task 4 与 Task 11。
+- **结论：** Pass；无 Critical、无 Important。Task 4 可从步骤 6 的纠正性 RED 立即恢复；Task 11 契约通过但依赖未满足，仍不得提前实施。
+- **Minor 处理：** 把三次文件校验明确为 source parent/source/target parent/target 四组身份，并固定临时文件名包含 transfer ID；不扩展范围。
+- **安全与范围：** 审计员仅读 `SPEC.md` 与 `PLAN.md`，未修改、联网或读取其他材料。冷启动门禁正式关闭。
