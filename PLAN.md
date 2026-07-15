@@ -14,7 +14,7 @@
 - 不得使用 LangChain AgentExecutor、AutoGen、CrewAI、LlamaIndex Agents 或其他高层 Agent Runner。
 - LLM 只能提出严格类型化动作，不能直接调用工具；所有安全、反馈、记忆和停机机制必须由仓库代码确定性实现。
 - 默认先生成并批准计划；只有用户显式设置 `skip_plan=true` 才能跳过计划，但仍不能跳过治理、完整验证和最终审查。
-- 删除、工作区外访问、安装依赖、工具网络请求、Git push/merge、发布和高风险 Shell 必须进入版本化审批。
+- 删除、宿主受控导入/导出、安装依赖、工具网络请求、Git push/merge、发布和高风险 Shell 必须进入版本化审批；普通 Agent 工具路径逃逸固定 `DENY/PATH_ESCAPE`，审批不能提升其路径能力。
 - 同一失败指纹最多修正 3 轮；单任务最多 8 个验证—修正循环；连续 2 轮失败数未减少且类别未变化时进入 `WAITING_USER`；命令默认超时 300 秒。
 - Mock LLM 核心测试不得访问网络或真实 LLM；测试和日志不得包含真实凭据。
 - 一个 Workspace 同时最多一个写任务，全局默认最多 3 个并发任务；正式支持最多 10,000 个 Git 跟踪文件。
@@ -153,7 +153,7 @@ class TaskOrchestrator:
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
 | 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 暂停返工（RED `5a2b8cb`；实现 `c14d50d`；首轮修复 `269c1ae`；等待新冷启动门禁） |
-| 5 | 项目识别、扫描与 worktree | 1、2 | 可与 4 并行 | `codex/workspaces` | 待执行 |
+| 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 待执行 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
 | 8 | 记忆筛选、存储与上下文 | 3、4 | 可与 7 并行 | `codex/memory` | 待执行 |
@@ -527,47 +527,94 @@ git commit -m "功能：实现事件存储和可恢复状态机（状态存储�
 
 ### Task 4：路径围栏、统一脱敏、策略引擎与版本化审批
 
-**目标：** 用确定性代码拦截六类危险动作，并防止路径逃逸和审批重放。
+**目标：** 用确定性代码拦截危险动作、固定拒绝普通工具路径逃逸，并防止审批重放。
 
 **文件：**
 
 - 新建：`src/coding_agent_harness/governance/paths.py`、`redaction.py`、`policy.py`、`approvals.py`
 - 新建：`src/coding_agent_harness/storage/migrations/002_governance_approvals.sql`
-- 修改：`src/coding_agent_harness/storage/database.py`、`src/coding_agent_harness/storage/migrations/001_initial.sql`
+- 修改：`src/coding_agent_harness/storage/database.py`（`001_initial.sql` 内容保持不变）
 - 新建：`tests/governance/test_paths.py`、`test_redaction.py`、`test_policy.py`、`test_approvals.py`
 
 **接口：**
 
-- 产出：`PathGuard.resolve(candidate) -> Path`、`Redactor.sanitize(value)`、`PolicyEngine.evaluate`、`ApprovalManager.request/decide/consume`。
+- 产出：以下冻结接口；Task 4 实现者不得自行改名、改变同步/异步形式或增加隐式宿主权限。
 - 消费：Task 2 动作模型；Task 3 的数据库连接、`operation_lock`、最小 `approvals` 表与事件序号。
 
-Task 3 只交付最小 `approvals` 表，没有审批仓储和版本化上下文字段。Task 4 必须通过 `002_governance_approvals.sql` 升级既有表，并把持久仓储封装在 `governance/approvals.py`；不得用进程内状态替代 SQLite 审批。迁移协调器必须先取得 `BEGIN IMMEDIATE` 写锁，再在同一事务内重新读取 `PRAGMA user_version`、应用一个迁移并提交；迁移 SQL 文件本身不得嵌套 `BEGIN`/`COMMIT`。
+```python
+class PolicyContext(BaseModel):
+    workspace_root: Path
+    task_state: TaskState
+    event_sequence: int
+    config_version: str
+    llm_api_authorized: bool
+
+
+class ApprovalContext(BaseModel):
+    action_id: str
+    event_sequence: int
+    normalized_scope: str
+    task_state: TaskState
+    config_version: str
+
+
+class PathGuard:
+    def __init__(self, root: Path) -> None: ...
+    def resolve(self, candidate: str | Path) -> Path: ...
+
+
+class Redactor:
+    def sanitize(self, value: object) -> RedactionResult: ...
+
+
+class PolicyEngine:
+    def evaluate(self, action: ToolAction, context: PolicyContext) -> PolicyResult: ...
+
+
+class ApprovalManager:
+    def __init__(self, database: Database, clock: Callable[[], datetime], uuid_factory: Callable[[], UUID]) -> None: ...
+    async def request(self, task_id: UUID, reason_code: str, context: ApprovalContext, expires_at: datetime) -> ApprovalRecord: ...
+    async def decide(self, approval_id: UUID, decision: ApprovalDecision, actor: str, context: ApprovalContext) -> ApprovalRecord: ...
+    async def consume(self, approval_id: UUID, context: ApprovalContext) -> ApprovalRecord: ...
+
+
+class Database:
+    @property
+    def operation_lock(self) -> asyncio.Lock: ...
+```
+
+Task 3 只交付最小 `approvals` 表，没有审批仓储和版本化上下文字段。Task 4 必须通过 `002_governance_approvals.sql` 升级既有表，并把持久仓储封装在 `governance/approvals.py`；不得用进程内状态替代 SQLite 审批。`001_initial.sql` 保持内容不变且不自行写版本；所有迁移 SQL 都不得包含 `BEGIN`、`COMMIT` 或 `PRAGMA user_version`。协调器按三位文件名前缀排序，对每个下一版本执行：`BEGIN IMMEDIATE` → 在锁内读取 `user_version` → 若仍需升级则用 `sqlite3.complete_statement` 切分并逐条执行该 SQL → 设置对应 `user_version` → `COMMIT`；异常必须 `ROLLBACK`。fresh v0 必须依次执行 001、002，legacy v1 只执行 002，v2 重开不执行 DDL，未来版本固定拒绝。
 
 **状态：** 暂停返工。已有 RED `5a2b8cb`、实现 `c14d50d`、首轮修复 `269c1ae`；第二轮复审仍发现策略与迁移并发缺口。2026-07-15 用户重新批准 `SPEC.md`，当前等待新冷启动门禁通过后继续纠正性 TDD。
 
-- [ ] **步骤 1：写六类危险动作与符号链接逃逸失败测试**
+- [x] **步骤 1：历史初始 RED——写危险动作与符号链接逃逸测试（提交 `5a2b8cb`）**
 
 ```python
 @pytest.mark.parametrize("tool,args", [
     ("delete_path", {"path": "src/a.py"}),
-    ("read_file", {"path": "../secret"}),
     ("shell", {"argv": ["pip", "install", "x"]}),
     ("shell", {"argv": ["curl", "https://example.com"]}),
-    ("git", {"operation": "push"}),
+    ("shell", {"argv": ["git", "push", "origin", "main"]}),
     ("shell", {"argv": ["rm", "-rf", "/"]}),
 ])
 def test_dangerous_actions_require_approval(policy, tool, args) -> None:
     result = policy.evaluate(make_action(tool, args), trusted_context())
     assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+
+
+def test_agent_tool_path_escape_is_denied(policy) -> None:
+    result = policy.evaluate(make_action("read_file", {"path": "../secret"}), trusted_context())
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "PATH_ESCAPE"
 ```
 
-- [ ] **步骤 2：确认红色结果**
+- [x] **步骤 2：历史初始 RED——确认模块缺失（仅描述初始分支，不是当前返工起点）**
 
 运行：`python -m pytest tests/governance -v`
 
-预期：导入失败，`PolicyEngine` 不存在。
+历史预期：导入失败，`PolicyEngine` 不存在；证据已固化在 `5a2b8cb`。当前 `codex/governance` 已有实现，后续执行者必须从步骤 6 的纠正性失败测试开始，不得再次声称模块缺失。
 
-- [ ] **步骤 3：实现规范化路径和确定性规则**
+- [x] **步骤 3：历史实现——规范化路径和确定性规则（提交 `c14d50d`）**
 
 `PathGuard` 必须先解析 worktree 根，再解析候选路径与既有父目录的符号链接，最后用 `Path.is_relative_to(root)` 判断；不得仅使用字符串前缀。
 
@@ -587,15 +634,17 @@ class PolicyEngine:
         return PolicyResult(decision=PolicyDecision.ALLOW, reason_code="SAFE", normalized_scope="", event_sequence=context.event_sequence)
 ```
 
-- [ ] **步骤 4：实现脱敏与一次性审批**
+`PathGuard` 只返回 worktree 内路径；普通 Agent 工具越界必须固定 `DENY/PATH_ESCAPE`。宿主受控导入/导出由后续 API 服务构造内部动作并使用独立的一次性审批，不把外部路径交给普通工具执行。
+
+- [x] **步骤 4：历史实现——脱敏与一次性审批（提交 `c14d50d`）**
 
 脱敏识别 Bearer、常见 API Key 赋值、私钥头、环境变量名和值；替换为 `[REDACTED]`，审计事件只保存规则名。审批绑定 `action_id + event_sequence + normalized_scope + expires_at`，消费后立即失效；状态或配置版本变化必须拒绝。
 
-- [ ] **步骤 5：转绿并补充回归测试**
+- [x] **步骤 5：历史修复——首轮评审转绿（提交 `269c1ae`）**
 
 运行：`python -m pytest tests/governance -v`
 
-预期：六类危险行为、路径穿越、符号链接逃逸、过期/重放/错版本审批和敏感字符串测试全部通过。
+历史预期：当时计划的危险行为、路径穿越、符号链接逃逸、过期/重放/错版本审批和敏感字符串测试通过；二轮审计新增的路径逃逸固定拒绝、受控导入/导出和命令语法边界以步骤 6 为准。
 
 - [ ] **步骤 6：为二轮评审缺口执行纠正性 RED—GREEN**
 
@@ -605,9 +654,13 @@ class PolicyEngine:
 @pytest.mark.parametrize("argv", [
     ["npm", "i", "x"],
     ["npm", "ci"],
+    ["npm.cmd", "ci"],
     ["pnpm", "i", "x"],
     ["yarn"],
     ["uv", "sync"],
+    ["python", "-m", "pip", "install", "x"],
+    ["py.exe", "-m", "uv", "pip", "install", "x"],
+    ["corepack", "pnpm", "add", "x"],
 ])
 def test_package_manager_install_forms_require_approval(policy, argv) -> None:
     result = policy.evaluate(make_action("shell", {"argv": argv}), trusted_context())
@@ -635,17 +688,52 @@ def test_malformed_network_field_is_denied(policy) -> None:
     assert result.reason_code == "INVALID_ACTION"
 
 
+def test_agent_path_escape_cannot_be_approved(policy) -> None:
+    result = policy.evaluate(
+        make_action("read_file", {"path": "../secret", "approval_id": "forged"}),
+        trusted_context(),
+    )
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "PATH_ESCAPE"
+
+
+@pytest.mark.parametrize("tool", ["host_import", "host_export"])
+def test_host_transfer_uses_separate_exact_approval(policy, tool) -> None:
+    result = policy.evaluate(
+        make_internal_action(tool, source="C:/input/a.py", target="src/a.py"),
+        trusted_context(),
+    )
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert result.reason_code == "EXTERNAL_TRANSFER"
+
+
 def test_command_names_in_plain_arguments_are_not_executed(policy) -> None:
     result = policy.evaluate(
         make_action("shell", {"argv": ["echo", "npm", "install"]}),
         trusted_context(),
     )
     assert result.decision is PolicyDecision.ALLOW
+
+
+@pytest.mark.parametrize("argv", [
+    ["git", "status"],
+    ["pip", "list"],
+    ["docker", "images"],
+    ["npm", "test"],
+    ["python", "-m", "pytest"],
+])
+def test_safe_commands_remain_allowed(policy, argv) -> None:
+    result = policy.evaluate(make_action("shell", {"argv": argv}), trusted_context())
+    assert result.decision is PolicyDecision.ALLOW
 ```
 
-策略解析只识别经过允许包装器后的实际命令位置，不得扫描任意后续参数。包管理器语法至少覆盖 `npm/pnpm install|i|add|ci`、裸 `yarn`、`yarn install|add`、`pip/pip3 install`、`uv pip install|sync|add` 与 `poetry install|add`；安全反例 `git status`、`pip list`、`docker images`、`npm test`、`echo npm install` 必须保持允许。Shell 解释器必须跳过已知全局选项后识别 `-c`、`/c`、`-Command`、`-EncodedCommand`/`-Enc`，无法可靠解析的代码执行形态保守要求审批。
+策略解析只识别真实命令位置，不得扫描任意后续参数。可执行文件先取 basename、`casefold()`，再剥离 `.exe/.cmd/.bat/.com/.ps1`；允许包装器固定为 `sudo`（跳过其已知选项）、`env`（跳过选项与 `NAME=VALUE`）、`command`、`nohup`、`corepack`，以及 `python|python3|py -m`。包管理器语法至少覆盖 `npm/pnpm install|i|add|ci`、裸 `yarn`、`yarn install|add`、`pip/pip3 install`、`uv pip install|sync|add`、`python|py -m pip|uv ...` 与 `poetry install|add`；安全反例 `git status`、`pip list`、`docker images`、`npm test`、`python -m pytest`、`echo npm install` 必须保持允许。Shell 解释器覆盖 `bash/sh/zsh/cmd/powershell/pwsh` 与 Windows 启动器，跳过已知全局选项后识别 `-c`、`/c`、`-Command`、`-EncodedCommand`/`-Enc`；无法可靠解析的代码执行形态保守要求审批。
 
-再增加无需 `sleep` 的双连接迁移测试：先构造 `user_version=1` 且含 UUID legacy 审批的数据库，使用 `asyncio.gather(Database.open(path), Database.open(path))` 同时打开；两个连接最终都必须看到 `user_version=2`，legacy 行只能迁移一次且仍为拒绝、已消费、已过期，业务表集合不增加。失败结果应证明旧协调器会基于锁外读取的过期版本重复执行 002 或破坏记录。修复后运行：
+迁移测试分两层且都不得使用 `sleep`：第一层给迁移协调器注入记录 SQL 调用次序的连接替身，确定性断言每次迁移必须先成功执行 `BEGIN IMMEDIATE`、后读取 `PRAGMA user_version`，旧实现因先读版本而稳定失败；第二层先构造 `user_version=1` 且含 UUID legacy 审批的数据库，使用 `asyncio.gather(Database.open(path), Database.open(path))` 同时打开作集成回归。两个连接最终都必须看到 `user_version=2`，legacy 行只能迁移一次且仍为拒绝、已消费、已过期，业务表集合不增加。另测 fresh v0 依次 001→002、v2 重开幂等和未来版本拒绝。
+
+审批并发测试使用两个真实连接和 `asyncio.gather`，同一已批准记录只能有一个 `consume` 成功；消费更新必须在 `operation_lock + BEGIN IMMEDIATE` 内使用带 `decision='APPROVED' AND consumed_at IS NULL` 及完整上下文条件的单条 `UPDATE`，按受影响行数把失败稳定映射为过期、拒绝、上下文变化或 `REPLAYED`，不得先无条件读取后覆盖。
+
+宿主导入/导出审批使用内部动作名 `host_import`/`host_export`，`normalized_scope` 必须包含脱敏后的规范化源、目标和方向；这些动作不进入 LLM 工具 schema。普通 `read_file`、`apply_patch`、`shell` 等工具即使携带该审批 ID，也不得访问外部路径。修复后运行：
 
 ```text
 python -m pytest tests/governance/test_policy.py tests/governance/test_approvals.py -v
@@ -680,6 +768,8 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 
 - 产出：`ProjectDetector.detect(root) -> ProjectProfile`、`WorkspaceScanner.scan(root) -> RepositoryMap`、`WorktreeManager.create(task_id, base_commit) -> WorktreeInfo`。
 - 消费：Task 2 `Workspace`、Task 4 `PathGuard`。
+
+步骤 1—3 的 detector/scanner 只读部分不消费 `PathGuard`，可与 Task 4 并行；步骤 4 的 `WorktreeManager` 必须等待 Task 4 的 `PathGuard` 契约通过复审并合并，禁止在并行分支复制或猜测路径围栏实现。
 
 - [ ] **步骤 1：写 Python/Node 识别与文件上限失败测试**
 
@@ -740,7 +830,7 @@ git commit -m "功能：实现项目识别和任务工作树（工作区子智�
 
 **接口：**
 
-- 产出：`ToolContext`、`ToolResult`、`ToolRegistry.dispatch(action, context)` 和工具 `read_file`、`search`、`apply_patch`、`shell`、`git_status`、`git_diff`、`checkpoint`。
+- 产出：`ToolContext`、`ToolResult`、`ToolRegistry.dispatch(action, context)` 和工具 `read_file`、`search`、`apply_patch`、`delete_path`、`shell`、`git_status`、`git_diff`、`checkpoint`。`delete_path` 是实际注册工具，执行前必须消费 Task 4 的精确一次性审批；Git push/merge 只通过受治理 Shell 或后续显式能力提供，不把虚构的 `git` 工具写入测试。
 - 消费：Task 4 `PolicyEngine/PathGuard/Redactor`，Task 5 worktree。
 
 - [ ] **步骤 1：写策略先于执行和原子 patch 冲突测试**
@@ -1082,15 +1172,15 @@ git commit -m "安全：实现凭据完整生命周期（凭据子智能体）"
 **文件：**
 
 - 新建：`src/coding_agent_harness/artifacts/builder.py`
-- 新建：`src/coding_agent_harness/api/app.py`、`dependencies.py`
-- 新建：`src/coding_agent_harness/api/routes/workspaces.py`、`tasks.py`、`approvals.py`、`settings.py`、`events.py`
-- 新建：`tests/api/test_workspaces.py`、`test_tasks.py`、`test_approvals.py`、`test_events.py`、`test_security.py`
+- 新建：`src/coding_agent_harness/api/app.py`、`dependencies.py`、`transfers.py`
+- 新建：`src/coding_agent_harness/api/routes/workspaces.py`、`tasks.py`、`approvals.py`、`transfers.py`、`settings.py`、`events.py`
+- 新建：`tests/api/test_workspaces.py`、`test_tasks.py`、`test_approvals.py`、`test_transfers.py`、`test_events.py`、`test_security.py`
 - 新建：`tests/artifacts/test_builder.py`
 
 **接口：**
 
-- 产出：`create_app(container) -> FastAPI`；`POST /api/workspaces`、`POST /api/tasks`、`POST /api/tasks/{id}/plan-decision`、`POST /api/approvals/{id}/decision`、`POST /api/tasks/{id}/{pause|resume|cancel|finalize}`、`GET /api/tasks/{id}`、`GET /api/tasks/{id}/events`、`GET/PUT/DELETE /api/settings/credentials/{provider}`、`GET /health`。
-- 消费：Tasks 5、9、10 服务接口。
+- 产出：`create_app(container) -> FastAPI`；`POST /api/workspaces`、`POST /api/tasks`、`POST /api/tasks/{id}/plan-decision`、`POST /api/approvals/{id}/decision`、`POST /api/transfers`、`POST /api/transfers/{id}/execute`、`POST /api/tasks/{id}/{pause|resume|cancel|finalize}`、`GET /api/tasks/{id}`、`GET /api/tasks/{id}/events`、`GET/PUT/DELETE /api/settings/credentials/{provider}`、`GET /health`。
+- 消费：Tasks 4、5、9、10 服务接口。`POST /api/transfers` 只能由已认证用户创建 `host_import` 或 `host_export` 内部动作并返回审批；`execute` 必须消费精确一次性审批后由宿主复制，不能调用普通 Agent 文件或 Shell 工具。import 的目标和 export 的源必须通过 `PathGuard` 位于 worktree；外部端在审批前规范化并展示，执行时重新校验文件身份与目标，状态或文件变化使审批失效。
 
 - [ ] **步骤 1：写未授权、过期审批和 SSE 续传失败测试**
 
@@ -1107,6 +1197,17 @@ def test_sse_resumes_after_last_event_id(client, seeded_task, token) -> None:
     )
     assert "id: 3" in response.text
     assert "id: 2" not in response.text
+
+
+def test_external_transfer_requires_exact_one_time_approval(client, token, workspace) -> None:
+    requested = client.post(
+        "/api/transfers",
+        headers={"X-Harness-Session": token},
+        json={"workspace_id": workspace.id, "direction": "import", "source": "C:/input/a.py", "target": "src/a.py"},
+    )
+    assert requested.status_code == 202
+    approval_id = requested.json()["approval_id"]
+    assert client.post(f"/api/transfers/{approval_id}/execute", headers={"X-Harness-Session": token}).status_code == 409
 ```
 
 - [ ] **步骤 2：确认红色结果**
@@ -1117,7 +1218,7 @@ def test_sse_resumes_after_last_event_id(client, seeded_task, token) -> None:
 
 - [ ] **步骤 3：实现命令路由与安全中间件**
 
-启动生成随机会话令牌，只通过启动终端和首屏注入提供；所有 mutation 校验同源 Origin 与 `X-Harness-Session`。服务默认绑定 `127.0.0.1`；公网 demo 使用独立只读/受限配置。错误响应为 `{code, message, details, event_id}` 且先脱敏。
+启动生成随机会话令牌，只通过启动终端和首屏注入提供；所有 mutation 校验同源 Origin 与 `X-Harness-Session`。服务默认绑定 `127.0.0.1`；公网 demo 使用独立只读/受限配置。错误响应为 `{code, message, details, event_id}` 且先脱敏。`transfers.py` 只接受 `import|export`、单个文件和精确源/目标；创建请求只生成审批，不复制。执行端重新校验任务状态、事件版本、文件身份和 worktree 内端，原子消费审批后只复制一次；目录递归、通配符、设备路径、公网 demo 和 Agent 自发请求固定拒绝。
 
 - [ ] **步骤 4：实现 SSE 与 ArtifactBuilder**
 
@@ -1127,7 +1228,7 @@ SSE 每条事件含递增 `id`、`event: task-event`、脱敏 JSON data；支持
 
 运行：`python -m pytest tests/api tests/artifacts -v`
 
-预期：REST、会话令牌、Origin、审批版本、SSE 续传/断线和文档不虚构测试通过。保存 OpenAPI 快照到 `web/src/api/openapi.json`，作为 Task 12 类型实现依据。
+预期：REST、会话令牌、Origin、审批版本、一次性受控导入/导出、普通工具不能消费传输审批、SSE 续传/断线和文档不虚构测试通过。保存 OpenAPI 快照到 `web/src/api/openapi.json`，作为 Task 12 类型实现依据。
 
 - [ ] **步骤 6：评审与提交**
 
@@ -1387,7 +1488,7 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 | 2. 默认计划审批；显式跳过才直接执行 | 3、9、12 | `test_plan_gate.py` 与 WebUI 计划按钮测试 |
 | 3. 每任务独立 worktree，主分支不提前变化 | 5、13 | worktree 集成测试与临时 Git E2E |
 | 4. DeepSeek/Qwen 共用接口，Mock 可替换 | 2、9 | Provider 契约测试与 Scripted Mock 主循环测试 |
-| 5. 六类危险动作和过期审批拦截 | 4、6、13 | 参数化策略测试与治理 E2E |
+| 5. 危险动作、受控导入/导出、路径逃逸拒绝和过期审批拦截 | 4、6、11、13 | 参数化策略测试、宿主传输 API 测试与治理 E2E |
 | 6. Python/Node 快速和完整验证、自定义命令 | 5、7、13 | 两类 fixture、选择器和 E2E |
 | 7. 失败分类、指纹、3/8/2 预算 | 7、9、13 | Feedback 单测、主循环和机制演示 |
 | 8. 服务重启恢复；不确定副作用不重放 | 3、9 | 事件重放和恢复循环测试 |
