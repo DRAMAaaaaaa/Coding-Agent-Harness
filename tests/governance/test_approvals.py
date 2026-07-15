@@ -125,6 +125,44 @@ class _WalClock:
         self.advance(seconds)
 
 
+class _FetchFailure(BaseException):
+    pass
+
+
+class _FetchCloseCursor:
+    def __init__(
+        self,
+        *,
+        row: tuple[object, ...] | None = None,
+        fetch_error: BaseException | None = None,
+        close_error: BaseException | None = None,
+    ) -> None:
+        self.row = row
+        self.fetch_error = fetch_error
+        self.close_error = close_error
+        self.close_attempted = False
+
+    async def fetchone(self) -> tuple[object, ...] | None:
+        if self.fetch_error is not None:
+            raise self.fetch_error
+        return self.row
+
+    async def close(self) -> None:
+        self.close_attempted = True
+        if self.close_error is not None:
+            raise self.close_error
+
+
+class _CursorConnection:
+    def __init__(self, cursor: _FetchCloseCursor) -> None:
+        self.cursor = cursor
+        self.statements: list[str] = []
+
+    async def execute(self, sql: str) -> _FetchCloseCursor:
+        self.statements.append(sql)
+        return self.cursor
+
+
 def _install_wal_clock(monkeypatch: pytest.MonkeyPatch, clock: _WalClock) -> None:
     monkeypatch.setattr(database_module, "_wal_clock", clock, raising=False)
     monkeypatch.setattr(database_module, "_wal_wait", clock.wait, raising=False)
@@ -246,6 +284,62 @@ async def test_migration_lock_timeout_has_one_fixed_error() -> None:
 
     assert str(captured.value) == "数据库迁移正忙"
     assert "CREATE TABLE" not in str(captured.value)
+
+
+@pytest.mark.parametrize(
+    "fetch_error",
+    [
+        sqlite3.OperationalError("FETCH_PRIMARY"),
+        _FetchFailure("FETCH_PRIMARY"),
+    ],
+)
+async def test_fetchone_closed_preserves_fetch_error_when_close_also_fails(
+    fetch_error: BaseException,
+) -> None:
+    close_error = RuntimeError("CLOSE_SECONDARY")
+    cursor = _FetchCloseCursor(
+        fetch_error=fetch_error,
+        close_error=close_error,
+    )
+    connection = _CursorConnection(cursor)
+
+    with pytest.raises(BaseException) as captured:
+        await database_module._fetchone_closed(  # type: ignore[arg-type]
+            connection,
+            "PRAGMA journal_mode",
+        )
+
+    assert captured.value is fetch_error
+    assert "CLOSE_SECONDARY" not in str(captured.value)
+    assert cursor.close_attempted is True
+
+
+async def test_fetchone_closed_propagates_close_error_after_successful_fetch() -> None:
+    close_error = RuntimeError("CLOSE_PRIMARY")
+    cursor = _FetchCloseCursor(row=("wal",), close_error=close_error)
+    connection = _CursorConnection(cursor)
+
+    with pytest.raises(RuntimeError) as captured:
+        await database_module._fetchone_closed(  # type: ignore[arg-type]
+            connection,
+            "PRAGMA journal_mode",
+        )
+
+    assert captured.value is close_error
+    assert cursor.close_attempted is True
+
+
+async def test_fetchone_closed_returns_row_after_successful_close() -> None:
+    cursor = _FetchCloseCursor(row=("wal",))
+    connection = _CursorConnection(cursor)
+
+    row = await database_module._fetchone_closed(  # type: ignore[arg-type]
+        connection,
+        "PRAGMA journal_mode",
+    )
+
+    assert row == ("wal",)
+    assert cursor.close_attempted is True
 
 
 async def test_wal_waiter_times_out_with_one_fixed_error(
