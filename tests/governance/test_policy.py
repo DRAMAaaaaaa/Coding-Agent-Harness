@@ -479,3 +479,87 @@ def test_every_real_tool_denies_path_escape_before_risk_approval(
 
     assert result.decision is PolicyDecision.DENY
     assert result.reason_code == "PATH_ESCAPE"
+
+
+@pytest.mark.parametrize(
+    ("tool", "source", "target", "direction"),
+    [
+        ("host_import", "C:/host/input.py", "src/input.py", "import"),
+        ("host_export", "src/output.py", "C:/host/output.py", "export"),
+    ],
+)
+def test_host_transfer_uses_separate_exact_approval(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    tool: str,
+    source: str,
+    target: str,
+    direction: str,
+) -> None:
+    result = policy.evaluate(
+        _internal_action(tool, {"source": source, "target": target}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert result.reason_code == "EXTERNAL_TRANSFER"
+    assert f'"direction":"{direction}"' in result.normalized_scope
+    assert '"source":' in result.normalized_scope
+    assert '"target":' in result.normalized_scope
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("host_import", {"source": "C:/host/input.py", "target": "../outside.py"}),
+        ("host_export", {"source": "../outside.py", "target": "C:/host/output.py"}),
+    ],
+)
+def test_host_transfer_guards_only_its_workspace_side(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    tool: str,
+    arguments: dict[str, object],
+) -> None:
+    result = policy.evaluate(
+        _internal_action(tool, arguments),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "PATH_ESCAPE"
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("read_file", {"path": "../outside.py", "approval_id": "transfer-approval"}),
+        (
+            "apply_patch",
+            {
+                "patch": "*** Update File: ../outside.py",
+                "approval_id": "transfer-approval",
+            },
+        ),
+        (
+            "shell",
+            {
+                "argv": ["rm", "../outside.py"],
+                "approval_id": "transfer-approval",
+            },
+        ),
+    ],
+)
+def test_transfer_approval_never_grants_external_paths_to_agent_tools(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    tool: str,
+    arguments: dict[str, object],
+) -> None:
+    result = policy.evaluate(
+        _action(tool, arguments),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "PATH_ESCAPE"
