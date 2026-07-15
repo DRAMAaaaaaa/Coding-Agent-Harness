@@ -701,6 +701,8 @@ def test_package_manager_install_forms_require_approval(policy, argv) -> None:
     ["powershell", "-NoProfile", "-Command", "Invoke-WebRequest https://example.com"],
     ["cmd", "/d", "/c", "curl https://example.com"],
     ["powershell", "-EncodedCommand", "YwB1AHIAbAA="],
+    ["env", "-S", "npm install x", "echo", "safe"],
+    ["env", "--split-string", "curl https://example.com", "echo", "safe"],
 ])
 def test_interpreter_options_cannot_hide_code_execution(policy, argv) -> None:
     result = policy.evaluate(make_action("shell", {"argv": argv}), trusted_context())
@@ -767,11 +769,11 @@ def test_every_real_tool_denies_path_escape_before_risk_approval(policy, tool, a
     assert result.reason_code == "PATH_ESCAPE"
 ```
 
-路径规则优先级固定为：参数结构错误 `DENY/INVALID_ACTION` → 普通工具任何路径逃逸 `DENY/PATH_ESCAPE` → worktree 内删除等危险动作 `REQUIRE_APPROVAL` → 其余规则。实际路径 schema 固定为：`read_file.path`、`search.path`、`delete_path.path`；`apply_patch.patch` 必须解析每个 `Add/Update/Delete/Move` 文件头并逐一围栏；`shell.cwd` 必须等于 worktree，argv 中明确的绝对路径、盘符/UNC 路径或 `..` 路径 token 也逐一围栏，URL 与已识别命令选项不当作路径；`git_status/git_diff/checkpoint` 不接受调用方路径字段，额外字段固定拒绝。
+路径规则优先级固定为：参数结构错误 `DENY/INVALID_ACTION` → 普通工具任何路径逃逸 `DENY/PATH_ESCAPE` → worktree 内删除等危险动作 `REQUIRE_APPROVAL` → 其余规则。实际路径 schema 固定为：`read_file.path`、`search.path`、`delete_path.path`；`apply_patch.patch` 必须解析每个 `Add/Update/Delete/Move` 文件头并逐一围栏；`shell.cwd` 省略时固定使用 worktree，提供非字符串值时 `DENY/INVALID_ACTION`，提供字符串但规范化后不等于 worktree 时 `DENY/PATH_ESCAPE`。Shell argv 中明确的绝对路径、盘符/UNC 路径或 `..` 路径 token 也逐一围栏，URL 与已识别命令选项不当作路径；`git_status/git_diff/checkpoint` 不接受调用方路径字段，额外字段固定拒绝。
 
-策略解析只识别真实命令位置，不得扫描任意后续参数。可执行文件先取 basename、`casefold()`，再剥离 `.exe/.cmd/.bat/.com/.ps1`；包装器最多嵌套 4 层，超过上限固定 `REQUIRE_APPROVAL/HIGH_RISK_SHELL`。语法表固定为：`sudo` 无值选项 `-E/-H/-K/-k/-n/-S/-V/-v`，带值选项 `-u/--user/-g/--group/-h/--host/-p/--prompt/-C/--chdir/-R/--chroot/-T/--command-timeout`；`env` 无值选项 `-i/--ignore-environment/-0/--null`，带值选项 `-u/--unset/-C/--chdir/-S/--split-string`，并跳过 `NAME=VALUE`；`command` 只允许 `-p` 后继续解析，`-v/-V` 作为只读命令直接结束；`nohup` 无包装器选项；`corepack` 只继续解析 `npm/pnpm/yarn`；`python/python3/py` 允许无值选项 `-B/-E/-I/-O/-OO/-P/-q/-s/-S/-u/-v/-V/-x` 与带值选项 `-W/-X`，随后必须出现 `-m` 才作为模块命令。各包装器支持 `--` 结束自身选项；已识别包装器出现未知选项、缺失选项值或不完整嵌套时保守要求审批，不猜测后续 token。
+策略解析只识别真实命令位置，不得扫描任意后续参数。可执行文件先取 basename、`casefold()`，再剥离 `.exe/.cmd/.bat/.com/.ps1`；包装器最多嵌套 4 层，超过上限固定 `REQUIRE_APPROVAL/HIGH_RISK_SHELL`。语法表固定为：`sudo` 无值选项 `-E/-H/-K/-k/-n/-S/-V/-v`，带值选项 `-u/--user/-g/--group/-h/--host/-p/--prompt/-C/--chdir/-R/--chroot/-T/--command-timeout`；`env` 无值选项 `-i/--ignore-environment/-0/--null`，带值选项仅 `-u/--unset/-C/--chdir`，并跳过 `NAME=VALUE`；`env -S/--split-string` 因会重新拆分命令字符串而不在本 Harness 中模拟 shellwords，固定 `REQUIRE_APPROVAL/HIGH_RISK_SHELL`；`command` 只允许 `-p` 后继续解析，`-v/-V` 作为只读命令直接结束；`nohup` 无包装器选项；`corepack` 只继续解析 `npm/pnpm/yarn`；`python/python3/py` 允许无值选项 `-B/-E/-I/-O/-OO/-P/-q/-s/-S/-u/-v/-V/-x` 与带值选项 `-W/-X`，随后必须出现 `-m` 才作为模块命令。各包装器支持 `--` 结束自身选项；已识别包装器出现未知选项、缺失选项值或不完整嵌套时保守要求审批，不猜测后续 token。
 
-包管理器语法至少覆盖 `npm/pnpm install|i|add|ci`、裸 `yarn`、`yarn install|add`、`pip/pip3 install`、`uv pip install|sync|add`、`python|py -m pip|uv ...` 与 `poetry install|add`；安全反例 `git status`、`pip list`、`docker images`、`npm test`、`python -m pytest`、`echo npm install` 必须保持允许。Shell 解释器覆盖 `bash/sh/zsh/cmd/powershell/pwsh` 与 Windows 启动器，识别 `-c`、`/c`、`-Command`、`-EncodedCommand`/`-Enc`；解释器出现未知选项或无法可靠解析的代码执行形态保守要求审批。
+包管理器语法至少覆盖 `npm/pnpm install|i|add|ci`、裸 `yarn`、`yarn install|add`、`pip/pip3 install`、`uv pip install|sync|add`、`python|py -m pip|uv ...` 与 `poetry install|add`；安全反例 `git status`、`pip list`、`docker images`、`npm test`、`python -m pytest`、`echo npm install` 必须保持允许。Shell 解释器精确覆盖 `bash/sh/zsh/cmd/powershell/pwsh`；通过统一后缀规范化同样覆盖 `bash.exe/sh.exe/zsh.exe/cmd.exe/cmd.com/powershell.exe/pwsh.exe`，不另行猜测其他启动器。识别 `-c`、`/c`、`-Command`、`-EncodedCommand`/`-Enc`；解释器出现未知选项或无法可靠解析的代码执行形态保守要求审批。
 
 迁移测试分两层且都不得使用 `sleep`：第一层给迁移协调器注入记录 SQL 调用次序的连接替身，确定性断言每次迁移必须先成功执行 `BEGIN IMMEDIATE`、后读取 `PRAGMA user_version`，旧实现因先读版本而稳定失败；第二层先构造 `user_version=1` 且含 UUID legacy 审批的数据库，使用 `asyncio.gather(Database.open(path), Database.open(path))` 同时打开作集成回归。两个连接最终都必须看到 `user_version=2`，legacy 行只能迁移一次且仍为拒绝、已消费、已过期，业务表集合不增加。另测 fresh v0 依次 001→002、v2 重开幂等和未来版本拒绝。
 
@@ -1274,6 +1276,7 @@ class TransferRecord(BaseModel):
     workspace_path: str
     source_identity: FileIdentity
     target_parent_identity: PathIdentity
+    target_identity: FileIdentity | None
     expected_target_sha256: str | None
     idempotency_key: str
     event_sequence: int
@@ -1283,12 +1286,14 @@ class TransferRecord(BaseModel):
 
 
 class HostTransferService:
-    async def request(self, task_id: UUID, direction: TransferDirection, source: str, target: str) -> TransferRecord: ...
+    async def request(self, task_id: UUID, direction: TransferDirection, source: str, target: str, idempotency_key: str) -> TransferRecord: ...
     async def execute(self, transfer_id: UUID, approval_context: ApprovalContext) -> TransferRecord: ...
     async def recover(self, transfer_id: UUID) -> TransferRecord: ...
 ```
 
-路由 `{id}` 始终是 `transfer_id`，不是 `approval_id`；响应同时返回两个 ID。`003_host_transfers.sql` 创建 `host_transfers` 表，保存以上字段并对 `approval_id`、`idempotency_key` 建唯一约束；路径与文件身份是执行数据，不能从脱敏展示 scope 反向解析。`Approval.normalized_scope` 只用于精确绑定和展示，其确定性 JSON 含 direction、两端规范化路径、source identity、target parent identity、expected target digest、transfer ID。`HostTransferService.request` 必须通过 `ApprovalManager.request_and_apply` 在同一事务创建 approval 与 transfer，禁止留下无 transfer 的可执行审批；审批拒绝或过期后 transfer 固定转为 `FAILED`。
+路由 `{id}` 始终是 `transfer_id`，不是 `approval_id`；响应同时返回两个 ID。`003_host_transfers.sql` 创建 `host_transfers` 表，保存以上字段并对 `approval_id`、`idempotency_key` 建唯一约束；路径与文件身份是执行数据，不能从脱敏展示 scope 反向解析。`target_identity` 在目标已存在时保存完整 `resolved_path/device/inode/size/mtime_ns/sha256`，目标不存在时为 `None`，不能只靠 SHA-256 判断未变化。`Approval.normalized_scope` 只用于精确绑定和展示，其确定性 JSON 含 direction、两端规范化路径、source identity、target parent identity、target identity、expected target digest、transfer ID。`HostTransferService.request` 必须通过 `ApprovalManager.request_and_apply` 在同一事务创建 approval 与 transfer，禁止留下无 transfer 的可执行审批；审批拒绝或过期后 transfer 固定转为 `FAILED`。
+
+`POST /api/transfers` 强制要求非空 `Idempotency-Key` 请求头并传入服务；相同 key 且规范化 direction/source/target/文件身份完全一致时返回既有记录和 HTTP 200；同一 key 对应不同请求时返回 HTTP 409/`IDEMPOTENCY_CONFLICT`，不得泄漏唯一约束异常。
 
 - [ ] **步骤 1：写未授权、过期审批和 SSE 续传失败测试**
 
@@ -1310,7 +1315,7 @@ def test_sse_resumes_after_last_event_id(client, seeded_task, token) -> None:
 def test_external_transfer_requires_exact_one_time_approval(client, token, workspace) -> None:
     requested = client.post(
         "/api/transfers",
-        headers={"X-Harness-Session": token},
+        headers={"X-Harness-Session": token, "Idempotency-Key": "import-a-v1"},
         json={"workspace_id": workspace.id, "direction": "import", "source": "C:/input/a.py", "target": "src/a.py"},
     )
     assert requested.status_code == 202
@@ -1341,6 +1346,16 @@ def test_transfer_rejects_file_identity_change(client, token, approved_transfer,
     )
     assert response.status_code == 409
     assert response.json()["code"] == "STALE_TRANSFER"
+
+
+def test_target_same_content_with_new_inode_is_stale(client, token, approved_transfer) -> None:
+    approved_transfer.replace_target_with_same_bytes_new_inode()
+    response = client.post(
+        f"/api/transfers/{approved_transfer.id}/execute",
+        headers={"X-Harness-Session": token},
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "STALE_TRANSFER"
 ```
 
 - [ ] **步骤 2：确认红色结果**
@@ -1356,6 +1371,8 @@ def test_transfer_rejects_file_identity_change(client, token, approved_transfer,
 执行状态机固定为：`WAITING_APPROVAL` → 在消费审批前首次校验两端解析路径、源身份、目标父目录身份和预期目标摘要 → 使用 `ApprovalManager.consume_and_apply` 在同一 SQLite 事务原子消费审批并把 transfer 改为 `EXECUTING` → 副作用前再次执行相同校验 → 在目标同目录写唯一临时文件、flush、`fsync`，第三次校验后用原子替换落盘 → 新事务记录 `COMPLETED/result_sha256`。首次校验失败不消费审批并返回 `STALE_TRANSFER`；进入 `EXECUTING` 后校验失败记录 `FAILED`。进入 `EXECUTING` 后若进程中断、临时文件残留、目标已替换但完成事件未落盘或结果无法确认，恢复时一律变为 `UNCERTAIN`、清理可确认未发布的临时文件且绝不自动重试，等待用户检查并创建新 transfer。import 的目标和 export 的源必须通过 `PathGuard` 位于 worktree；外部端及其既有父目录的解析身份在批准与执行时一致。覆盖已有目标必须把其批准时 SHA-256 纳入审批；目标从不存在变为存在同样固定 `STALE_TRANSFER`。
 
 故障注入测试必须覆盖：原子绑定前失败仍可重新执行；绑定后、原子替换前崩溃恢复为 `UNCERTAIN` 且不复制；替换后、`COMPLETED` 落盘前崩溃恢复为 `UNCERTAIN` 且目标只变化一次；重启不得重放；普通工具携带 transfer 或 approval ID 仍不能越界。所有注入使用事件/Stub，不使用 `sleep`。
+
+003 迁移回归必须覆盖且不得使用 `sleep`：fresh v0 严格执行 001→002→003；已有 v2 数据库只执行 003且既有 approvals 内容逐字段不变；两个 `Database.open()` 并发打开 v2 后都看到 v3 且只建一份 `host_transfers`；v3 重开不执行 DDL；`user_version>3` 固定拒绝。wheel 与 sdist 中 001/002/003 必须各恰好一份。
 
 - [ ] **步骤 4：实现 SSE 与 ArtifactBuilder**
 

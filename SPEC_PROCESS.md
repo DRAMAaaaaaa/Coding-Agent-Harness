@@ -309,3 +309,9 @@ v3 已证明修订后的陌生执行者能够从零取得正确 RED 和 GREEN。
 主 Agent 从 `9d97513` 创建全新 `codex/cold-start-audit-v5`，同样取得 `102 passed` 基线且没有安装依赖。另一名无历史审计智能体完整且仅读取 `SPEC.md` 与 `PLAN.md`，审查 Task 4 和 Task 11。结论仍为 Fail：Task 4 的当前返工起点与大部分接口已可执行，但宿主传输缺少持久 ID/状态模型，审批消费与文件复制之间的崩溃窗口无法保证不重放；逐工具路径字段、包装器语法、权威审批状态和迁移忙碌/legacy 回填也需更精确。
 
 主 Agent 接受这些可验证的阻塞项并补充：`HostTransfer` 数据模型、`003_host_transfers.sql`、`HostTransferService` 冻结接口、transfer ID 与 approval ID 的明确区分、审批消费和 `EXECUTING` 的同事务绑定、同目录临时文件与原子替换、`UNCERTAIN` 恢复不重放、文件身份/目标摘要校验、逐工具 `PATH_ESCAPE` 优先级矩阵、包装器选项语法表、权威 task/event/config 校验、审批条件更新，以及 migration busy/legacy 固定语义。第五轮仍记录为失败，修订必须交给新的第六名审计智能体验证。
+
+### 9.3 第六次冷启动审计与两个安全边界修订
+
+第六名无历史审计智能体从 `79012bd` 的全新 worktree 开始，完整且仅读取 `SPEC.md` 与 `PLAN.md`。它确认 Task 4 当前返工起点、路径规则优先级、审批权威状态和传输恢复主体已经清楚，但仍以 Fail 阻止实施：`env -S/--split-string` 会把一个参数重新拆成命令，不能当普通带值选项跳过；已有目标只绑定 SHA-256 而没有完整 inode/device/path 身份，同内容替换可绕过 stale 校验。
+
+计划据此把 `env -S/--split-string` 固定为 `HIGH_RISK_SHELL` 并增加绕过 RED；`TransferRecord` 增加可空完整 `target_identity`，scope、003 和三次校验均绑定它，并增加同摘要不同 inode 测试。同时补齐 shell cwd 默认/畸形/越界语义、Windows 解释器精确名称、003 全迁移矩阵和 idempotency 重复请求行为。第六轮仍为 Fail，需新审计智能体复验。
