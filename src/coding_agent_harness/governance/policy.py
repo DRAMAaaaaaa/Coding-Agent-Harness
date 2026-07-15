@@ -4,8 +4,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from coding_agent_harness.domain.actions import TaskState, ToolAction
 from coding_agent_harness.governance.paths import PathEscapeError, PathGuard
@@ -87,6 +88,14 @@ class PolicyDecision(StrEnum):
     DENY = "DENY"
 
 
+class HostTransferAction(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    tool: Literal["host_import", "host_export"]
+    source: str = Field(min_length=1)
+    target: str = Field(min_length=1)
+
+
 class PolicyContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -125,6 +134,8 @@ class PolicyEngine:
         self._redactor = redactor
 
     def evaluate(self, action: ToolAction, context: PolicyContext) -> PolicyResult:
+        if self._executable(action.tool) in {"host_import", "host_export"}:
+            return self._result(PolicyDecision.DENY, "INVALID_ACTION", "", context)
         parsed = self._parse_action(action)
         if parsed is None:
             return self._result(PolicyDecision.DENY, "INVALID_ACTION", "", context)
@@ -135,13 +146,6 @@ class PolicyEngine:
         tool = self._executable(action.tool)
         command = self._unwrap_command(parsed.argv)
 
-        if tool in {"host_import", "host_export"}:
-            return self._result(
-                PolicyDecision.REQUIRE_APPROVAL,
-                "EXTERNAL_TRANSFER",
-                scope,
-                context,
-            )
         if tool == "delete_path":
             return self._result(PolicyDecision.REQUIRE_APPROVAL, "DELETE_PATH", scope, context)
         if command.high_risk:
@@ -175,6 +179,31 @@ class PolicyEngine:
                 PolicyDecision.REQUIRE_APPROVAL, "HIGH_RISK_SHELL", scope, context
             )
         return self._result(PolicyDecision.ALLOW, "SAFE", "", context)
+
+    def evaluate_internal(
+        self,
+        action: HostTransferAction,
+        context: PolicyContext,
+    ) -> PolicyResult:
+        workspace_candidate = (
+            action.target if action.tool == "host_import" else action.source
+        )
+        try:
+            workspace_path = self._path_guard.resolve(workspace_candidate)
+        except PathEscapeError:
+            return self._result(PolicyDecision.DENY, "PATH_ESCAPE", "", context)
+        scope = self._host_transfer_scope(
+            action.tool,
+            action.source,
+            action.target,
+            workspace_path,
+        )
+        return self._result(
+            PolicyDecision.REQUIRE_APPROVAL,
+            "EXTERNAL_TRANSFER",
+            scope,
+            context,
+        )
 
     def _parse_action(self, action: ToolAction) -> _ParsedAction | None:
         tool = self._executable(action.tool)
@@ -213,13 +242,6 @@ class PolicyEngine:
         elif tool == "git":
             if not isinstance(arguments.get("operation"), str):
                 return None
-        elif tool in {"host_import", "host_export"}:
-            source = arguments.get("source")
-            target = arguments.get("target")
-            if not isinstance(source, str) or not isinstance(target, str):
-                return None
-            workspace_field = "target" if tool == "host_import" else "source"
-            candidates.append((workspace_field, target if tool == "host_import" else source))
         elif tool in {"git_status", "git_diff", "checkpoint"}:
             if arguments:
                 return None
@@ -266,9 +288,6 @@ class PolicyEngine:
         argv: tuple[str, ...],
         paths: dict[str, Path],
     ) -> str:
-        tool = self._executable(action.tool)
-        if tool in {"host_import", "host_export"}:
-            return self._host_transfer_scope(action, paths)
         values: dict[str, object] = {}
         if argv:
             values["argv"] = list(argv)
@@ -287,13 +306,11 @@ class PolicyEngine:
 
     def _host_transfer_scope(
         self,
-        action: ToolAction,
-        paths: Mapping[str, Path],
+        tool: str,
+        source: str,
+        target: str,
+        workspace_path: Path,
     ) -> str:
-        tool = self._executable(action.tool)
-        source = str(action.arguments["source"])
-        target = str(action.arguments["target"])
-        workspace_path = next(iter(paths.values()))
         if tool == "host_import":
             source = self._normalize_external_path(source)
             target = str(workspace_path)
