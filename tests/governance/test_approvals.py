@@ -34,10 +34,10 @@ class _Clock:
 
 
 class _RecordingCursor:
-    def __init__(self, row: tuple[int] | None = None) -> None:
+    def __init__(self, row: tuple[object, ...] | None = None) -> None:
         self._row = row
 
-    async def fetchone(self) -> tuple[int] | None:
+    async def fetchone(self) -> tuple[object, ...] | None:
         return self._row
 
 
@@ -70,6 +70,26 @@ class _BusyRecordingConnection(_RecordingConnection):
         if " ".join(sql.split()) == "BEGIN IMMEDIATE":
             raise sqlite3.OperationalError("database is locked")
         return await super().execute(sql)
+
+
+class _WalRecordingConnection:
+    def __init__(
+        self,
+        switch_error: sqlite3.OperationalError,
+        current_mode: str,
+    ) -> None:
+        self.switch_error = switch_error
+        self.current_mode = current_mode
+        self.statements: list[str] = []
+
+    async def execute(self, sql: str) -> _RecordingCursor:
+        statement = " ".join(sql.split())
+        self.statements.append(statement)
+        if statement == "PRAGMA journal_mode=WAL":
+            raise self.switch_error
+        if statement == "PRAGMA journal_mode":
+            return _RecordingCursor((self.current_mode,))
+        return _RecordingCursor()
 
 
 async def _seed_task(database: Database, task_id: UUID) -> None:
@@ -188,6 +208,48 @@ async def test_migration_lock_timeout_has_one_fixed_error() -> None:
 
     assert str(captured.value) == "数据库迁移正忙"
     assert "CREATE TABLE" not in str(captured.value)
+
+
+async def test_wal_lock_contention_with_non_wal_recheck_has_fixed_error() -> None:
+    connection = _WalRecordingConnection(
+        sqlite3.OperationalError("secret database is locked"),
+        "delete",
+    )
+
+    with pytest.raises(database_module.MigrationBusyError) as captured:
+        await database_module._ensure_wal_mode(connection)  # type: ignore[arg-type]
+
+    assert str(captured.value) == "数据库迁移正忙"
+    assert "secret" not in str(captured.value)
+    assert connection.statements == [
+        "PRAGMA journal_mode=WAL",
+        "PRAGMA journal_mode",
+    ]
+
+
+async def test_wal_lock_contention_succeeds_when_recheck_is_wal() -> None:
+    connection = _WalRecordingConnection(
+        sqlite3.OperationalError("database is locked"),
+        "WAL",
+    )
+
+    await database_module._ensure_wal_mode(connection)  # type: ignore[arg-type]
+
+    assert connection.statements == [
+        "PRAGMA journal_mode=WAL",
+        "PRAGMA journal_mode",
+    ]
+
+
+async def test_wal_non_lock_operational_error_is_not_swallowed() -> None:
+    error = sqlite3.OperationalError("disk I/O boundary error")
+    connection = _WalRecordingConnection(error, "delete")
+
+    with pytest.raises(sqlite3.OperationalError) as captured:
+        await database_module._ensure_wal_mode(connection)  # type: ignore[arg-type]
+
+    assert captured.value is error
+    assert connection.statements == ["PRAGMA journal_mode=WAL"]
 
 
 async def test_fresh_database_runs_all_migrations_and_adds_task_config_version(
