@@ -1,8 +1,10 @@
+import re
 import sqlite3
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import cast
 from uuid import UUID
 
 import aiosqlite
@@ -34,6 +36,7 @@ _ERROR_MESSAGES = {
     "INVALID_CONTEXT": "审批上下文无效",
     "INVALID_DECISION": "审批决定无效",
     "INVALID_TIME": "审批时间无效",
+    "INVALID_MUTATION": "审批数据库变更无效",
     "STORAGE_ERROR": "审批存储失败",
 }
 _MAX_ACTION_ID_LENGTH = 256
@@ -42,12 +45,42 @@ _MAX_CONFIG_VERSION_LENGTH = 128
 _MAX_REASON_CODE_LENGTH = 128
 _MAX_ACTOR_LENGTH = 256
 _MAX_EVENT_SEQUENCE = 2**63 - 1
+_SQL_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_PROTECTED_MUTATION_TABLES = frozenset({"approvals", "tasks", "task_events"})
 
 
 class ApprovalDecision(StrEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     DENIED = "DENIED"
+
+
+class ApprovalMutationOperation(StrEnum):
+    INSERT = "INSERT"
+    UPDATE = "UPDATE"
+
+
+class ApprovalMutationBinding(StrEnum):
+    APPROVAL_ID = "APPROVAL_ID"
+    TASK_ID = "TASK_ID"
+    CREATED_AT = "CREATED_AT"
+    CONSUMED_AT = "CONSUMED_AT"
+
+
+@dataclass(frozen=True)
+class ApprovalDatabaseMutation:
+    operation: ApprovalMutationOperation
+    table: str
+    values: tuple[tuple[str, object], ...]
+    where: tuple[tuple[str, object], ...] = ()
+
+    async def __call__(
+        self,
+        connection: aiosqlite.Connection,
+        context: object,
+    ) -> None:
+        del connection, context
+        raise ApprovalError("INVALID_MUTATION")
 
 
 class ApprovalContext(BaseModel):
@@ -92,6 +125,14 @@ class _TaskAuthority:
     event_sequence: int
 
 
+@dataclass(frozen=True)
+class _MutationContext:
+    approval_id: UUID
+    task_id: UUID
+    created_at: datetime
+    consumed_at: datetime | None
+
+
 class ApprovalManager:
     def __init__(
         self,
@@ -110,18 +151,8 @@ class ApprovalManager:
         context: ApprovalContext,
         expires_at: datetime,
     ) -> ApprovalRecord:
-        async def apply(
-            connection: aiosqlite.Connection,
-            record: ApprovalRecord,
-        ) -> None:
-            del connection, record
-
-        return await self.request_and_apply(
-            task_id,
-            reason_code,
-            context,
-            expires_at,
-            apply,
+        return await self._request_with_mutation(
+            task_id, reason_code, context, expires_at, None
         )
 
     async def request_and_apply(
@@ -134,6 +165,19 @@ class ApprovalManager:
             [aiosqlite.Connection, ApprovalRecord], Awaitable[None]
         ],
     ) -> ApprovalRecord:
+        mutation = _require_mutation(apply, ApprovalMutationOperation.INSERT)
+        return await self._request_with_mutation(
+            task_id, reason_code, context, expires_at, mutation
+        )
+
+    async def _request_with_mutation(
+        self,
+        task_id: UUID,
+        reason_code: str,
+        context: ApprovalContext,
+        expires_at: datetime,
+        mutation: ApprovalDatabaseMutation | None,
+    ) -> ApprovalRecord:
         async with self._database.operation_lock:
             try:
                 await self._database.connection.execute("BEGIN IMMEDIATE")
@@ -142,8 +186,6 @@ class ApprovalManager:
                 expiration = _require_aware(expires_at)
                 if expiration <= now:
                     raise ApprovalError("EXPIRED")
-                if context.task_state is TaskState.CANCELLED:
-                    raise ApprovalError("TASK_CANCELLED")
                 authority = await self._load_task_authority(task_id)
                 self._validate_authority(context, authority)
                 record = ApprovalRecord(
@@ -172,7 +214,17 @@ class ApprovalManager:
                     """,
                     _record_parameters(record),
                 )
-                await apply(self._database.connection, record)
+                if mutation is not None:
+                    await _execute_mutation(
+                        self._database.connection,
+                        mutation,
+                        _MutationContext(
+                            approval_id=record.id,
+                            task_id=record.task_id,
+                            created_at=record.created_at,
+                            consumed_at=None,
+                        ),
+                    )
                 await self._database.connection.commit()
             except Exception as error:
                 await self._database.connection.rollback()
@@ -242,19 +294,22 @@ class ApprovalManager:
         approval_id: UUID,
         context: ApprovalContext,
     ) -> ApprovalRecord:
-        async def apply(
-            connection: aiosqlite.Connection,
-            consumed_at: datetime,
-        ) -> None:
-            del connection, consumed_at
-
-        return await self.consume_and_apply(approval_id, context, apply)
+        return await self._consume_with_mutation(approval_id, context, None)
 
     async def consume_and_apply(
         self,
         approval_id: UUID,
         context: ApprovalContext,
         apply: Callable[[aiosqlite.Connection, datetime], Awaitable[None]],
+    ) -> ApprovalRecord:
+        mutation = _require_mutation(apply, ApprovalMutationOperation.UPDATE)
+        return await self._consume_with_mutation(approval_id, context, mutation)
+
+    async def _consume_with_mutation(
+        self,
+        approval_id: UUID,
+        context: ApprovalContext,
+        mutation: ApprovalDatabaseMutation | None,
     ) -> ApprovalRecord:
         async with self._database.operation_lock:
             try:
@@ -302,7 +357,17 @@ class ApprovalManager:
                     if current.decision is not ApprovalDecision.APPROVED:
                         raise ApprovalError("NOT_APPROVED")
                     raise ApprovalError("REPLAYED")
-                await apply(self._database.connection, now)
+                if mutation is not None:
+                    await _execute_mutation(
+                        self._database.connection,
+                        mutation,
+                        _MutationContext(
+                            approval_id=record.id,
+                            task_id=record.task_id,
+                            created_at=record.created_at,
+                            consumed_at=now,
+                        ),
+                    )
                 await self._database.connection.commit()
             except Exception as error:
                 await self._database.connection.rollback()
@@ -420,6 +485,112 @@ def _require_aware(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ApprovalError("INVALID_TIME")
     return value.astimezone(UTC)
+
+
+def _require_mutation(
+    candidate: object,
+    expected_operation: ApprovalMutationOperation,
+) -> ApprovalDatabaseMutation:
+    if type(candidate) is not ApprovalDatabaseMutation:
+        raise ApprovalError("INVALID_MUTATION")
+    mutation = candidate
+    if mutation.operation is not expected_operation:
+        raise ApprovalError("INVALID_MUTATION")
+    if (
+        type(mutation.table) is not str
+        or _SQL_IDENTIFIER.fullmatch(mutation.table) is None
+        or mutation.table.casefold() in _PROTECTED_MUTATION_TABLES
+    ):
+        raise ApprovalError("INVALID_MUTATION")
+    values = _validate_mutation_pairs(mutation.values, require_values=True)
+    where = _validate_mutation_pairs(mutation.where, require_values=False)
+    bindings = {ApprovalMutationBinding.APPROVAL_ID, ApprovalMutationBinding.TASK_ID}
+    if mutation.operation is ApprovalMutationOperation.INSERT:
+        if where or not any(value in bindings for _, value in values):
+            raise ApprovalError("INVALID_MUTATION")
+    elif not where or not any(value in bindings for _, value in where):
+        raise ApprovalError("INVALID_MUTATION")
+    return mutation
+
+
+def _validate_mutation_pairs(
+    pairs: object,
+    *,
+    require_values: bool,
+) -> tuple[tuple[str, object], ...]:
+    if type(pairs) is not tuple or (require_values and not pairs):
+        raise ApprovalError("INVALID_MUTATION")
+    validated = cast(tuple[object, ...], pairs)
+    columns: set[str] = set()
+    for pair in validated:
+        if type(pair) is not tuple or len(pair) != 2:
+            raise ApprovalError("INVALID_MUTATION")
+        column, value = cast(tuple[object, object], pair)
+        if (
+            type(column) is not str
+            or _SQL_IDENTIFIER.fullmatch(column) is None
+            or column.casefold() in columns
+            or not _valid_mutation_value(value)
+        ):
+            raise ApprovalError("INVALID_MUTATION")
+        columns.add(column.casefold())
+    return cast(tuple[tuple[str, object], ...], validated)
+
+
+def _valid_mutation_value(value: object) -> bool:
+    return type(value) in {str, int, float, bytes, type(None)} or type(
+        value
+    ) is ApprovalMutationBinding
+
+
+async def _execute_mutation(
+    connection: aiosqlite.Connection,
+    mutation: ApprovalDatabaseMutation,
+    context: _MutationContext,
+) -> None:
+    columns = ", ".join(_quote_identifier(column) for column, _ in mutation.values)
+    values = tuple(_resolve_mutation_value(value, context) for _, value in mutation.values)
+    if mutation.operation is ApprovalMutationOperation.INSERT:
+        placeholders = ", ".join("?" for _ in values)
+        statement = (
+            f"INSERT INTO {_quote_identifier(mutation.table)} "
+            f"({columns}) VALUES ({placeholders})"
+        )
+        await connection.execute(statement, values)
+        return
+    assignments = ", ".join(
+        f"{_quote_identifier(column)} = ?" for column, _ in mutation.values
+    )
+    predicates = " AND ".join(
+        f"{_quote_identifier(column)} = ?" for column, _ in mutation.where
+    )
+    where_values = tuple(
+        _resolve_mutation_value(value, context) for _, value in mutation.where
+    )
+    await connection.execute(
+        f"UPDATE {_quote_identifier(mutation.table)} SET {assignments} WHERE {predicates}",
+        values + where_values,
+    )
+
+
+def _resolve_mutation_value(value: object, context: _MutationContext) -> object:
+    if type(value) is not ApprovalMutationBinding:
+        return value
+    bindings: dict[ApprovalMutationBinding, object] = {
+        ApprovalMutationBinding.APPROVAL_ID: str(context.approval_id),
+        ApprovalMutationBinding.TASK_ID: str(context.task_id),
+        ApprovalMutationBinding.CREATED_AT: context.created_at.isoformat(),
+    }
+    if context.consumed_at is not None:
+        bindings[ApprovalMutationBinding.CONSUMED_AT] = context.consumed_at.isoformat()
+    try:
+        return bindings[value]
+    except KeyError:
+        raise ApprovalError("INVALID_MUTATION") from None
+
+
+def _quote_identifier(value: str) -> str:
+    return f'"{value}"'
 
 
 def _record_parameters(record: ApprovalRecord) -> tuple[object, ...]:
