@@ -96,7 +96,7 @@ async def _ensure_wal_mode(connection: aiosqlite.Connection) -> None:
             raise
         row = await (await connection.execute("PRAGMA journal_mode")).fetchone()
         if row is None or str(row[0]).casefold() != "wal":
-            raise error
+            _raise_migration_error(error)
 
 
 async def _read_version_locked(connection: aiosqlite.Connection) -> int:
