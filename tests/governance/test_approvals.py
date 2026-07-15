@@ -256,7 +256,7 @@ async def test_wal_waiter_times_out_with_one_fixed_error(
     connection = _WalRecordingConnection(
         sqlite3.OperationalError("secret database is locked"),
         ["delete"] * 500,
-        on_switch=lambda: clock.advance(1.25),
+        on_switch=lambda: clock.advance(5.5),
     )
 
     with pytest.raises(database_module.MigrationBusyError) as captured:
@@ -268,8 +268,8 @@ async def test_wal_waiter_times_out_with_one_fixed_error(
     assert connection.statements[0] == "PRAGMA journal_mode=WAL"
     assert set(connection.statements[1:]) == {"PRAGMA journal_mode"}
     assert clock.waits
-    assert sum(clock.waits) == pytest.approx(3.75)
-    assert clock.now == pytest.approx(5.0)
+    assert sum(clock.waits) == pytest.approx(5.0)
+    assert clock.now == pytest.approx(10.5)
     assert all(cursor.closed for cursor in connection.cursors)
 
 
@@ -281,6 +281,7 @@ async def test_wal_lock_contention_succeeds_when_recheck_is_wal(
     connection = _WalRecordingConnection(
         sqlite3.OperationalError("database is locked"),
         ["WAL"],
+        on_switch=lambda: clock.advance(5.5),
     )
 
     await database_module._ensure_wal_mode(connection)  # type: ignore[arg-type]
@@ -301,6 +302,7 @@ async def test_wal_waiter_observes_delete_then_wal_without_retrying_switch(
     connection = _WalRecordingConnection(
         sqlite3.OperationalError("database is busy"),
         ["delete", "wal"],
+        on_switch=lambda: clock.advance(5.5),
     )
 
     await database_module._ensure_wal_mode(connection)  # type: ignore[arg-type]
