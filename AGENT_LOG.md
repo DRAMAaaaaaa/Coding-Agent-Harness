@@ -439,6 +439,7 @@
 
 ### 2026-07-16 08:05 +08:00 — IMPL-005
 
+- **实现提交：** `9159e01`（`功能：实现项目识别和任务工作树（工作区子智能体）`）。
 - **实现范围：** 新增严格运行期 `Workspace`、`ProjectProfile`、`RepositoryMap`、`WorktreeInfo` 与验证命令/仓库文档模型；实现 Python/Node 默认命令识别、严格 `.harness.yml` argv/timeout/env allowlist schema、配置指纹和首次执行信任标志；实现只使用 argv 的 `ls-files -z`、`log -n 20`、`status --porcelain=v1` 有界扫描；实现外置状态目录、原子单写标记及真实 Git worktree 创建/安全释放。
 - **TDD RED—GREEN：** detector 初始 RED 为 `ModuleNotFoundError: coding_agent_harness.workspace`，首轮 GREEN 为 `10 passed, 1 skipped`；撤回未被初始断言证明的 fixture 分支后，Python build/Node scripts RED 为 `2 failed`，恢复最小通用逻辑后转绿。scanner 初始 RED 为缺失 `workspace.scanner`；首轮 GREEN `6 passed, 1 skipped`；真实仓库子目录可被 Git 向上解析造成路径基准混用的纠正 RED 为 `2 failed`，直属非链接 `.git` 根标记校验后转绿。worktree 初始 RED 为缺失 `workspace.worktrees`，首轮 GREEN `8 passed`；runner 在 `git worktree add` 启动时抛 `OSError` 的纠正 RED 为 `1 failed`，归并失败清理后转绿为 `9 passed`。
 - **测试基础设施纠偏：** 全量 pytest 第一遍把独立 `tests/fixtures/python_project/tests/test_sample.py` 当 Harness 测试收集并因 fixture `src` 不在顶层导入路径报错；根因是静态项目 fixture 未排除。`tests/conftest.py` 精确忽略 `fixtures` 后全量恢复，未修改 fixture 的独立项目结构。
