@@ -130,9 +130,16 @@ async def _fetchone_closed(
 ) -> sqlite3.Row | tuple[object, ...] | None:
     cursor = await connection.execute(sql)
     try:
-        return await cursor.fetchone()
-    finally:
+        row = await cursor.fetchone()
+    except BaseException:
+        try:
+            await cursor.close()
+        except BaseException:
+            pass
+        raise
+    else:
         await cursor.close()
+        return row
 
 
 async def _read_version_locked(connection: aiosqlite.Connection) -> int:
