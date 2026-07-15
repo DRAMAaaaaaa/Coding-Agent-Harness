@@ -152,7 +152,7 @@ class TaskOrchestrator:
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
-| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 合并后 WAL owner–waiter 纠偏待复审（RED `a6a5702`、`00a4353`；GREEN `3bf8365`、`cd8f3b5`；此前提交见步骤 6） |
+| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 数据库初始化门闩补强待复审（异常 RED/GREEN `6044ac5`/`30508e1`；门闩 RED/GREEN `7c3cb53`/`ba48c9f`；此前提交见步骤 6） |
 | 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 待执行 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
@@ -813,7 +813,9 @@ python -m pytest tests/governance -v
 
 合并后 WAL owner–waiter 回归纠偏（2026-07-16）：`a6a5702` 先以可控时钟、等待函数和连接桩固化 owner/waiter 状态机 RED（聚焦 `5 failed, 1 passed`），`3bf8365` 只观察持久 `journal_mode`、关闭读取游标并在 5 秒内等待 owner；首轮真实双连接 50 次复验在第 33 次仍超时，故未沿用完成结论。Phase 1 无插桩复刻 legacy v1 取得 `500/500`，并证伪“未关闭 `user_version` cursor 导致双 waiter”；随后受控阻塞证明确认初始 WAL 尝试可在约 `5498.8ms` 后才返回 BUSY，而首版 deadline 已提前耗尽。`00a4353` 以 BUSY 前推进 5.5 秒的首观察 WAL、次观察 WAL和持续 delete 固化 `3 failed`，`cd8f3b5` 仅把 waiter 的 5 秒 deadline 改为从收到 lock contention 时开始，不重试 WAL 或迁移 DDL。最终无插桩双连接复验 `50/50`；governance `202 passed, 1 skipped`，全量与 PowerShell All 均为 `304 passed, 1 skipped`；Ruff、mypy（17 个源文件）、`pip check`、Web ESLint/TypeScript、无隔离 wheel/sdist 构建与归档 001/002 各 1、003 为 0 均通过。原完成证据已被后续纠偏取代，步骤 7 恢复待独立规约符合性与代码质量复审。
 
-- [ ] **步骤 7：评审与提交（纠偏实现头 `cd8f3b5`，待新的独立双重复审）**
+异常优先级与初始化门闩补强（2026-07-16）：独立审查结论为 `Spec: FAIL`、`Quality: CHANGES_REQUIRED`，唯一 Important 是 `_fetchone_closed` 的 `finally` 会让关闭异常覆盖读取主异常。RED `6044ac5` 得到 `2 failed, 2 passed`，GREEN `30508e1` 在读取失败时仍尝试关闭、吞掉次要关闭异常并用 bare raise 保留原对象/traceback；读取成功后的关闭失败仍原样传播。修复后双连接独立复验 `50/50`，但随后完整 governance 又真实出现一次迁移 waiter 超时（`1 failed, 205 passed, 1 skipped`，总耗时 6.85 秒），因此停止门禁并重新处理架构。用户批准同事件循环、规范化绝对数据库路径的进程内初始化门闩；RED `7c3cb53` 以 Event 握手得到 `4 failed, 1 passed`，证明同路径/等价路径会在 SQLite 外串行、不同路径可并行、首初始化异常会释放门闩、不同 loop 不复用锁。GREEN `ba48c9f` 以短线程锁保护 `WeakKeyDictionary[loop → WeakValueDictionary[path → asyncio.Lock]]` 的创建，异步锁覆盖 connect、PRAGMA、migrations 与 WAL；跨进程和跨 loop 仍使用既有 SQLite 协调。最终真实双连接 `100/100`、governance 连续 `10/10` 轮；聚焦 `15 passed`，governance `211 passed, 1 skipped`，全量与 PowerShell All 均为 `313 passed, 1 skipped`；Ruff、mypy（17 个源文件）、`pip check`、Web ESLint/TypeScript、无隔离构建和归档 001/002 各 1、003 为 0 均通过。步骤 7 继续待新的独立双重复审。
+
+- [ ] **步骤 7：评审与提交（纠偏实现头 `ba48c9f`，待新的独立双重复审）**
 
 规约符合性审查重点：真实 Provider 的 LLM API 授权不扩展到工具网络；所有依赖安装入口和解释器代码执行形态均不能绕过；并发迁移在锁内重读版本。代码质量审查重点：只解析实际命令位置、规则次序无绕过且安全命令无误报、Windows 大小写路径、异常也先脱敏。
 
