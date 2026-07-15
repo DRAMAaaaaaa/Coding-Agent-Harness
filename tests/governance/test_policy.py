@@ -563,3 +563,106 @@ def test_transfer_approval_never_grants_external_paths_to_agent_tools(
 
     assert result.decision is PolicyDecision.DENY
     assert result.reason_code == "PATH_ESCAPE"
+
+
+def test_apply_patch_move_to_target_is_also_path_guarded(
+    policy: PolicyEngine,
+    tmp_path: Path,
+) -> None:
+    patch = """*** Begin Patch
+*** Update File: src/inside.py
+*** Move to: ../outside.py
+*** End Patch"""
+
+    result = policy.evaluate(
+        _action("apply_patch", {"patch": patch}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "PATH_ESCAPE"
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        "*** Begin Patch\n*** End Patch",
+        "*** Begin Patch\n*** Move to File: src/not-real.py\n*** End Patch",
+        "*** Begin Patch\n*** Add File src/missing-colon.py\n*** End Patch",
+    ],
+)
+def test_apply_patch_without_only_valid_file_headers_is_denied(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    patch: str,
+) -> None:
+    result = policy.evaluate(
+        _action("apply_patch", {"patch": patch}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "INVALID_ACTION"
+
+
+def test_command_read_only_flags_are_only_wrapper_prefix_options(
+    policy: PolicyEngine,
+    tmp_path: Path,
+) -> None:
+    dangerous = policy.evaluate(
+        _action("shell", {"argv": ["command", "rm", "-v", "src/a.py"]}),
+        _context(tmp_path / "workspace"),
+    )
+    read_only = policy.evaluate(
+        _action("shell", {"argv": ["command", "-v", "rm"]}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert dangerous.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert dangerous.reason_code == "HIGH_RISK_SHELL"
+    assert read_only.decision is PolicyDecision.ALLOW
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["npm", "--prefix", "subdir", "install", "x"],
+        ["pnpm", "--filter", "workspace-a", "add", "x"],
+        ["pip", "--proxy", "https://proxy.example", "install", "x"],
+        ["uv", "--project", "subdir", "sync"],
+        ["poetry", "--directory", "subdir", "add", "x"],
+        ["npm", "--unknown-option", "test"],
+    ],
+)
+def test_package_manager_value_or_unknown_options_cannot_hide_install(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    argv: list[str],
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": argv}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert result.reason_code == "DEPENDENCY_INSTALL"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["npm", "--prefix", "subdir", "test"],
+        ["pip", "--proxy", "https://proxy.example", "list"],
+    ],
+)
+def test_safe_package_manager_operations_with_known_value_options_remain_allowed(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    argv: list[str],
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": argv}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.ALLOW
