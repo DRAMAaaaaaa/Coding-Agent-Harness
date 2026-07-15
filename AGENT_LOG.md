@@ -318,3 +318,14 @@
 - **新鲜验证：** focused `128 passed`；governance `144 passed, 1 skipped`；全量 `246 passed, 1 skipped`；Ruff、mypy（17 个源文件）、pip check、PowerShell All、Web ESLint、TypeScript、wheel/sdist 构建及归档内容检查均通过。唯一 skip 为 Windows 符号链接权限。
 - **安全与人工干预：** 未执行测试字符串中的命令，未接触凭据、推送、合并或删除工作树。控制器仅确认 WAL 初始化架构调整；未扩大 Task 4 接口范围。
 - **经验总结：** 迁移互斥必须先由 SQLite 写锁建立，再做可能引发连接间竞争的持久 journal-mode 切换；busy timeout 不能替代正确的锁获取顺序。当前仍待独立规约符合性与代码质量审查，不宣称评审通过。
+
+### 2026-07-15 21:06 +08:00 — IMPL-004-R3
+
+- **任务：** 修复独立评审追加发现的补丁/命令语法 fail-open、审批任意 callable 副作用边界、调用方状态优先级和宿主动作来源伪造问题。
+- **Superpowers 技能：** `receiving-code-review`、`systematic-debugging`、`test-driven-development`、`verification-before-completion`；逐项核对评审事实，按三个独立行为组执行 RED—GREEN，未启动子智能体。
+- **策略 RED—GREEN：** `55d504a` 得到 `11 failed, 2 passed`；`12a4328` 支持真实 `*** Move to:`，零合法/畸形补丁头固定拒绝，`command -v/-V` 只在包装器前缀生效，并按包管理器语法消费已知选项值、对未知选项保守审批。聚焦 `13 passed`，策略文件 `103 passed`。
+- **审批 RED—GREEN：** `aeb5168` 得到 6 个精确失败；`57f5733` 保留公开 Callable 注解但运行时只接受精确冻结数据库 mutation，管理器自行参数化执行受 approval/task 绑定的 INSERT/UPDATE，任意 callable 不调用且固定 `INVALID_MUTATION`。合法声明与审批创建/消费原子提交，声明 SQL 失败共同回滚；数据库活动而调用方声称取消时返回 `STALE_STATE`。审批文件 `41 passed`。
+- **宿主来源 RED—GREEN：** `3996d60` 得到 6 个精确失败；`1927bd0` 增加独立严格 `HostTransferAction` 与 `evaluate_internal`，普通 `evaluate(ToolAction)` 对 `host_import/host_export` 固定 `DENY/INVALID_ACTION`。没有修改 `AgentAction`、LLM schema、工具注册表、Task 6/11 或新增 003 migration。
+- **安全与人工干预：** 未执行测试字符串中的命令，未联网、未安装依赖、未接触凭据、未推送或合并。控制器确认受限 mutation 和宿主来源边界的接口方向。
+- **新鲜验证：** focused `146 passed`；governance `162 passed, 1 skipped`；全量与 PowerShell All 均为 `264 passed, 1 skipped`。Ruff、mypy（17 个源文件）、pip check、Web ESLint/TypeScript、无隔离 wheel/sdist 构建均通过；两种归档的 001/002 各 1 份、003 为 0。唯一 skip 为本机 Windows 符号链接权限。
+- **当前状态：** 纠偏实现与全门禁已完成，仍等待独立规约符合性/代码质量复审；不提前宣称 Task 4 完成。

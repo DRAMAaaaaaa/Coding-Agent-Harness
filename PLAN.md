@@ -152,7 +152,7 @@ class TaskOrchestrator:
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
-| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 纠偏实现待复审（策略 RED `fd8bf48` / GREEN `ee161ba`；迁移 RED `c893e15` / GREEN `bde90e0`；审批 RED `3e57b38` / GREEN `0cc6914`；宿主边界 RED `7f9a078` / GREEN `4bd4075`） |
+| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 评审纠偏实现待复审（追加策略 RED `55d504a` / GREEN `12a4328`；受限 mutation RED `aeb5168` / GREEN `57f5733`；宿主来源 RED `3996d60` / GREEN `1927bd0`；此前纠偏提交见步骤 6） |
 | 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 待执行 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
@@ -788,9 +788,9 @@ async def test_migration_acquires_write_lock_before_reading_version() -> None:
     assert connection.statements[-2:] == ["PRAGMA user_version = 2", "COMMIT"]
 ```
 
-审批并发测试使用两个真实连接和 `asyncio.gather`，同一已批准记录只能有一个 `consume` 成功。`request/request_and_apply/decide/consume/consume_and_apply` 均在 `operation_lock + BEGIN IMMEDIATE` 内读取 `tasks.state/config_version` 和 `MAX(task_events.sequence)` 作为权威状态，调用方 `ApprovalContext` 只用于精确匹配，不能覆盖数据库事实。`request_and_apply` 只允许回调在同一事务插入与审批绑定的数据库记录；`decide` 使用 `decision='PENDING'` 条件更新并测试两名决策者只有一个成功；消费使用带 `decision='APPROVED' AND consumed_at IS NULL AND expires_at > now` 及完整上下文条件的单条 `UPDATE`。`consume_and_apply` 只允许回调在同一事务写数据库绑定状态，不允许回调执行文件、网络或进程副作用；Task 11 用前者原子创建 transfer+approval，用后者把审批消费与 transfer 变为 `EXECUTING` 原子绑定。受影响行数为零时在同一事务重读并稳定映射为过期、拒绝、权威状态变化或 `REPLAYED`。
+审批并发测试使用两个真实连接和 `asyncio.gather`，同一已批准记录只能有一个 `consume` 成功。`request/request_and_apply/decide/consume/consume_and_apply` 均在 `operation_lock + BEGIN IMMEDIATE` 内读取 `tasks.state/config_version` 和 `MAX(task_events.sequence)` 作为权威状态，调用方 `ApprovalContext` 只用于精确匹配，不能覆盖数据库事实。`request_and_apply` 与 `consume_and_apply` 的冻结 `Callable` 注解保持不变，但运行时只接受 `approvals.py` 定义的精确冻结 `ApprovalDatabaseMutation` 声明；管理器只自行参数化执行 INSERT/UPDATE，校验操作、标识符与 approval/task 绑定，不调用任意 callable。未知声明或任意 callable 固定 `INVALID_MUTATION`，内部错误不泄漏；合法声明分别与审批创建或消费原子提交、失败时共同回滚。`decide` 使用 `decision='PENDING'` 条件更新并测试两名决策者只有一个成功；消费使用带 `decision='APPROVED' AND consumed_at IS NULL AND expires_at > now` 及完整上下文条件的单条 `UPDATE`。受影响行数为零时在同一事务重读并稳定映射为过期、拒绝、权威状态变化或 `REPLAYED`。
 
-宿主导入/导出审批使用内部动作名 `host_import`/`host_export`，`normalized_scope` 必须包含脱敏后的规范化源、目标和方向；这些动作不进入 LLM 工具 schema。普通 `read_file`、`apply_patch`、`shell` 等工具即使携带该审批 ID，也不得访问外部路径。修复后运行：
+宿主导入/导出审批使用独立严格 `HostTransferAction` 的内部动作名 `host_import`/`host_export`，仅允许经 `PolicyEngine.evaluate_internal` 评估；普通 `evaluate(ToolAction)` 遇到同名工具固定 `DENY/INVALID_ACTION`。`normalized_scope` 必须包含脱敏后的规范化源、目标和方向；这些动作不进入 LLM 工具 schema。普通 `read_file`、`apply_patch`、`shell` 等工具即使携带该审批 ID，也不得访问外部路径。修复后运行：
 
 ```text
 python -m pytest tests/governance/test_policy.py tests/governance/test_approvals.py -v
@@ -800,6 +800,8 @@ python -m pytest tests/governance -v
 预期：聚焦测试与全部治理测试通过；不得真实访问网络或执行测试中的命令字符串。
 
 纠偏证据（2026-07-15）：策略、迁移、审批权威上下文和宿主内部边界均分别取得精确 RED 后转绿；focused 为 `128 passed`，治理目标为 `144 passed, 1 skipped`，全量为 `246 passed, 1 skipped`。实现提交截至 `4bd4075`；独立规约符合性审查与代码质量审查尚未执行，步骤 7 保持未完成。
+
+追加评审纠偏（2026-07-15）：补丁真实 `Move to:` 头/零合法头 fail-open、`command` 非前缀 `-v`、包管理器带值选项绕过由 RED `55d504a` 转为 GREEN `12a4328`；任意审批 callable 与调用方取消状态伪造由 RED `aeb5168` 转为受限声明 GREEN `57f5733`；普通 ToolAction 伪造宿主来源由 RED `3996d60` 转为显式内部动作 GREEN `1927bd0`。最新 focused `146 passed`、治理 `162 passed, 1 skipped`、全量/PowerShell All `264 passed, 1 skipped`；Ruff、mypy（17 个源文件）、pip check、Web lint/typecheck、无隔离 wheel/sdist 构建与归档 001/002 各 1、003 为 0 均通过。未实现 Task 6/11、003 migration 或传输服务；步骤 7 仍等待独立两阶段复审。
 
 - [ ] **步骤 7：评审与提交**
 
