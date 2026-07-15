@@ -139,7 +139,8 @@ def _collapse_windows_extended_path(path: str) -> str:
     if (
         path.startswith(extended_prefix)
         and len(path) >= len(extended_prefix) + 3
-        and path[len(extended_prefix)].isalpha()
+        and path[len(extended_prefix)]
+        in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
         and path[len(extended_prefix) + 1] == ":"
         and path[len(extended_prefix) + 2] in {"\\", "/"}
     ):
