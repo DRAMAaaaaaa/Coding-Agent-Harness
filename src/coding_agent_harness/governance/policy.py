@@ -21,6 +21,8 @@ _PUBLISH_OPERATIONS = {
     "docker": frozenset({"push"}),
     "gh": frozenset({"release"}),
     "npm": frozenset({"publish"}),
+    "pnpm": frozenset({"publish"}),
+    "yarn": frozenset({"publish"}),
 }
 _GIT_REMOTE_OPERATIONS = frozenset({"push", "merge"})
 _DELETE_COMMANDS = frozenset({"rm", "rmdir", "del", "erase", "remove-item"})
@@ -78,6 +80,64 @@ _PACKAGE_VALUE_OPTIONS = {
     ),
     "uv": frozenset({"--project", "--directory", "--config-file"}),
     "poetry": frozenset({"--directory", "--project", "-C", "-P"}),
+}
+_REMOTE_NO_VALUE_OPTIONS = {
+    "git": frozenset(
+        {
+            "--bare",
+            "--glob-pathspecs",
+            "--icase-pathspecs",
+            "--literal-pathspecs",
+            "--no-optional-locks",
+            "--no-pager",
+            "--no-replace-objects",
+            "--noglob-pathspecs",
+            "--paginate",
+        }
+    ),
+    "twine": frozenset(
+        {"--disable-progress-bar", "--non-interactive", "--verbose", "--version"}
+    ),
+    "docker": frozenset({"--debug", "-D", "--tls", "--tlsverify", "--version"}),
+    "gh": frozenset({"--help", "--version"}),
+}
+_REMOTE_VALUE_OPTIONS = {
+    "git": frozenset(
+        {
+            "-C",
+            "-c",
+            "--config-env",
+            "--exec-path",
+            "--git-dir",
+            "--namespace",
+            "--super-prefix",
+            "--work-tree",
+        }
+    ),
+    "twine": frozenset(
+        {
+            "--cert",
+            "--client-cert",
+            "--config-file",
+            "--password",
+            "--repository",
+            "--repository-url",
+            "--username",
+        }
+    ),
+    "docker": frozenset(
+        {
+            "-H",
+            "--config",
+            "--context",
+            "--host",
+            "--log-level",
+            "--tlscacert",
+            "--tlscert",
+            "--tlskey",
+        }
+    ),
+    "gh": frozenset({"-R", "--hostname", "--repo"}),
 }
 
 
@@ -167,7 +227,7 @@ class PolicyEngine:
             return self._result(
                 PolicyDecision.REQUIRE_APPROVAL, "GIT_REMOTE_CHANGE", scope, context
             )
-        if self._operation(command.argv, "git", {"-c": 1, "-C": 1}) in _GIT_REMOTE_OPERATIONS:
+        if self._is_git_remote(command.argv):
             return self._result(
                 PolicyDecision.REQUIRE_APPROVAL, "GIT_REMOTE_CHANGE", scope, context
             )
@@ -517,6 +577,10 @@ class PolicyEngine:
         command = cls._executable(argv[0])
         operation, remaining, reliable = cls._package_operation(argv, command)
         if not reliable:
+            if command in _PUBLISH_OPERATIONS and any(
+                token.casefold() == "publish" for token in argv[1:]
+            ):
+                return False
             return command in _PACKAGE_NO_VALUE_OPTIONS
         if command in {"npm", "pnpm"}:
             return operation in {"install", "i", "add", "ci"}
@@ -545,9 +609,24 @@ class PolicyEngine:
     ) -> tuple[str, tuple[str, ...], bool]:
         if command not in _PACKAGE_NO_VALUE_OPTIONS:
             return "", (), True
+        return cls._parse_operation(
+            argv,
+            command,
+            _PACKAGE_NO_VALUE_OPTIONS[command],
+            _PACKAGE_VALUE_OPTIONS[command],
+        )
+
+    @classmethod
+    def _parse_operation(
+        cls,
+        argv: tuple[str, ...],
+        command: str,
+        no_value: frozenset[str],
+        with_value: frozenset[str],
+    ) -> tuple[str, tuple[str, ...], bool]:
+        if not argv or cls._executable(argv[0]) != command:
+            return "", (), True
         index = 1
-        no_value = _PACKAGE_NO_VALUE_OPTIONS[command]
-        with_value = _PACKAGE_VALUE_OPTIONS[command]
         while index < len(argv):
             token = argv[index]
             if token == "--":
@@ -559,6 +638,8 @@ class PolicyEngine:
             option = token.split("=", 1)[0]
             if option in with_value:
                 if "=" in token:
+                    if not token.split("=", 1)[1]:
+                        return "", (), False
                     index += 1
                     continue
                 if index + 1 >= len(argv):
@@ -577,12 +658,37 @@ class PolicyEngine:
         return bool(argv) and cls._executable(argv[0]) in _NETWORK_COMMANDS
 
     @classmethod
+    def _is_git_remote(cls, argv: tuple[str, ...]) -> bool:
+        operation, _, reliable = cls._remote_operation(argv, "git")
+        return not reliable or operation in _GIT_REMOTE_OPERATIONS
+
+    @classmethod
+    def _remote_operation(
+        cls,
+        argv: tuple[str, ...],
+        command: str,
+    ) -> tuple[str, tuple[str, ...], bool]:
+        if command in _PACKAGE_NO_VALUE_OPTIONS:
+            return cls._package_operation(argv, command)
+        if command not in _REMOTE_NO_VALUE_OPTIONS:
+            return "", (), True
+        return cls._parse_operation(
+            argv,
+            command,
+            _REMOTE_NO_VALUE_OPTIONS[command],
+            _REMOTE_VALUE_OPTIONS[command],
+        )
+
+    @classmethod
     def _is_publish(cls, argv: tuple[str, ...]) -> bool:
         if not argv:
             return False
         command = cls._executable(argv[0])
         operations = _PUBLISH_OPERATIONS.get(command)
-        return operations is not None and cls._operation(argv, command) in operations
+        if operations is None:
+            return False
+        operation, _, reliable = cls._remote_operation(argv, command)
+        return not reliable or operation in operations
 
     @classmethod
     def _is_dangerous_command(cls, argv: tuple[str, ...]) -> bool:
@@ -590,37 +696,3 @@ class PolicyEngine:
             return False
         command = cls._executable(argv[0])
         return command in _DELETE_COMMANDS or command in _DESTRUCTIVE_COMMANDS
-
-    @classmethod
-    def _operation(
-        cls,
-        argv: tuple[str, ...],
-        command: str,
-        value_options: Mapping[str, int] | None = None,
-    ) -> str:
-        if not argv or cls._executable(argv[0]) != command:
-            return ""
-        index = 1
-        options = value_options or {
-            "--config": 1,
-            "--disable-pip-version-check": 0,
-            "-C": 1,
-            "-c": 1,
-        }
-        while index < len(argv):
-            token = argv[index]
-            if token == "--":
-                index += 1
-                break
-            if token in options:
-                index += 1 + options[token]
-                continue
-            if token.startswith("-"):
-                index += 1
-                continue
-            return token.casefold()
-        return cls._first_operation(argv[index:])
-
-    @staticmethod
-    def _first_operation(tokens: Sequence[str]) -> str:
-        return next((token.casefold() for token in tokens if not token.startswith("-")), "")
