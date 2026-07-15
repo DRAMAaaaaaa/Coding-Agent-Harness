@@ -151,8 +151,8 @@ class TaskOrchestrator:
 |---|---|---|---|---|---|
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
-| 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交：本提交） |
-| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 待执行 |
+| 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
+| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 暂停返工（RED `5a2b8cb`；实现 `c14d50d`；首轮修复 `269c1ae`；等待新冷启动门禁） |
 | 5 | 项目识别、扫描与 worktree | 1、2 | 可与 4 并行 | `codex/workspaces` | 待执行 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
@@ -532,12 +532,18 @@ git commit -m "功能：实现事件存储和可恢复状态机（状态存储�
 **文件：**
 
 - 新建：`src/coding_agent_harness/governance/paths.py`、`redaction.py`、`policy.py`、`approvals.py`
+- 新建：`src/coding_agent_harness/storage/migrations/002_governance_approvals.sql`
+- 修改：`src/coding_agent_harness/storage/database.py`、`src/coding_agent_harness/storage/migrations/001_initial.sql`
 - 新建：`tests/governance/test_paths.py`、`test_redaction.py`、`test_policy.py`、`test_approvals.py`
 
 **接口：**
 
 - 产出：`PathGuard.resolve(candidate) -> Path`、`Redactor.sanitize(value)`、`PolicyEngine.evaluate`、`ApprovalManager.request/decide/consume`。
-- 消费：Task 2 动作模型、Task 3 审批仓储与事件序号。
+- 消费：Task 2 动作模型；Task 3 的数据库连接、`operation_lock`、最小 `approvals` 表与事件序号。
+
+Task 3 只交付最小 `approvals` 表，没有审批仓储和版本化上下文字段。Task 4 必须通过 `002_governance_approvals.sql` 升级既有表，并把持久仓储封装在 `governance/approvals.py`；不得用进程内状态替代 SQLite 审批。迁移协调器必须先取得 `BEGIN IMMEDIATE` 写锁，再在同一事务内重新读取 `PRAGMA user_version`、应用一个迁移并提交；迁移 SQL 文件本身不得嵌套 `BEGIN`/`COMMIT`。
+
+**状态：** 暂停返工。已有 RED `5a2b8cb`、实现 `c14d50d`、首轮修复 `269c1ae`；第二轮复审仍发现策略与迁移并发缺口。2026-07-15 用户重新批准 `SPEC.md`，当前等待新冷启动门禁通过后继续纠正性 TDD。
 
 - [ ] **步骤 1：写六类危险动作与符号链接逃逸失败测试**
 
@@ -591,12 +597,69 @@ class PolicyEngine:
 
 预期：六类危险行为、路径穿越、符号链接逃逸、过期/重放/错版本审批和敏感字符串测试全部通过。
 
-- [ ] **步骤 6：评审与提交**
+- [ ] **步骤 6：为二轮评审缺口执行纠正性 RED—GREEN**
 
-规约符合性审查重点：真实 Provider 的 LLM API 授权不扩展到工具网络。代码质量审查重点：规则次序无绕过、Windows 大小写路径、异常也先脱敏。
+先补充以下参数化测试；旧实现必须准确失败，不能把环境错误计为 RED：
+
+```python
+@pytest.mark.parametrize("argv", [
+    ["npm", "i", "x"],
+    ["npm", "ci"],
+    ["pnpm", "i", "x"],
+    ["yarn"],
+    ["uv", "sync"],
+])
+def test_package_manager_install_forms_require_approval(policy, argv) -> None:
+    result = policy.evaluate(make_action("shell", {"argv": argv}), trusted_context())
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert result.reason_code == "DEPENDENCY_INSTALL"
+
+
+@pytest.mark.parametrize("argv", [
+    ["bash", "--noprofile", "-c", "curl https://example.com"],
+    ["bash", "--noprofile", "-c", "rm -rf /"],
+    ["powershell", "-NoProfile", "-Command", "Invoke-WebRequest https://example.com"],
+    ["cmd", "/d", "/c", "curl https://example.com"],
+    ["powershell", "-EncodedCommand", "YwB1AHIAbAA="],
+])
+def test_interpreter_options_cannot_hide_code_execution(policy, argv) -> None:
+    result = policy.evaluate(make_action("shell", {"argv": argv}), trusted_context())
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert result.reason_code == "HIGH_RISK_SHELL"
+
+
+def test_malformed_network_field_is_denied(policy) -> None:
+    action = make_action("network_helper", {"url": ["https://example.com"]})
+    result = policy.evaluate(action, trusted_context())
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "INVALID_ACTION"
+
+
+def test_command_names_in_plain_arguments_are_not_executed(policy) -> None:
+    result = policy.evaluate(
+        make_action("shell", {"argv": ["echo", "npm", "install"]}),
+        trusted_context(),
+    )
+    assert result.decision is PolicyDecision.ALLOW
+```
+
+策略解析只识别经过允许包装器后的实际命令位置，不得扫描任意后续参数。包管理器语法至少覆盖 `npm/pnpm install|i|add|ci`、裸 `yarn`、`yarn install|add`、`pip/pip3 install`、`uv pip install|sync|add` 与 `poetry install|add`；安全反例 `git status`、`pip list`、`docker images`、`npm test`、`echo npm install` 必须保持允许。Shell 解释器必须跳过已知全局选项后识别 `-c`、`/c`、`-Command`、`-EncodedCommand`/`-Enc`，无法可靠解析的代码执行形态保守要求审批。
+
+再增加无需 `sleep` 的双连接迁移测试：先构造 `user_version=1` 且含 UUID legacy 审批的数据库，使用 `asyncio.gather(Database.open(path), Database.open(path))` 同时打开；两个连接最终都必须看到 `user_version=2`，legacy 行只能迁移一次且仍为拒绝、已消费、已过期，业务表集合不增加。失败结果应证明旧协调器会基于锁外读取的过期版本重复执行 002 或破坏记录。修复后运行：
 
 ```text
-git add src/coding_agent_harness/governance tests/governance PLAN.md AGENT_LOG.md
+python -m pytest tests/governance/test_policy.py tests/governance/test_approvals.py -v
+python -m pytest tests/governance -v
+```
+
+预期：聚焦测试与全部治理测试通过；不得真实访问网络或执行测试中的命令字符串。
+
+- [ ] **步骤 7：评审与提交**
+
+规约符合性审查重点：真实 Provider 的 LLM API 授权不扩展到工具网络；所有依赖安装入口和解释器代码执行形态均不能绕过；并发迁移在锁内重读版本。代码质量审查重点：只解析实际命令位置、规则次序无绕过且安全命令无误报、Windows 大小写路径、异常也先脱敏。
+
+```text
+git add src/coding_agent_harness/governance src/coding_agent_harness/storage/database.py src/coding_agent_harness/storage/migrations tests/governance PLAN.md AGENT_LOG.md
 git commit -m "安全：实现路径围栏和版本化审批（治理子智能体）"
 ```
 
