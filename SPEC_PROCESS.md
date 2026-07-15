@@ -287,3 +287,43 @@ v3 已证明修订后的陌生执行者能够从零取得正确 RED 和 GREEN。
 三轮冷启动形成了完整的“失败—修订—复验”证据：第一轮暴露测试环境和接口范围，第二轮暴露 PowerShell/构建后端，第三轮在全新 worktree 取得有效 RED 与 GREEN。`SPEC.md` 与 `PLAN.md` 已足以让无共享隐性上下文的执行者启动 Task 1；试验没有被合并，因此正式实现仍将从干净 worktree 按计划重新开始。
 
 冷启动技术门禁现已通过。开始正式实现前仍需用户复核本轮修订，并选择 `subagent-driven-development` 或 `executing-plans`。
+
+## 9. 2026-07-15 最终复核与门禁重启
+
+用户提供了替换旧规则的新 `AGENTS.md`，其“当前阶段”要求重新停在书面 `SPEC.md` 最终复核之前。主 Agent 立即暂停 Task 4 实现，只读核对仓库后确认：`SPEC.md`、`PLAN.md` 与三轮冷启动证据实际均已存在，但最新阶段声明仍具有优先级。
+
+用户随后明确回复“允许”，再次批准当前 `SPEC.md`。主 Agent 使用 `writing-plans` 对现有计划做差距审查，没有重写已验证的 14 Task 架构，只把 Task 4 二轮独立评审暴露的包管理器别名、Shell 解释器选项、畸形网络字段、命令位置误报和并发迁移锁外读版本问题写成精确的纠正性测试与验证命令。
+
+本次批准不自动跳过新规则要求的陌生智能体冷启动。计划修订提交后，将从不含 Task 4 实现的 `p1` 基线创建新的隔离 worktree，并由无当前对话历史的不同智能体仅依据 `SPEC.md` 与 `PLAN.md` 复核 1—2 个 Task；发现、暂停点与计划修订仍记录在本文件。该复验通过前，`codex/governance` 保持暂停。
+
+### 9.1 第四次冷启动审计与暂停点
+
+主 Agent 从计划提交 `38e605f` 创建 `codex/cold-start-audit-v4`，基线使用既有 Python 3.11 环境并强制从该工作树 `src` 导入，得到 `102 passed`，没有重新安装依赖。全新审计智能体完整且仅读取 `SPEC.md`（345 行）与 `PLAN.md`（1409 行），主审 Task 4，并仅用 Task 5 核对相邻接口。
+
+审计结论为 Fail，主要暂停点包括：当前返工任务仍保留不可复现的“模块不存在”RED；治理与审批接口签名不完整；fresh/legacy/并发迁移职责不唯一；单纯 `asyncio.gather` 不能确定性证明锁外版本读取；包管理器包装器与安全反例不足；普通工具路径逃逸与可审批外部访问的语义冲突；Task 5 并行边界和实际工具名称也不够明确。
+
+用户随后批准统一语义：普通 Agent 工具永远不能越出 worktree；工作区外文件只允许 Harness 宿主通过受控导入/导出接口，在展示精确源、目标、方向并取得一次性审批后复制，Agent 只操作 worktree 内副本。主 Agent 据此修订 `SPEC.md` 和 `PLAN.md`，并把其他暂停点转换为冻结接口、当前纠正性 TDD 起点、锁内迁移状态机、确定性 SQL 顺序替身测试、真实命令位置/包装器矩阵及原子审批消费要求。修订后必须由另一名无历史审计智能体再次复验；v4 的 Fail 不能直接转写为通过。
+
+### 9.2 第五次冷启动审计与传输持久化修订
+
+主 Agent 从 `9d97513` 创建全新 `codex/cold-start-audit-v5`，同样取得 `102 passed` 基线且没有安装依赖。另一名无历史审计智能体完整且仅读取 `SPEC.md` 与 `PLAN.md`，审查 Task 4 和 Task 11。结论仍为 Fail：Task 4 的当前返工起点与大部分接口已可执行，但宿主传输缺少持久 ID/状态模型，审批消费与文件复制之间的崩溃窗口无法保证不重放；逐工具路径字段、包装器语法、权威审批状态和迁移忙碌/legacy 回填也需更精确。
+
+主 Agent 接受这些可验证的阻塞项并补充：`HostTransfer` 数据模型、`003_host_transfers.sql`、`HostTransferService` 冻结接口、transfer ID 与 approval ID 的明确区分、审批消费和 `EXECUTING` 的同事务绑定、同目录临时文件与原子替换、`UNCERTAIN` 恢复不重放、文件身份/目标摘要校验、逐工具 `PATH_ESCAPE` 优先级矩阵、包装器选项语法表、权威 task/event/config 校验、审批条件更新，以及 migration busy/legacy 固定语义。第五轮仍记录为失败，修订必须交给新的第六名审计智能体验证。
+
+### 9.3 第六次冷启动审计与两个安全边界修订
+
+第六名无历史审计智能体从 `79012bd` 的全新 worktree 开始，完整且仅读取 `SPEC.md` 与 `PLAN.md`。它确认 Task 4 当前返工起点、路径规则优先级、审批权威状态和传输恢复主体已经清楚，但仍以 Fail 阻止实施：`env -S/--split-string` 会把一个参数重新拆成命令，不能当普通带值选项跳过；已有目标只绑定 SHA-256 而没有完整 inode/device/path 身份，同内容替换可绕过 stale 校验。
+
+计划据此把 `env -S/--split-string` 固定为 `HIGH_RISK_SHELL` 并增加绕过 RED；`TransferRecord` 增加可空完整 `target_identity`，scope、003 和三次校验均绑定它，并增加同摘要不同 inode 测试。同时补齐 shell cwd 默认/畸形/越界语义、Windows 解释器精确名称、003 全迁移矩阵和 idempotency 重复请求行为。第六轮仍为 Fail，需新审计智能体复验。
+
+### 9.4 第七次冷启动审计与传输身份入口修订
+
+第七名无历史审计智能体确认 Task 4 步骤 6 已足以独立安全启动，`env -S`、cwd、真实工具越界、002/003、审批原子绑定、目标身份、幂等和 `UNCERTAIN` 均清楚；但总体仍判 Fail，因为 Task 11 的 API 示例使用 workspace ID 而服务契约要求 task ID、源父目录身份没有字段、approval action ID 与 transfer ID 映射未冻结。
+
+计划修订为：API 只接受 `task_id` 并从持久任务定位 worktree；`TransferRecord` 增加 `source_parent_identity` 和 `action_id`；action ID 固定为 `transfer:<transfer_id>`，与 transfer、approval 和 scope 同时持久化，003 对 action/approval/idempotency 分别唯一。该轮仍是 Fail，须由新的审计智能体复验总体门禁。
+
+### 9.5 第八次冷启动复验通过
+
+第八名全新审计智能体从 `2fb6548` 的隔离工作树开始，完整且仅读取 `SPEC.md` 与 `PLAN.md`。它确认无 Critical、无 Important：Task 4 可从步骤 6 立即写纠正性 RED，不能复用历史模块缺失；Task 11 的依赖仍未满足、暂不实施，但 task/worktree、action/transfer/approval ID、四组文件身份、003、事务绑定、幂等、原子替换和 `UNCERTAIN` 不重放均已闭合。
+
+审计仅给出两项 Minor：三次身份校验的短句应显式列全四组身份；临时文件名可以固定包含 transfer ID。主 Agent 已把这两项无范围扩张的澄清写回计划。至此，新 `AGENTS.md` 要求的最终规约批准、writing-plans 自审和不同类型陌生智能体冷启动门禁均有当前证据，Task 4 可以恢复 Subagent-Driven 纠正性 TDD。
