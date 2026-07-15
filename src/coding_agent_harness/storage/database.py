@@ -1,5 +1,7 @@
 import asyncio
 import sqlite3
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -10,6 +12,10 @@ import aiosqlite
 
 _MIGRATION_DIRECTORY = Path(__file__).with_name("migrations")
 _BUSY_TIMEOUT_MILLISECONDS = 5_000
+_WAL_WAIT_TIMEOUT_SECONDS = 5.0
+_WAL_OBSERVATION_INTERVAL_SECONDS = 0.01
+_wal_clock: Callable[[], float] = time.monotonic
+_wal_wait: Callable[[float], Awaitable[None]] = asyncio.sleep
 
 
 class MigrationBusyError(RuntimeError):
@@ -87,16 +93,46 @@ def _split_migration_statements(sql: str) -> tuple[str, ...]:
 
 
 async def _ensure_wal_mode(connection: aiosqlite.Connection) -> None:
+    deadline = _wal_clock() + _WAL_WAIT_TIMEOUT_SECONDS
     try:
-        row = await (await connection.execute("PRAGMA journal_mode=WAL")).fetchone()
+        row = await _fetchone_closed(connection, "PRAGMA journal_mode=WAL")
         if row is None or str(row[0]).casefold() != "wal":
             raise RuntimeError("数据库日志模式无效")
     except sqlite3.OperationalError as error:
         if not _is_lock_contention(error):
             raise
-        row = await (await connection.execute("PRAGMA journal_mode")).fetchone()
-        if row is None or str(row[0]).casefold() != "wal":
-            _raise_migration_error(error)
+        await _wait_for_wal_owner(connection, deadline, error)
+
+
+async def _wait_for_wal_owner(
+    connection: aiosqlite.Connection,
+    deadline: float,
+    contention_error: sqlite3.OperationalError,
+) -> None:
+    while True:
+        remaining = deadline - _wal_clock()
+        if remaining <= 0:
+            _raise_migration_error(contention_error)
+        await _wal_wait(min(_WAL_OBSERVATION_INTERVAL_SECONDS, remaining))
+        try:
+            row = await _fetchone_closed(connection, "PRAGMA journal_mode")
+        except sqlite3.OperationalError as error:
+            if not _is_lock_contention(error):
+                raise
+            continue
+        if row is not None and str(row[0]).casefold() == "wal":
+            return
+
+
+async def _fetchone_closed(
+    connection: aiosqlite.Connection,
+    sql: str,
+) -> sqlite3.Row | tuple[object, ...] | None:
+    cursor = await connection.execute(sql)
+    try:
+        return await cursor.fetchone()
+    finally:
+        await cursor.close()
 
 
 async def _read_version_locked(connection: aiosqlite.Connection) -> int:
