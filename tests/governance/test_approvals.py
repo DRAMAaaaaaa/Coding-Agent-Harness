@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -384,6 +385,29 @@ async def test_equivalent_paths_share_open_gate(
     assert connections_before_release == 1
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended path namespace")
+async def test_extended_drive_path_shares_open_gate_with_ordinary_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _OpenHarness()
+    _install_open_harness(monkeypatch, harness)
+    ordinary_path = tmp_path / "extended.sqlite3"
+    extended_path = Path("\\\\?\\" + str(ordinary_path))
+    first_task = asyncio.create_task(Database.open(ordinary_path))
+    await harness.first_entered.wait()
+    second_started = asyncio.Event()
+    second_task = asyncio.create_task(_start_open(extended_path, second_started))
+    await second_started.wait()
+    connections_before_release = len(harness.connections)
+    harness.release_first.set()
+    first, second = await asyncio.gather(first_task, second_task)
+    await first.close()
+    await second.close()
+
+    assert connections_before_release == 1
+
+
 async def test_different_paths_can_initialize_in_parallel(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -460,6 +484,40 @@ def test_initialization_gate_does_not_cross_event_loops(tmp_path: Path) -> None:
 
     assert equivalent_gate is first_gate
     assert second_gate is not first_gate
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended path namespace")
+@pytest.mark.parametrize(
+    ("ordinary", "extended"),
+    [
+        (
+            r"C:\Workspace\Folder\same.sqlite3",
+            r"\\?\c:\workspace\folder\SAME.sqlite3",
+        ),
+        (
+            r"\\Server\Share\Folder\same.sqlite3",
+            r"\\?\unc\server\share\folder\SAME.sqlite3",
+        ),
+    ],
+)
+def test_database_path_key_folds_proven_extended_namespaces(
+    ordinary: str,
+    extended: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(Path, "resolve", lambda self, strict=False: self)
+
+    assert database_module._database_path_key(ordinary) == (
+        database_module._database_path_key(extended)
+    )
+
+
+def test_database_path_key_keeps_different_paths_distinct(
+    tmp_path: Path,
+) -> None:
+    assert database_module._database_path_key(tmp_path / "first.sqlite3") != (
+        database_module._database_path_key(tmp_path / "second.sqlite3")
+    )
 
 
 @pytest.mark.parametrize(
