@@ -122,6 +122,94 @@ def test_remote_change_and_publish_require_approval(
 
 
 @pytest.mark.parametrize(
+    ("argv", "reason_code"),
+    [
+        (["npm", "--prefix", "subdir", "publish"], "PUBLISH"),
+        (["npm", "--workspace", "pkg", "publish"], "PUBLISH"),
+        (["pnpm", "--dir", "subdir", "publish"], "PUBLISH"),
+        (["yarn", "--cwd", "subdir", "publish"], "PUBLISH"),
+        (
+            ["twine", "--repository-url", "https://example.invalid", "upload"],
+            "PUBLISH",
+        ),
+        (["docker", "--config", "cfg", "push", "image"], "PUBLISH"),
+        (["gh", "--repo", "owner/repo", "release", "create", "v1"], "PUBLISH"),
+        (["git", "--git-dir", ".git", "push", "origin", "main"], "GIT_REMOTE_CHANGE"),
+        (["git", "--work-tree", ".", "push", "origin", "main"], "GIT_REMOTE_CHANGE"),
+        (["npm", "--prefix=subdir", "publish"], "PUBLISH"),
+        (["gh", "--repo=owner/repo", "release", "create", "v1"], "PUBLISH"),
+        (["git", "--git-dir=.git", "push", "origin", "main"], "GIT_REMOTE_CHANGE"),
+    ],
+)
+def test_command_specific_global_options_cannot_hide_remote_mutations(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    argv: list[str],
+    reason_code: str,
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": argv}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert result.reason_code == reason_code
+
+
+@pytest.mark.parametrize(
+    ("argv", "reason_code"),
+    [
+        (["git", "--mystery", "value", "push"], "GIT_REMOTE_CHANGE"),
+        (["git", "--git-dir"], "GIT_REMOTE_CHANGE"),
+        (["twine", "--mystery", "value", "upload"], "PUBLISH"),
+        (["twine", "--repository-url"], "PUBLISH"),
+        (["npm", "--mystery", "publish"], "PUBLISH"),
+        (["docker", "--config"], "PUBLISH"),
+        (["gh", "--repo"], "PUBLISH"),
+    ],
+)
+def test_unreliable_remote_mutation_options_fail_closed(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    argv: list[str],
+    reason_code: str,
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": argv}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert result.reason_code == reason_code
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["git", "--git-dir", ".git", "status"],
+        ["npm", "--prefix", "subdir", "test"],
+        ["pnpm", "--dir", "subdir", "test"],
+        ["yarn", "--cwd", "subdir", "test"],
+        ["twine", "--version"],
+        ["docker", "--config", "cfg", "images"],
+        ["gh", "--repo", "owner/repo", "issue", "list"],
+    ],
+)
+def test_safe_operations_with_command_specific_options_remain_allowed(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    argv: list[str],
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": argv}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.ALLOW
+    assert result.reason_code == "SAFE"
+
+
+@pytest.mark.parametrize(
     ("tool", "arguments"),
     [
         ("git", {"operation": ["push"]}),
