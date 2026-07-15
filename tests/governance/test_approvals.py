@@ -63,6 +63,13 @@ class _RecordingConnection:
         self.statements.append(f"SCRIPT:{sql.strip()}")
 
 
+class _BusyRecordingConnection(_RecordingConnection):
+    async def execute(self, sql: str) -> _RecordingCursor:
+        if " ".join(sql.split()) == "BEGIN IMMEDIATE":
+            raise sqlite3.OperationalError("database is locked")
+        return await super().execute(sql)
+
+
 async def _seed_task(database: Database, task_id: UUID) -> None:
     workspace_id = uuid4()
     await database.connection.execute(
@@ -115,20 +122,18 @@ async def _manager(
 
 
 async def test_migration_acquires_write_lock_before_reading_version(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    migration_directory = tmp_path / "migrations"
-    migration_directory.mkdir()
-    (migration_directory / "002_marker.sql").write_text(
-        "CREATE TABLE marker (id INTEGER);",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(database_module, "_MIGRATION_DIRECTORY", migration_directory)
     connection = _RecordingConnection(user_version=1)
 
-    await database_module._apply_migrations(connection)  # type: ignore[arg-type]
+    applied = await database_module._apply_one_migration_locked(
+        connection,  # type: ignore[arg-type]
+        database_module.Migration(
+            version=2,
+            sql="CREATE TABLE marker (id INTEGER);",
+        ),
+    )
 
+    assert applied is True
     assert connection.statements[:2] == ["BEGIN IMMEDIATE", "PRAGMA user_version"]
     assert connection.statements[-2:] == ["PRAGMA user_version = 2", "COMMIT"]
 
@@ -147,6 +152,22 @@ def test_migration_files_do_not_manage_transactions_or_user_version() -> None:
         assert "BEGIN" not in sql
         assert "COMMIT" not in sql
         assert "PRAGMA USER_VERSION" not in sql
+
+
+async def test_migration_lock_timeout_has_one_fixed_error() -> None:
+    connection = _BusyRecordingConnection(user_version=1)
+
+    with pytest.raises(database_module.MigrationBusyError) as captured:
+        await database_module._apply_one_migration_locked(
+            connection,  # type: ignore[arg-type]
+            database_module.Migration(
+                version=2,
+                sql="CREATE TABLE marker (id INTEGER);",
+            ),
+        )
+
+    assert str(captured.value) == "数据库迁移正忙"
+    assert "CREATE TABLE" not in str(captured.value)
 
 
 async def test_fresh_database_runs_all_migrations_and_adds_task_config_version(
@@ -263,6 +284,106 @@ async def test_database_migrates_v1_legacy_approval_and_reopen_is_idempotent(
             )
         assert rejected.value.reason_code in {"REPLAYED", "DENIED", "EXPIRED"}
     finally:
+        await second.close()
+
+
+async def test_two_database_instances_migrate_legacy_v1_once_without_sleep(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "concurrent-legacy.sqlite3"
+    workspace_id = uuid4()
+    task_id = uuid4()
+    approval_id = uuid4()
+    connection = sqlite3.connect(path)
+    initial_sql = (
+        Path(__file__).parents[2]
+        / "src"
+        / "coding_agent_harness"
+        / "storage"
+        / "migrations"
+        / "001_initial.sql"
+    ).read_text(encoding="utf-8")
+    connection.executescript(initial_sql)
+    connection.execute("PRAGMA user_version=1")
+    connection.execute("INSERT INTO workspaces (id) VALUES (?)", (str(workspace_id),))
+    connection.execute(
+        """
+        INSERT INTO tasks (
+            id, workspace_id, requirement, state, step_budget,
+            time_budget_seconds, created_at, deadline_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(task_id),
+            str(workspace_id),
+            "legacy-race",
+            TaskState.WAITING_ACTION_APPROVAL.value,
+            1,
+            1.0,
+            NOW.isoformat(),
+            None,
+        ),
+    )
+    connection.execute(
+        "INSERT INTO approvals (id, task_id, decision, created_at) VALUES (?, ?, ?, ?)",
+        (str(approval_id), str(task_id), "APPROVED", NOW.isoformat()),
+    )
+    business_tables = {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    }
+    connection.commit()
+    connection.close()
+
+    first, second = await asyncio.gather(Database.open(path), Database.open(path))
+    try:
+        for database in (first, second):
+            version = await (
+                await database.connection.execute("PRAGMA user_version")
+            ).fetchone()
+            journal_mode = await (
+                await database.connection.execute("PRAGMA journal_mode")
+            ).fetchone()
+            assert version == (2,)
+            assert journal_mode is not None and journal_mode[0].casefold() == "wal"
+        migrated = await (
+            await first.connection.execute(
+                """
+                SELECT action_id, reason_code, event_sequence, task_state,
+                       config_version, decision, decided_by, expires_at,
+                       consumed_at
+                FROM approvals WHERE id = ?
+                """,
+                (str(approval_id),),
+            )
+        ).fetchall()
+        current_tables = {
+            row[0]
+            for row in await (
+                await first.connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            ).fetchall()
+        }
+
+        assert migrated == [
+            (
+                f"legacy:{approval_id}",
+                "LEGACY_APPROVAL",
+                0,
+                TaskState.CANCELLED.value,
+                "legacy-v1",
+                ApprovalDecision.DENIED.value,
+                "migration",
+                "1970-01-01T00:00:00+00:00",
+                NOW.isoformat(),
+            )
+        ]
+        assert current_tables == business_tables
+    finally:
+        await first.close()
         await second.close()
 
 

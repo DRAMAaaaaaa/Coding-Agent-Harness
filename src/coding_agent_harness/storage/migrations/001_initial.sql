@@ -83,5 +83,3 @@ CREATE TABLE IF NOT EXISTS credential_references (
     reference TEXT NOT NULL,
     created_at TEXT
 );
-
-PRAGMA user_version = 1;

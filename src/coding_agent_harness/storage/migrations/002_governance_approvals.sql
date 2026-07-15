@@ -1,4 +1,5 @@
-BEGIN IMMEDIATE;
+ALTER TABLE tasks
+    ADD COLUMN config_version TEXT NOT NULL DEFAULT 'v1';
 
 ALTER TABLE approvals RENAME TO approvals_legacy_v1;
 
@@ -70,7 +71,3 @@ CREATE INDEX approvals_task_decision_idx
     ON approvals (task_id, decision, expires_at);
 CREATE INDEX approvals_action_context_idx
     ON approvals (action_id, event_sequence, config_version);
-
-PRAGMA user_version = 2;
-
-COMMIT;
