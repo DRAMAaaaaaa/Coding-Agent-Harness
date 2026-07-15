@@ -414,3 +414,10 @@
 - **控制器新鲜验证：** `scripts/test.ps1 -Mode All` 得到 `330 passed, 1 skipped`，Ruff、mypy（17 个源文件）、Web ESLint 与 TypeScript 全部通过；`pip check` 无破损依赖；无隔离 wheel/sdist 构建成功，两个归档内 001/002 各 1、003 为 0；`git diff --check` 和工作树检查清洁。
 - **范围与安全：** 唯一 skip 仍是 Windows 符号链接权限；未联网、安装、推送、删除工作树或接触凭据，未新增锁文件、依赖、公共接口、003 migration 或 Task 11 实现。
 - **结论：** Task 4 合并后补充纠偏完成，可将 `codex/governance` 的新增提交本地补充合并回 `p1`；远端推送仍未获授权。
+
+### 2026-07-16 — DESIGN-PRODUCT-PRIORITY
+
+- **用户决策：** 后续优先形成真正可使用、可演示、可验收的完整产品；未完成的非阻塞部分保留为之后修复的明确记录。用户批准“可验收纵向切片”方案，并确认课程硬性要求、安全护栏、离线 Mock、确定性反馈闭环、WebUI、E2E、CI 和 Docker 均不得延期。
+- **Superpowers 技能：** 使用 `brainstorming` 探索三种排序方式，选定纵向闭环优先；本轮只形成书面设计，未开始 Task 5 或修改实现代码。
+- **设计产物：** 新增 `docs/superpowers/specs/2026-07-16-usable-product-priority-design.md`，冻结最短产品闭环、不可延期门禁、可延期判定、`DEFERRED_WORK.md` 台账字段及完成规则。
+- **后续门禁：** 等待用户复核书面设计；批准后使用 `writing-plans` 更新 `PLAN.md`，再进入后续实现。未联网、安装依赖、推送或接触凭据。
