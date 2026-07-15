@@ -110,7 +110,7 @@ def _database_initialization_gate(
     path: str | Path,
     loop: asyncio.AbstractEventLoop,
 ) -> asyncio.Lock:
-    path_key = os.path.normcase(str(Path(path).resolve(strict=False)))
+    path_key = _database_path_key(path)
     with _INITIALIZATION_GATES_LOCK:
         loop_gates = _INITIALIZATION_GATES.get(loop)
         if loop_gates is None:
@@ -121,6 +121,30 @@ def _database_initialization_gate(
             gate = asyncio.Lock()
             loop_gates[path_key] = gate
         return gate
+
+
+def _database_path_key(path: str | Path) -> str:
+    resolved = str(Path(path).resolve(strict=False))
+    if os.name == "nt":
+        resolved = _collapse_windows_extended_path(resolved)
+    return os.path.normcase(resolved)
+
+
+def _collapse_windows_extended_path(path: str) -> str:
+    extended_unc_prefix = "\\\\?\\UNC\\"
+    if path[: len(extended_unc_prefix)].casefold() == extended_unc_prefix.casefold():
+        return "\\\\" + path[len(extended_unc_prefix) :]
+
+    extended_prefix = "\\\\?\\"
+    if (
+        path.startswith(extended_prefix)
+        and len(path) >= len(extended_prefix) + 3
+        and path[len(extended_prefix)].isalpha()
+        and path[len(extended_prefix) + 1] == ":"
+        and path[len(extended_prefix) + 2] in {"\\", "/"}
+    ):
+        return path[len(extended_prefix) :]
+    return path
 
 
 async def _ensure_wal_mode(connection: aiosqlite.Connection) -> None:
