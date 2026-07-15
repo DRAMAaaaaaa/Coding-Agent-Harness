@@ -89,6 +89,13 @@ class PolicyEngine:
         tool = self._executable(action.tool)
         command = self._unwrap_command(parsed.argv)
 
+        if tool in {"host_import", "host_export"}:
+            return self._result(
+                PolicyDecision.REQUIRE_APPROVAL,
+                "EXTERNAL_TRANSFER",
+                scope,
+                context,
+            )
         if tool == "delete_path":
             return self._result(PolicyDecision.REQUIRE_APPROVAL, "DELETE_PATH", scope, context)
         if command.high_risk:
@@ -157,6 +164,13 @@ class PolicyEngine:
         elif tool == "git":
             if not isinstance(arguments.get("operation"), str):
                 return None
+        elif tool in {"host_import", "host_export"}:
+            source = arguments.get("source")
+            target = arguments.get("target")
+            if not isinstance(source, str) or not isinstance(target, str):
+                return None
+            workspace_field = "target" if tool == "host_import" else "source"
+            candidates.append((workspace_field, target if tool == "host_import" else source))
         elif tool in {"git_status", "git_diff", "checkpoint"}:
             if arguments:
                 return None
@@ -203,6 +217,9 @@ class PolicyEngine:
         argv: tuple[str, ...],
         paths: dict[str, Path],
     ) -> str:
+        tool = self._executable(action.tool)
+        if tool in {"host_import", "host_export"}:
+            return self._host_transfer_scope(action, paths)
         values: dict[str, object] = {}
         if argv:
             values["argv"] = list(argv)
@@ -218,6 +235,40 @@ class PolicyEngine:
                 values[field] = value
         sanitized = self._redactor.sanitize(values).value
         return json.dumps(sanitized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    def _host_transfer_scope(
+        self,
+        action: ToolAction,
+        paths: Mapping[str, Path],
+    ) -> str:
+        tool = self._executable(action.tool)
+        source = str(action.arguments["source"])
+        target = str(action.arguments["target"])
+        workspace_path = next(iter(paths.values()))
+        if tool == "host_import":
+            source = self._normalize_external_path(source)
+            target = str(workspace_path)
+            direction = "import"
+        else:
+            source = str(workspace_path)
+            target = self._normalize_external_path(target)
+            direction = "export"
+        sanitized = self._redactor.sanitize(
+            {"direction": direction, "source": source, "target": target}
+        ).value
+        return json.dumps(
+            sanitized,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    @staticmethod
+    def _normalize_external_path(candidate: str) -> str:
+        windows = PureWindowsPath(candidate)
+        if windows.is_absolute() or windows.drive or candidate.startswith("\\\\"):
+            return str(windows)
+        return str(PurePosixPath(candidate))
 
     @staticmethod
     def _result(
