@@ -973,6 +973,51 @@ async def test_declarative_request_mutation_commits_with_approval(
         await database.close()
 
 
+@pytest.mark.parametrize(
+    ("column", "binding_name"),
+    [("task_id", "TASK_ID"), ("approval_id", "APPROVAL_ID")],
+)
+async def test_declarative_request_requires_both_approval_and_task_bindings(
+    tmp_path: Path,
+    column: str,
+    binding_name: str,
+) -> None:
+    mutation_type, binding_type, operation_type = _mutation_contract()
+    database, manager, task_id = await _manager(
+        tmp_path / f"request-missing-{column}.sqlite3"
+    )
+    await database.connection.execute(
+        "CREATE TABLE mutation_bindings (approval_id TEXT, task_id TEXT)"
+    )
+    await database.connection.commit()
+    mutation = mutation_type(
+        operation=operation_type.INSERT,  # type: ignore[attr-defined]
+        table="mutation_bindings",
+        values=((column, getattr(binding_type, binding_name)),),
+    )
+    try:
+        with pytest.raises(ApprovalError) as captured:
+            await manager.request_and_apply(
+                task_id,
+                "EXTERNAL_TRANSFER",
+                _context(),
+                NOW + timedelta(minutes=1),
+                mutation,  # type: ignore[arg-type]
+            )
+        assert captured.value.reason_code == "INVALID_MUTATION"
+        assert "mutation_bindings" not in str(captured.value)
+        approvals = await (
+            await database.connection.execute("SELECT COUNT(*) FROM approvals")
+        ).fetchone()
+        bindings = await (
+            await database.connection.execute("SELECT COUNT(*) FROM mutation_bindings")
+        ).fetchone()
+        assert approvals == (0,)
+        assert bindings == (0,)
+    finally:
+        await database.close()
+
+
 async def test_declarative_request_mutation_failure_rolls_back_approval(
     tmp_path: Path,
 ) -> None:
@@ -1057,11 +1102,11 @@ async def test_declarative_consume_mutation_commits_with_consumption(
         requested.id, ApprovalDecision.APPROVED, "reviewer", context
     )
     await database.connection.execute(
-        "CREATE TABLE transfer_state (approval_id TEXT PRIMARY KEY, state TEXT NOT NULL, consumed_at TEXT)"
+        "CREATE TABLE transfer_state (approval_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, state TEXT NOT NULL, consumed_at TEXT)"
     )
     await database.connection.execute(
-        "INSERT INTO transfer_state (approval_id, state) VALUES (?, 'READY')",
-        (str(requested.id),),
+        "INSERT INTO transfer_state (approval_id, task_id, state) VALUES (?, ?, 'READY')",
+        (str(requested.id), str(task_id)),
     )
     await database.connection.commit()
     mutation = mutation_type(
@@ -1071,7 +1116,10 @@ async def test_declarative_consume_mutation_commits_with_consumption(
             ("state", "EXECUTING"),
             ("consumed_at", binding_type.CONSUMED_AT),  # type: ignore[attr-defined]
         ),
-        where=(("approval_id", binding_type.APPROVAL_ID),),  # type: ignore[attr-defined]
+        where=(
+            ("approval_id", binding_type.APPROVAL_ID),  # type: ignore[attr-defined]
+            ("task_id", binding_type.TASK_ID),  # type: ignore[attr-defined]
+        ),
     )
     try:
         consumed = await manager.consume_and_apply(
@@ -1085,5 +1133,106 @@ async def test_declarative_consume_mutation_commits_with_consumption(
         ).fetchone()
         assert consumed.consumed_at == NOW
         assert transfer == ("EXECUTING", NOW.isoformat())
+    finally:
+        await database.close()
+
+
+@pytest.mark.parametrize("row_count", [0, 2])
+async def test_declarative_consume_requires_exactly_one_bound_row(
+    tmp_path: Path,
+    row_count: int,
+) -> None:
+    mutation_type, binding_type, operation_type = _mutation_contract()
+    database, manager, task_id = await _manager(
+        tmp_path / f"consume-row-count-{row_count}.sqlite3"
+    )
+    context = _context()
+    requested = await manager.request(
+        task_id, "EXTERNAL_TRANSFER", context, NOW + timedelta(minutes=1)
+    )
+    await manager.decide(
+        requested.id, ApprovalDecision.APPROVED, "reviewer", context
+    )
+    await database.connection.execute(
+        "CREATE TABLE transfer_rows (approval_id TEXT, task_id TEXT, state TEXT NOT NULL)"
+    )
+    for _ in range(row_count):
+        await database.connection.execute(
+            "INSERT INTO transfer_rows (approval_id, task_id, state) VALUES (?, ?, 'READY')",
+            (str(requested.id), str(task_id)),
+        )
+    await database.connection.commit()
+    mutation = mutation_type(
+        operation=operation_type.UPDATE,  # type: ignore[attr-defined]
+        table="transfer_rows",
+        values=(("state", "EXECUTING"),),
+        where=(
+            ("approval_id", binding_type.APPROVAL_ID),  # type: ignore[attr-defined]
+            ("task_id", binding_type.TASK_ID),  # type: ignore[attr-defined]
+        ),
+    )
+    try:
+        with pytest.raises(ApprovalError) as captured:
+            await manager.consume_and_apply(
+                requested.id, context, mutation  # type: ignore[arg-type]
+            )
+        assert captured.value.reason_code == "INVALID_MUTATION"
+        assert "transfer_rows" not in str(captured.value)
+        approval = await (
+            await database.connection.execute(
+                "SELECT consumed_at FROM approvals WHERE id = ?", (str(requested.id),)
+            )
+        ).fetchone()
+        states = await (
+            await database.connection.execute("SELECT state FROM transfer_rows")
+        ).fetchall()
+        assert approval == (None,)
+        assert states == [("READY",)] * row_count
+    finally:
+        await database.close()
+
+
+async def test_declarative_consume_requires_approval_and_task_where_bindings(
+    tmp_path: Path,
+) -> None:
+    mutation_type, binding_type, operation_type = _mutation_contract()
+    database, manager, task_id = await _manager(tmp_path / "consume-task-only.sqlite3")
+    context = _context()
+    requested = await manager.request(
+        task_id, "EXTERNAL_TRANSFER", context, NOW + timedelta(minutes=1)
+    )
+    await manager.decide(
+        requested.id, ApprovalDecision.APPROVED, "reviewer", context
+    )
+    await database.connection.execute(
+        "CREATE TABLE task_transfers (task_id TEXT, state TEXT NOT NULL)"
+    )
+    await database.connection.execute(
+        "INSERT INTO task_transfers (task_id, state) VALUES (?, 'READY')",
+        (str(task_id),),
+    )
+    await database.connection.commit()
+    mutation = mutation_type(
+        operation=operation_type.UPDATE,  # type: ignore[attr-defined]
+        table="task_transfers",
+        values=(("state", "EXECUTING"),),
+        where=(("task_id", binding_type.TASK_ID),),  # type: ignore[attr-defined]
+    )
+    try:
+        with pytest.raises(ApprovalError) as captured:
+            await manager.consume_and_apply(
+                requested.id, context, mutation  # type: ignore[arg-type]
+            )
+        assert captured.value.reason_code == "INVALID_MUTATION"
+        approval = await (
+            await database.connection.execute(
+                "SELECT consumed_at FROM approvals WHERE id = ?", (str(requested.id),)
+            )
+        ).fetchone()
+        state = await (
+            await database.connection.execute("SELECT state FROM task_transfers")
+        ).fetchone()
+        assert approval == (None,)
+        assert state == ("READY",)
     finally:
         await database.close()
