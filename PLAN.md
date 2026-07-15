@@ -152,7 +152,7 @@ class TaskOrchestrator:
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
-| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 返工可恢复（RED `5a2b8cb`；实现 `c14d50d`；首轮修复 `269c1ae`；第八轮冷启动 Pass；从步骤 6 继续） |
+| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 纠偏实现待复审（策略 RED `fd8bf48` / GREEN `ee161ba`；迁移 RED `c893e15` / GREEN `bde90e0`；审批 RED `3e57b38` / GREEN `0cc6914`；宿主边界 RED `7f9a078` / GREEN `4bd4075`） |
 | 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 待执行 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
@@ -672,7 +672,7 @@ class PolicyEngine:
 
 历史预期：当时计划的危险行为、路径穿越、符号链接逃逸、过期/重放/错版本审批和敏感字符串测试通过；二轮审计新增的路径逃逸固定拒绝、受控导入/导出和命令语法边界以步骤 6 为准。
 
-- [ ] **步骤 6：为二轮评审缺口执行纠正性 RED—GREEN**
+- [x] **步骤 6：为二轮评审缺口执行纠正性 RED—GREEN**
 
 先补充以下参数化测试；旧实现必须准确失败，不能把环境错误计为 RED：
 
@@ -798,6 +798,8 @@ python -m pytest tests/governance -v
 ```
 
 预期：聚焦测试与全部治理测试通过；不得真实访问网络或执行测试中的命令字符串。
+
+纠偏证据（2026-07-15）：策略、迁移、审批权威上下文和宿主内部边界均分别取得精确 RED 后转绿；focused 为 `128 passed`，治理目标为 `144 passed, 1 skipped`，全量为 `246 passed, 1 skipped`。实现提交截至 `4bd4075`；独立规约符合性审查与代码质量审查尚未执行，步骤 7 保持未完成。
 
 - [ ] **步骤 7：评审与提交**
 

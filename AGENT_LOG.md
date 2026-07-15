@@ -306,3 +306,15 @@
 - **结论：** Pass；无 Critical、无 Important。Task 4 可从步骤 6 的纠正性 RED 立即恢复；Task 11 契约通过但依赖未满足，仍不得提前实施。
 - **Minor 处理：** 把三次文件校验明确为 source parent/source/target parent/target 四组身份，并固定临时文件名包含 transfer ID；不扩展范围。
 - **安全与范围：** 审计员仅读 `SPEC.md` 与 `PLAN.md`，未修改、联网或读取其他材料。冷启动门禁正式关闭。
+
+### 2026-07-15 20:31 +08:00 — IMPL-004-R2
+
+- **任务：** 从 Task 4 简报步骤 6 恢复二轮评审纠偏，分组修复真实工具路径 schema、命令包装器、版本化迁移并发、审批权威上下文与宿主内部传输边界。
+- **Superpowers 技能：** `test-driven-development`、`systematic-debugging`、`verification-before-completion`；实现者只完整读取 Task 4 简报与技能说明，没有重读整份 `SPEC.md`/`PLAN.md`。
+- **策略 RED—GREEN：** `fd8bf48` 得到 `21 failed, 8 passed`，精确暴露安装别名、解释器选项、畸形网络字段、路径逃逸可审批和任意 argv 扫描；`ee161ba` 以真实 schema 和命令位置解析转绿，策略文件最终 `90 passed`。
+- **迁移 RED—GREEN：** `c893e15` 得到 3 个精确失败；`bde90e0` 恢复 001 原始 blob、把事务/版本管理移到协调器、给 002 增加 task config_version，并以两个真实连接证明 legacy 仅迁移一次。WAL 竞争连续证伪三个局部方案后，按控制器确认调整初始化顺序；双实例回归连续 10 次通过且最终均为 v2/WAL。
+- **审批 RED—GREEN：** `3e57b38` 得到 8 个精确失败；`0cc6914` 使五个公开方法在同一写事务读取 tasks state/config 与最大事件序号，并实现条件决定/消费及两个原子数据库回调。两个真实连接的决定和消费均只有一个赢家，回调异常时绑定写入与审批共同回滚。
+- **宿主边界 RED—GREEN：** `7f9a078` 得到 `4 failed, 3 passed`；`4bd4075` 只增加 `host_import/host_export` 内部精确审批和脱敏 scope，普通工具仍固定拒绝越界。没有实现 Task 11 服务/API、transfer 持久表或 003 migration。
+- **新鲜验证：** focused `128 passed`；governance `144 passed, 1 skipped`；全量 `246 passed, 1 skipped`；Ruff、mypy（17 个源文件）、pip check、PowerShell All、Web ESLint、TypeScript、wheel/sdist 构建及归档内容检查均通过。唯一 skip 为 Windows 符号链接权限。
+- **安全与人工干预：** 未执行测试字符串中的命令，未接触凭据、推送、合并或删除工作树。控制器仅确认 WAL 初始化架构调整；未扩大 Task 4 接口范围。
+- **经验总结：** 迁移互斥必须先由 SQLite 写锁建立，再做可能引发连接间竞争的持久 journal-mode 切换；busy timeout 不能替代正确的锁获取顺序。当前仍待独立规约符合性与代码质量审查，不宣称评审通过。
