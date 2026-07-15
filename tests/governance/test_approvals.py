@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+import aiosqlite
 from pydantic import ValidationError
 
 from coding_agent_harness.domain.actions import TaskState
@@ -79,8 +80,8 @@ async def _seed_task(database: Database, task_id: UUID) -> None:
         """
         INSERT INTO tasks (
             id, workspace_id, requirement, state, step_budget,
-            time_budget_seconds, created_at, deadline_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            time_budget_seconds, created_at, deadline_at, config_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             str(task_id),
@@ -91,6 +92,24 @@ async def _seed_task(database: Database, task_id: UUID) -> None:
             60.0,
             NOW.isoformat(),
             None,
+            "cfg-4",
+        ),
+    )
+    await database.connection.execute(
+        """
+        INSERT INTO task_events (
+            task_id, sequence, event_type, payload,
+            state_before, state_after, occurred_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(task_id),
+            8,
+            "APPROVAL_REQUESTED",
+            "{}",
+            TaskState.DECIDING.value,
+            TaskState.WAITING_ACTION_APPROVAL.value,
+            NOW.isoformat(),
         ),
     )
     await database.connection.commit()
@@ -733,5 +752,194 @@ async def test_non_lock_sqlite_error_is_sanitized_as_storage_error(tmp_path: Pat
         assert "sqlite" not in rendered
         assert "approvals" not in rendered
         assert "insert" not in rendered
+    finally:
+        await database.close()
+
+
+@pytest.mark.parametrize(
+    ("updates", "reason_code"),
+    [
+        ({"event_sequence": 7}, "STALE_EVENT"),
+        ({"task_state": TaskState.EXECUTING}, "STALE_STATE"),
+        ({"config_version": "caller-override"}, "STALE_CONFIG"),
+    ],
+)
+async def test_request_uses_database_task_context_as_authority(
+    tmp_path: Path,
+    updates: dict[str, object],
+    reason_code: str,
+) -> None:
+    database, manager, task_id = await _manager(tmp_path / f"authority-{reason_code}.sqlite3")
+    try:
+        with pytest.raises(ApprovalError) as captured:
+            await manager.request(
+                task_id,
+                "DANGEROUS",
+                _context(**updates),
+                NOW + timedelta(minutes=1),
+            )
+        assert captured.value.reason_code == reason_code
+    finally:
+        await database.close()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason_code"),
+    [
+        ("UPDATE tasks SET state = 'EXECUTING' WHERE id = ?", "STALE_STATE"),
+        ("UPDATE tasks SET config_version = 'cfg-5' WHERE id = ?", "STALE_CONFIG"),
+    ],
+)
+async def test_decide_rechecks_authoritative_task_state_and_config(
+    tmp_path: Path,
+    mutation: str,
+    reason_code: str,
+) -> None:
+    database, manager, task_id = await _manager(tmp_path / f"decide-{reason_code}.sqlite3")
+    context = _context()
+    try:
+        requested = await manager.request(
+            task_id, "DANGEROUS", context, NOW + timedelta(minutes=1)
+        )
+        await database.connection.execute(mutation, (str(task_id),))
+        await database.connection.commit()
+
+        with pytest.raises(ApprovalError) as captured:
+            await manager.decide(
+                requested.id,
+                ApprovalDecision.APPROVED,
+                "reviewer",
+                context,
+            )
+        assert captured.value.reason_code == reason_code
+    finally:
+        await database.close()
+
+
+async def test_consume_rechecks_authoritative_event_sequence(tmp_path: Path) -> None:
+    database, manager, task_id = await _manager(tmp_path / "consume-stale-event.sqlite3")
+    context = _context()
+    try:
+        requested = await manager.request(
+            task_id, "DANGEROUS", context, NOW + timedelta(minutes=1)
+        )
+        await manager.decide(
+            requested.id, ApprovalDecision.APPROVED, "reviewer", context
+        )
+        await database.connection.execute(
+            """
+            INSERT INTO task_events (
+                task_id, sequence, event_type, payload,
+                state_before, state_after, occurred_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(task_id),
+                9,
+                "STATE_CHANGED",
+                "{}",
+                TaskState.WAITING_ACTION_APPROVAL.value,
+                TaskState.WAITING_ACTION_APPROVAL.value,
+                NOW.isoformat(),
+            ),
+        )
+        await database.connection.commit()
+
+        with pytest.raises(ApprovalError) as captured:
+            await manager.consume(requested.id, context)
+        assert captured.value.reason_code == "STALE_EVENT"
+    finally:
+        await database.close()
+
+
+async def test_request_and_apply_rolls_back_callback_and_approval_together(
+    tmp_path: Path,
+) -> None:
+    database, manager, task_id = await _manager(tmp_path / "request-apply.sqlite3")
+    await database.connection.execute(
+        "CREATE TABLE approval_bindings (approval_id TEXT PRIMARY KEY)"
+    )
+    await database.connection.commit()
+
+    async def fail_after_insert(
+        connection: aiosqlite.Connection,
+        record: ApprovalRecord,
+    ) -> None:
+        await connection.execute(
+            "INSERT INTO approval_bindings (approval_id) VALUES (?)",
+            (str(record.id),),
+        )
+        raise RuntimeError("callback failed")
+
+    try:
+        with pytest.raises(RuntimeError, match="^callback failed$"):
+            await manager.request_and_apply(
+                task_id,
+                "EXTERNAL_TRANSFER",
+                _context(),
+                NOW + timedelta(minutes=1),
+                fail_after_insert,
+            )
+        approvals = await (
+            await database.connection.execute("SELECT COUNT(*) FROM approvals")
+        ).fetchone()
+        bindings = await (
+            await database.connection.execute("SELECT COUNT(*) FROM approval_bindings")
+        ).fetchone()
+        assert approvals == (0,)
+        assert bindings == (0,)
+    finally:
+        await database.close()
+
+
+async def test_consume_and_apply_rolls_back_consumption_and_callback_together(
+    tmp_path: Path,
+) -> None:
+    database, manager, task_id = await _manager(tmp_path / "consume-apply.sqlite3")
+    context = _context()
+    await database.connection.execute(
+        "CREATE TABLE transfer_state (id INTEGER PRIMARY KEY, state TEXT NOT NULL)"
+    )
+    await database.connection.execute(
+        "INSERT INTO transfer_state (id, state) VALUES (1, 'READY')"
+    )
+    await database.connection.commit()
+    requested = await manager.request(
+        task_id, "EXTERNAL_TRANSFER", context, NOW + timedelta(minutes=1)
+    )
+    await manager.decide(
+        requested.id, ApprovalDecision.APPROVED, "reviewer", context
+    )
+
+    async def fail_after_update(
+        connection: aiosqlite.Connection,
+        consumed_at: datetime,
+    ) -> None:
+        assert consumed_at == NOW
+        await connection.execute(
+            "UPDATE transfer_state SET state = 'EXECUTING' WHERE id = 1"
+        )
+        raise RuntimeError("callback failed")
+
+    try:
+        with pytest.raises(RuntimeError, match="^callback failed$"):
+            await manager.consume_and_apply(
+                requested.id,
+                context,
+                fail_after_update,
+            )
+        approval = await (
+            await database.connection.execute(
+                "SELECT consumed_at FROM approvals WHERE id = ?",
+                (str(requested.id),),
+            )
+        ).fetchone()
+        transfer = await (
+            await database.connection.execute(
+                "SELECT state FROM transfer_state WHERE id = 1"
+            )
+        ).fetchone()
+        assert approval == (None,)
+        assert transfer == ("READY",)
     finally:
         await database.close()
