@@ -222,6 +222,42 @@
 - **人工干预：** 用户要求继续 Task 3 并保持既有要求不变；没有新增技术接口选择。分支合并到 `p1` 与远程 push 仍作为独立集成动作处理，其中 push 必须取得明确批准。
 - **经验总结：** 存储任务的完成证据不仅包括单元测试，还应验证迁移资源确实进入 wheel 与 sdist；否则源码树中的迁移成功不能证明安装后可用。
 
+### 2026-07-15 00:46 +08:00 — SDD-003
+
+- **任务：** 在独立 worktree 中启动 Task 4 的路径围栏、统一脱敏、确定性策略与版本化审批实现。
+- **Superpowers 技能：** `subagent-driven-development`、`using-git-worktrees`、`test-driven-development`。
+- **隔离环境：** 用户已把 `p1` 的 Task 1—3 历史推送到远程；控制器确认本地与 `origin/p1` 同为 `3861613` 后，从该提交创建 `codex/governance` 与 `E:\Coding Agent Harness\.worktrees\governance`。
+- **依赖与基线：** 在新 worktree 中使用 Windows 哈希锁文件重建 Python 3.11 `.venv`，使用 `npm.cmd --prefix web ci` 安装根锁依赖；npm 报告 0 个漏洞。`pip check` 通过，`scripts/test.ps1 -Mode All` 得到 102 项测试全通过，Ruff、mypy、ESLint、TypeScript 均退出 0。
+- **计划依赖修正：** Task 4 原文声称消费 Task 3 审批仓储，但 Task 3 实际只交付最小 `approvals` 表，没有审批仓储或版本化列。为遵守 SQLite 持久审批规约，Task 4 文件清单增加 `002_governance_approvals.sql`，并最小修改 `Database.open` 与 `001_initial.sql`，使用 `PRAGMA user_version` 幂等顺序升级；审批仓储仍封装在 `governance/approvals.py`，不扩展后续 API。
+- **人工干预：** 用户要求在已推送 Task 1—3 后继续执行，其他 TDD、双阶段复审、中文提交、逐 Task 完成提交和 push 审批要求保持不变。
+- **经验总结：** 当计划声称消费的底层接口并未实际交付时，应在实现前把必要的最小持久化演进写回计划；用内存替身掩盖缺口会破坏崩溃恢复和审批重放防护。
+
+### 2026-07-15 01:10 +08:00 — IMPL-004
+
+- **任务：** 由治理子智能体实现 Task 4 的路径围栏、统一脱敏、确定性策略、SQLite 版本化迁移与一次性审批。
+- **Superpowers 技能：** `test-driven-development`、`verification-before-completion`；实现者只完整读取 Task 4 简报、控制器补充上下文、指定技能与 implementer 模板，未读取整份 `SPEC.md` 或 `PLAN.md`。
+- **RED 证据：** 宿主默认 `python` 首次解析到 Python 3.9 且缺少 pytest，该环境错误未计为 RED；改用工作树 `.venv` 的 Python 3.11 后，`python -m pytest tests/governance -v` 在收集阶段因 `coding_agent_harness.governance` 不存在产生 4 个预期错误。四个治理测试文件的独立 RED 提交为 `5a2b8cb`。
+- **实现与迁移：** 提交 `c14d50d`（`安全：实现路径围栏和版本化审批（治理子智能体）`）新增基于 `Path.resolve`/`Path.is_relative_to` 的路径围栏、递归 JSON 脱敏副本、固定次序精确 token 策略、`PRAGMA user_version` 001→002 迁移，以及复用 `operation_lock + BEGIN IMMEDIATE` 的 SQLite 审批管理器。旧 v1 审批被保留为拒绝、已消费、已过期的 legacy 记录；审批绑定动作、事件序号、规范化范围、任务状态和配置版本，消费后持久拒绝重放。
+- **纠正性 TDD：** GREEN 后自审新增 JSON 引号密钥、Shell `git push`、任务落盘取消、SQLite BUSY、pending/not-found 区分等回归，旧实现得到 `5 failed, 7 passed`；补强后又用命令包装器和缺失参数用例得到 `6 failed, 2 passed`。最小修复覆盖带引号赋值、Shell 包装器精确 token、落盘取消检查与固定领域错误。最终门禁还捕获 `read_file` 五类路径字段优先级回归（4 failed），修正为至少一个受围栏字段后恢复 GREEN。
+- **验证证据：** 最新治理目标为 `68 passed, 1 skipped`；`pip check` 无损坏依赖；`scripts/test.ps1 -Mode All` 收集 171 项并得到 `170 passed, 1 skipped`，Ruff、mypy、Web ESLint 和 TypeScript 均退出 0。唯一跳过项是当前 Windows 账户不能创建目录符号链接；路径穿越、同前缀兄弟目录、非既有尾部和 Windows 大小写核心用例均实际通过。首次直接调用 PowerShell 脚本被系统执行策略阻止，随后使用仅当前进程生效的 `-ExecutionPolicy Bypass` 成功执行同一脚本。
+- **分发检查：** `python -m build --wheel --sdist` 成功构建 wheel 与 sdist；逐项检查归档，`001_initial.sql` 和 `002_governance_approvals.sql` 在两种产物中都各恰好出现一次。
+- **安全与范围：** 未真实联网、未使用真实凭据、未使用 sleep 竞争或高层 Agent runner；真实 Provider 的 LLM 授权与工具网络规则完全分离，伪造 `provider_authorized` 不能绕过。未实现工具执行、Workspace 扫描、反馈、记忆、Agent 主循环或 Web API。
+- **人工干预：** 控制器在各安全检查点询问材料读取、RED/GREEN、静态门禁和分发状态，未改变冻结接口或安全语义。
+- **经验总结：** 安全规则不仅要识别直接命令，还必须用精确 token 覆盖 `sudo`、`python -m` 与 Shell 解释器包装；完成前新鲜全门禁能够发现局部测试未暴露的规则优先级回归。当前 Task 4 仅标为待复审，须先后通过独立规约符合性审查和代码质量审查。
+
+### 2026-07-15 01:35 +08:00 — REVIEW-007
+
+- **任务：** 修复 Task 4 首轮规格符合性与代码质量评审提出的治理绕过、审批异常泄漏、恶意异常脱敏、环境变量名边界和 legacy 证明缺口；修复后保持待复审。
+- **Superpowers 技能：** `receiving-code-review`、`test-driven-development`、`verification-before-completion`；先逐项核对评审意见与当前代码，再按 Critical→Important→Minor 分组执行纠正性 RED—GREEN。
+- **首轮评审结论：** Spec Fail / Changes requested。Critical 为策略仅依赖相邻 token 且未覆盖直接/字段网络动作；Important 为审批公开边界泄漏 FK/CHECK、非法输入及非锁 SQLite 异常，以及恶意异常 `__str__` 二次失败；Minor 为环境名无标识符/平台大小写语义和 legacy 仅查字段未通过公开管理器证明。由于独立双阶段复审未通过，`PLAN.md` 步骤 6 恢复为未完成。
+- **纠正性 TDD A：** 新增 `git -C . push`、带全局选项的 pip/docker、`npm.cmd`/`pnpm.cmd`、直接 curl、未知工具 `url/uri`、授权伪造和安全反例。旧实现得到 `11 failed, 4 passed`；最小修复统一剥离 `.exe/.cmd/.bat/.com/.ps1`，对已知命令保守扫描后续精确 operation，并显式分类工具名和网络字段，A 组转为 `15 passed`、完整策略转为 `56 passed`。随后直接 `git.cmd` operation 未进入 scope 的回归先 `1 failed`，修复后 `1 passed`。
+- **纠正性 TDD B：** 不存在 task、六类越界上下文、构造绕过、非法决定/actor/time 与非锁 SQLite 异常在旧实现共 `10 failed`，真实泄漏 `FOREIGN KEY constraint failed`、`CHECK constraint failed`、`ValueError` 和 `no such table`。修复后增加有界冻结字段与 `INVALID_CONTEXT/INVALID_DECISION/INVALID_TIME/STORAGE_ERROR`，不存在 task 固定 `NOT_FOUND`，公开数据库错误使用 `from None`；B 组 `10 passed`、审批文件 `24 passed`。BUSY/DUPLICATE 语义未改变，普通 `Exception` 与控制流 `BaseException` 分支明确分离。
+- **纠正性 TDD C/D/E：** 恶意异常 `__str__` 用例旧实现 `1 failed` 并传播含秘密二次异常，修复后固定消息并使脱敏文件先达 `8 passed`；环境名前缀/Windows 大小写用例旧实现 `2 failed`，改用 Unicode 标识符边界、Windows 不敏感/POSIX 敏感后脱敏文件 `10 passed`。UUID 旧审批 + 非取消 active task 的公开 `consume` 在旧实现已固定拒绝，因此 E 如实记录为 characterization `1 passed`，未伪造 RED。
+- **修复提交：** `269c1ae`（`fix: 封堵治理绕过并稳定审批错误（治理子智能体）`）只修改 Task 4 三个治理模块及对应测试，不实现工具执行、扫描、反馈、记忆、Agent 循环或 Web API。
+- **最终验证：** 治理目标 `97 passed, 1 skipped`；全量 pytest `199 passed, 1 skipped`；Ruff、mypy（17 个源文件）、`pip check`、`git diff --check` 均通过。`scripts/test.ps1 -Mode All` 收集 200 项并得到 `199 passed, 1 skipped`，Web ESLint 与 TypeScript 均通过。唯一 skip 仍是当前 Windows 账户不能创建目录符号链接的单一 OS 能力用例。
+- **分发检查：** wheel/sdist 重建成功；逐项检查归档，`001_initial.sql` 与 `002_governance_approvals.sql` 在两种产物中均各恰好一份。
+- **人工干预：** 控制器已按 `receiving-code-review` 独立验证评审成立并给出完整修复边界；未新增技术选择，未要求或发生真实网络与凭据操作。
+- **经验总结：** 安全策略不能把 argv 邻接当作语法保证；已知命令的全局选项和 Windows 启动器必须在不执行字符串的前提下规范化。公开审批边界也必须把所有可预期输入/存储失败收敛为不含 SQL 或业务值的固定领域错误。Task 4 当前仍待独立复审，不提前勾选步骤 6。
 ### 2026-07-15 11:47 +08:00 — GOV-005
 
 - **任务：** 按替换后的 `AGENTS.md` 重新执行 `SPEC.md` 最终复核与实施计划自审门禁。
@@ -270,3 +306,64 @@
 - **结论：** Pass；无 Critical、无 Important。Task 4 可从步骤 6 的纠正性 RED 立即恢复；Task 11 契约通过但依赖未满足，仍不得提前实施。
 - **Minor 处理：** 把三次文件校验明确为 source parent/source/target parent/target 四组身份，并固定临时文件名包含 transfer ID；不扩展范围。
 - **安全与范围：** 审计员仅读 `SPEC.md` 与 `PLAN.md`，未修改、联网或读取其他材料。冷启动门禁正式关闭。
+
+### 2026-07-15 20:31 +08:00 — IMPL-004-R2
+
+- **任务：** 从 Task 4 简报步骤 6 恢复二轮评审纠偏，分组修复真实工具路径 schema、命令包装器、版本化迁移并发、审批权威上下文与宿主内部传输边界。
+- **Superpowers 技能：** `test-driven-development`、`systematic-debugging`、`verification-before-completion`；实现者只完整读取 Task 4 简报与技能说明，没有重读整份 `SPEC.md`/`PLAN.md`。
+- **策略 RED—GREEN：** `fd8bf48` 得到 `21 failed, 8 passed`，精确暴露安装别名、解释器选项、畸形网络字段、路径逃逸可审批和任意 argv 扫描；`ee161ba` 以真实 schema 和命令位置解析转绿，策略文件最终 `90 passed`。
+- **迁移 RED—GREEN：** `c893e15` 得到 3 个精确失败；`bde90e0` 恢复 001 原始 blob、把事务/版本管理移到协调器、给 002 增加 task config_version，并以两个真实连接证明 legacy 仅迁移一次。WAL 竞争连续证伪三个局部方案后，按控制器确认调整初始化顺序；双实例回归连续 10 次通过且最终均为 v2/WAL。
+- **审批 RED—GREEN：** `3e57b38` 得到 8 个精确失败；`0cc6914` 使五个公开方法在同一写事务读取 tasks state/config 与最大事件序号，并实现条件决定/消费及两个原子数据库回调。两个真实连接的决定和消费均只有一个赢家，回调异常时绑定写入与审批共同回滚。
+- **宿主边界 RED—GREEN：** `7f9a078` 得到 `4 failed, 3 passed`；`4bd4075` 只增加 `host_import/host_export` 内部精确审批和脱敏 scope，普通工具仍固定拒绝越界。没有实现 Task 11 服务/API、transfer 持久表或 003 migration。
+- **新鲜验证：** focused `128 passed`；governance `144 passed, 1 skipped`；全量 `246 passed, 1 skipped`；Ruff、mypy（17 个源文件）、pip check、PowerShell All、Web ESLint、TypeScript、wheel/sdist 构建及归档内容检查均通过。唯一 skip 为 Windows 符号链接权限。
+- **安全与人工干预：** 未执行测试字符串中的命令，未接触凭据、推送、合并或删除工作树。控制器仅确认 WAL 初始化架构调整；未扩大 Task 4 接口范围。
+- **经验总结：** 迁移互斥必须先由 SQLite 写锁建立，再做可能引发连接间竞争的持久 journal-mode 切换；busy timeout 不能替代正确的锁获取顺序。当前仍待独立规约符合性与代码质量审查，不宣称评审通过。
+
+### 2026-07-15 21:06 +08:00 — IMPL-004-R3
+
+- **任务：** 修复独立评审追加发现的补丁/命令语法 fail-open、审批任意 callable 副作用边界、调用方状态优先级和宿主动作来源伪造问题。
+- **Superpowers 技能：** `receiving-code-review`、`systematic-debugging`、`test-driven-development`、`verification-before-completion`；逐项核对评审事实，按三个独立行为组执行 RED—GREEN，未启动子智能体。
+- **策略 RED—GREEN：** `55d504a` 得到 `11 failed, 2 passed`；`12a4328` 支持真实 `*** Move to:`，零合法/畸形补丁头固定拒绝，`command -v/-V` 只在包装器前缀生效，并按包管理器语法消费已知选项值、对未知选项保守审批。聚焦 `13 passed`，策略文件 `103 passed`。
+- **审批 RED—GREEN：** `aeb5168` 得到 6 个精确失败；`57f5733` 保留公开 Callable 注解但运行时只接受精确冻结数据库 mutation，管理器自行参数化执行受 approval/task 绑定的 INSERT/UPDATE，任意 callable 不调用且固定 `INVALID_MUTATION`。合法声明与审批创建/消费原子提交，声明 SQL 失败共同回滚；数据库活动而调用方声称取消时返回 `STALE_STATE`。审批文件 `41 passed`。
+- **宿主来源 RED—GREEN：** `3996d60` 得到 6 个精确失败；`1927bd0` 增加独立严格 `HostTransferAction` 与 `evaluate_internal`，普通 `evaluate(ToolAction)` 对 `host_import/host_export` 固定 `DENY/INVALID_ACTION`。没有修改 `AgentAction`、LLM schema、工具注册表、Task 6/11 或新增 003 migration。
+- **安全与人工干预：** 未执行测试字符串中的命令，未联网、未安装依赖、未接触凭据、未推送或合并。控制器确认受限 mutation 和宿主来源边界的接口方向。
+- **新鲜验证：** focused `146 passed`；governance `162 passed, 1 skipped`；全量与 PowerShell All 均为 `264 passed, 1 skipped`。Ruff、mypy（17 个源文件）、pip check、Web ESLint/TypeScript、无隔离 wheel/sdist 构建均通过；两种归档的 001/002 各 1 份、003 为 0。唯一 skip 为本机 Windows 符号链接权限。
+- **当前状态：** 纠偏实现与全门禁已完成，仍等待独立规约符合性/代码质量复审；不提前宣称 Task 4 完成。
+
+### 2026-07-15 21:26 +08:00 — IMPL-004-R4
+
+- **任务：** 修复第二轮独立复审发现的审批 mutation 非唯一绑定/命中数缺口，以及 slash 选项被通用路径扫描全局豁免的问题。
+- **Superpowers 技能：** `receiving-code-review`、`systematic-debugging`、`test-driven-development`、`verification-before-completion`；先核对实现与反例，再按审批、策略两组独立 RED—GREEN。
+- **审批 RED—GREEN：** `4fb248e` 聚焦得到 `5 failed, 2 passed`：仅 TASK_ID/仅 APPROVAL_ID 的 INSERT、仅 TASK_ID 的 UPDATE WHERE、UPDATE 零命中/双命中均错误提交；正确双绑定 INSERT 与单行 UPDATE 已通过。`c28525a` 强制 INSERT values 和 UPDATE WHERE 同时含两项绑定，且 UPDATE `rowcount != 1` 固定 `INVALID_MUTATION`，审批消费和业务更新共同回滚。
+- **策略 RED—GREEN：** `00ac97e` 得到 `2 failed, 1 passed`：`echo /s` 错误 ALLOW、`rm /s` 错误进入审批而未先拒绝，合法 cmd 前缀保持通过。`c55c07b` 把 slash 语法限定到实际解包后的 cmd 前缀索引，普通命令的 `/...` 重新作为绝对路径候选围栏。
+- **验证插曲：** 审批全文件首次运行中，既有双实例 WAL 用例出现一次 `database is locked`；未修改迁移代码或测试，原命令重跑后 `46 passed`，随后完整 focused/governance/full/PowerShell All 中该用例均通过。
+- **新鲜验证：** focused `154 passed`；governance `170 passed, 1 skipped`；全量与 PowerShell All 均为 `272 passed, 1 skipped`。Ruff、mypy（17 个源文件）、pip check、Web ESLint/TypeScript、无隔离 wheel/sdist 构建及归档 001/002 各 1、003 为 0 均通过；唯一 skip 为 Windows 符号链接权限。
+- **范围与状态：** 未联网、安装、推送、合并，未实现 Task 6/11、003 migration 或传输服务。第二轮问题已纠偏，仍等待下一轮独立规约符合性与代码质量复审，不宣称 Task 4 完成。
+
+### 2026-07-15 21:46 +08:00 — IMPL-004-R5
+
+- **任务：** 修复第三轮独立复审发现的发布/远程变更命令全局 option 值遮蔽 operation 问题。
+- **Superpowers 技能：** `receiving-code-review`、`systematic-debugging`、`test-driven-development`、`verification-before-completion`；核对冻结 reason 与通用 `_operation` 数据流后，执行一组 RED—GREEN。
+- **RED：** `8ae3c37` 新增 26 个聚焦案例，旧实现得到 `15 failed, 11 passed`。六个评审反例、pnpm/yarn publish、未知/缺值 option 均暴露 fail-open 或错误 reason；docker 已知 option、三种等号形式及七个安全反例证明既有正常边界。
+- **GREEN：** `ab95989` 为 `git/npm/pnpm/yarn/twine/docker/gh` 建立命令专属无值/带值 option 表，统一 `_parse_operation` 支持分离值与非空等号值；package install/publish 复用同一 parser。git 不可靠解析固定 `GIT_REMOTE_CHANGE`，发布命令固定 `PUBLISH`；npm/pnpm/yarn 明示 publish 时由发布 reason 优先，既有未知普通 package option 仍保留 `DEPENDENCY_INSTALL`。
+- **新鲜验证：** focused `180 passed`；governance `196 passed, 1 skipped`；全量与 PowerShell All 均为 `298 passed, 1 skipped`。Ruff、mypy（17 个源文件）、pip check、Web ESLint/TypeScript、无隔离 wheel/sdist 构建及归档 001/002 各 1、003 为 0 均通过；唯一 skip 为 Windows 符号链接权限。
+- **范围与状态：** 未联网、安装、推送、合并，未实现 Task 6/11、003 migration 或传输服务。第三轮问题已纠偏，仍等待独立规约符合性与代码质量复审，不宣称 Task 4 完成。
+
+### 2026-07-15 22:00 +08:00 — IMPL-004-R6
+
+- **任务：** 修复第四轮独立复审发现的 WAL 切换锁竞争公开错误边界：复查仍非 WAL 时不得泄漏原始 `sqlite3.OperationalError` 文本。
+- **Superpowers 技能：** `receiving-code-review`、`systematic-debugging`、`test-driven-development`、`verification-before-completion`；先核对冻结 busy 错误和既有映射函数，再用确定性连接桩执行单组 RED—GREEN。
+- **RED：** `71aec0b` 新增三个分支用例；聚焦运行得到 `1 failed, 2 passed`。锁竞争且复查非 WAL 的失败中原样出现桩注入的底层错误文本，另外两条既有边界——复查 WAL 成功、非锁异常保持原样——已通过。
+- **GREEN：** `e3d991b` 仅把 `_ensure_wal_mode` 的锁竞争非 WAL 分支交给既有 `_raise_migration_error`，得到固定 `MigrationBusyError("数据库迁移正忙")`；不吞掉非锁型 `OperationalError`，不改变其他迁移顺序或事务逻辑。
+- **新鲜验证：** focused `183 passed`；governance `199 passed, 1 skipped`；全量与 PowerShell All 均为 `301 passed, 1 skipped`。Ruff、Mypy（17 个源文件）、`pip check`、Web ESLint/TypeScript、无隔离 wheel/sdist 构建均通过；wheel/sdist 内 001/002 各 1 份、003 为 0。唯一 skip 仍为本机 Windows 符号链接权限。
+- **范围与状态：** 未联网、安装、推送、合并，未实现 Task 6/11、003 migration 或传输服务。第四轮问题已纠偏，仍等待独立规约符合性与代码质量复审，不宣称 Task 4 完成。
+
+### 2026-07-15 22:10 +08:00 — REVIEW-004-FINAL
+
+- **任务：** 对 Task 4 从同步基线 `35e89d0` 到实现头 `7b27d38` 的 27 个提交完成最终独立规约符合性审查、代码质量审查和控制器侧新鲜验证。
+- **Superpowers 技能：** `subagent-driven-development`、`requesting-code-review`、`receiving-code-review`、`verification-before-completion`；所有 Critical/Important 发现均先复现，再交回实现者按 RED—GREEN 修复并重新生成完整审查包。
+- **独立审查：** 第五轮审查无 Critical、Important 或 Minor；`Spec: PASS`，`Quality: APPROVED`。重点复验 WAL 锁竞争固定映射、锁内迁移版本、策略路径与远程操作、受限 mutation 双绑定/单行命中、数据库权威状态和 `HostTransferAction` 来源隔离，均未发现回归。
+- **控制器新鲜验证：** `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test.ps1 -Mode All` 得到 `301 passed, 1 skipped`，Ruff、mypy（17 个源文件）、Web ESLint 与 TypeScript 均通过；`pip check` 返回 `No broken requirements found.`；无隔离 wheel/sdist 构建成功，两个归档中的 001/002 各 1 份、003 为 0；`git diff --check 35e89d0..HEAD` 退出 0。
+- **环境限制：** 唯一 skip 是当前 Windows 账户没有创建测试目录符号链接的权限；其余路径围栏测试已执行。
+- **范围与安全：** 未联网、安装依赖、推送、合并或删除工作树；未接触凭据，未实施 Task 6/11、003 migration 或宿主传输服务。
+- **结论：** Task 4 的实现、独立双重审查和控制器验证均完成；下一步进入开发分支收尾，是否本地合并回 `p1` 仍需按 Git 安全流程处理。
