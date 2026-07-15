@@ -688,3 +688,31 @@ def test_safe_package_manager_operations_with_known_value_options_remain_allowed
     )
 
     assert result.decision is PolicyDecision.ALLOW
+
+
+@pytest.mark.parametrize("command", ["echo", "rm"])
+def test_slash_paths_are_not_global_command_options(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    command: str,
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": [command, "/s"]}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "PATH_ESCAPE"
+
+
+def test_cmd_slash_options_remain_valid_only_in_cmd_prefix(
+    policy: PolicyEngine,
+    tmp_path: Path,
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": ["cmd", "/d", "/s", "/c", "echo safe"]}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert result.reason_code == "HIGH_RISK_SHELL"
