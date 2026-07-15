@@ -348,3 +348,12 @@
 - **GREEN：** `ab95989` 为 `git/npm/pnpm/yarn/twine/docker/gh` 建立命令专属无值/带值 option 表，统一 `_parse_operation` 支持分离值与非空等号值；package install/publish 复用同一 parser。git 不可靠解析固定 `GIT_REMOTE_CHANGE`，发布命令固定 `PUBLISH`；npm/pnpm/yarn 明示 publish 时由发布 reason 优先，既有未知普通 package option 仍保留 `DEPENDENCY_INSTALL`。
 - **新鲜验证：** focused `180 passed`；governance `196 passed, 1 skipped`；全量与 PowerShell All 均为 `298 passed, 1 skipped`。Ruff、mypy（17 个源文件）、pip check、Web ESLint/TypeScript、无隔离 wheel/sdist 构建及归档 001/002 各 1、003 为 0 均通过；唯一 skip 为 Windows 符号链接权限。
 - **范围与状态：** 未联网、安装、推送、合并，未实现 Task 6/11、003 migration 或传输服务。第三轮问题已纠偏，仍等待独立规约符合性与代码质量复审，不宣称 Task 4 完成。
+
+### 2026-07-15 22:00 +08:00 — IMPL-004-R6
+
+- **任务：** 修复第四轮独立复审发现的 WAL 切换锁竞争公开错误边界：复查仍非 WAL 时不得泄漏原始 `sqlite3.OperationalError` 文本。
+- **Superpowers 技能：** `receiving-code-review`、`systematic-debugging`、`test-driven-development`、`verification-before-completion`；先核对冻结 busy 错误和既有映射函数，再用确定性连接桩执行单组 RED—GREEN。
+- **RED：** `71aec0b` 新增三个分支用例；聚焦运行得到 `1 failed, 2 passed`。锁竞争且复查非 WAL 的失败中原样出现桩注入的底层错误文本，另外两条既有边界——复查 WAL 成功、非锁异常保持原样——已通过。
+- **GREEN：** `e3d991b` 仅把 `_ensure_wal_mode` 的锁竞争非 WAL 分支交给既有 `_raise_migration_error`，得到固定 `MigrationBusyError("数据库迁移正忙")`；不吞掉非锁型 `OperationalError`，不改变其他迁移顺序或事务逻辑。
+- **新鲜验证：** focused `183 passed`；governance `199 passed, 1 skipped`；全量与 PowerShell All 均为 `301 passed, 1 skipped`。Ruff、Mypy（17 个源文件）、`pip check`、Web ESLint/TypeScript、无隔离 wheel/sdist 构建均通过；wheel/sdist 内 001/002 各 1 份、003 为 0。唯一 skip 仍为本机 Windows 符号链接权限。
+- **范围与状态：** 未联网、安装、推送、合并，未实现 Task 6/11、003 migration 或传输服务。第四轮问题已纠偏，仍等待独立规约符合性与代码质量复审，不宣称 Task 4 完成。
