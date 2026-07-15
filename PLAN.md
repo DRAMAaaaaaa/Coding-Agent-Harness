@@ -21,6 +21,9 @@
 - 文档和 Git 提交说明尽量使用中文；代码标识符、命令、标准文件名和第三方名称保留英文。
 - 每个 Task 使用独立 `codex/` 前缀分支和 worktree；完成后在本文件勾选状态并记录提交哈希与评审结论。
 - 每个 Task 固定执行顺序：失败测试 → 确认失败原因 → 最小实现 → 通过目标测试 → 重构 → 完整相关测试 → 规约符合性审查 → 代码质量审查 → 中文提交。
+- 后续实现采用“可验收纵向切片”优先级：在不改变依赖和冻结接口的前提下，先连通 WebUI 输入需求、计划审批、Agent 修改、确定性反馈、最终审查和代码/文档交付，再补不阻塞首版的增强能力。
+- 课程硬性要求、安全护栏、离线 Mock 核心测试、三机制演示、反馈闭环、停止逻辑、WebUI 主路径、E2E、一键测试、Docker 和双 CI 不得延期。
+- 非阻塞增强只有在不影响安全、主路径或验收且存在明确替代时才可延期；决定必须写入 `DEFERRED_WORK.md`，并同步披露于当前 Task 的 `PLAN.md` 状态、`AGENT_LOG.md` 和提交说明。
 - 所有 Python 命令必须使用项目 `.venv` 中的 Python 3.11，不得依赖 PATH 中含义不明的 `python`；Windows 对应 `& .\.venv\Scripts\python.exe`，POSIX 对应 `.venv/bin/python`。后文简写 `python` 时均指该已验证解释器。
 - Windows PowerShell 中所有 npm 命令必须显式调用 `npm.cmd`，不得依赖可能被 ExecutionPolicy 拦截的 `npm.ps1`；POSIX 使用 `npm`。后文简写 npm 时必须按此平台规则展开，`scripts/test.ps1` 也必须通过 `Get-Command npm.cmd` 调用。
 
@@ -152,7 +155,7 @@ class TaskOrchestrator:
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
-| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | Windows ASCII 盘符边界纠偏待复审（最新 RED/GREEN `a58b962`/`23e5f31`；此前门闩补强见步骤 6） |
+| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 完成（首次合并 `8f2ae34`；WAL/路径门闩纠偏复审通过；补充合并 `873f1d4`） |
 | 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 待执行 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
@@ -163,6 +166,44 @@ class TaskOrchestrator:
 | 12 | React WebUI | 11 的接口契约 | 可在 API schema 冻结后与 11 后半段并行 | `codex/webui` | 待执行 |
 | 13 | 端到端测试与三机制演示 | 9、11、12 | 无 | `codex/e2e-demo` | 待执行 |
 | 14 | Docker、双 CI、README 与发布检查 | 13 | 无 | `codex/distribution` | 待执行 |
+
+### 可用产品优先交付基线
+
+批准设计见 `docs/superpowers/specs/2026-07-16-usable-product-priority-design.md`。完整产品的最短用户路径固定为：
+
+```text
+WebUI 接入项目并输入需求
+→ 建立独立 worktree 与仓库地图
+→ 默认生成并批准计划
+→ Agent 通过受治理工具修改代码
+→ 验证失败确定性回灌并改变下一动作
+→ WebUI 展示审批、事件、验证与 diff
+→ 用户获得可运行代码和基于事实的文档
+→ Mock 演示、E2E、一键测试、Docker 与 CI 重复验收
+```
+
+Task 5—14 的发布范围和允许延期边界如下。表中的“延期候选”只有经过当前 Task 双重评审确认后才能进入 `DEFERRED_WORK.md`；未开始的计划内容不自动视为延期。
+
+| Task | 发布必需范围 | 允许评估的延期候选 |
+|---|---|---|
+| 5 | Python/Node 识别、受限仓库地图、脏工作区保护、每任务独立 worktree | 其他语言生态识别、更丰富的历史摘要 |
+| 6 | 统一注册表、读/搜/原子 patch/删除、受限 Shell、Git 状态/diff/checkpoint、全部策略前置 | 不在冻结接口中的便利工具、交互式 Shell |
+| 7 | 失败分类、稳定指纹、快速/完整验证、3/8/2 预算与确定性决策 | 无；本 Task 是主要贡献的一部分 |
+| 8 | 六类记忆白名单、秘密整条拒绝、来源、删除、确定性检索和上下文预算 | 向量检索、跨项目推荐、自动知识合并 |
+| 9 | 计划门禁、自有可恢复 Agent 循环、停止逻辑和三个离线机制演示 | 无；完整 Agent 与机制演示不得延期 |
+| 10 | DeepSeek/Qwen 本机钥匙串、容器加密存储、状态/更新/清除、公网禁用和全路径不回显 | 计划外 Provider 的专用凭据体验 |
+| 11 | WebUI 所需 REST/SSE、会话防护、003 迁移、精确一次宿主传输和审查产物 | 额外查询接口、非验收所需的产物格式 |
+| 12 | 项目/新任务/任务/审批/设置/Demo 主页面，SSE 重连、键盘操作和凭据清空 | 动画、主题、高级筛选、窄屏编辑 |
+| 13 | 真实临时 Git fixture、三机制 E2E、四个一键命令和无网络重复验证 | 额外浏览器矩阵、长时间性能场景 |
+| 14 | Docker、本地与部署文档、GitHub/GitLab CI、README、秘密审计和最终交付门禁 | 课程与首版部署之外的发布渠道 |
+
+每个 Task 收尾时必须完成以下延期审计：
+
+1. 对照本表和该 Task 原始验收项列出未交付内容。
+2. 不满足延期条件的内容继续作为阻塞项，不得宣布 Task 完成。
+3. 合法延期写入 `DEFERRED_WORK.md`，包含影响、替代、触发条件和证据。
+4. 规约审查确认没有把安全或验收要求伪装为延期项；质量审查确认临时替代不会形成隐式失效路径。
+5. `PLAN.md` 状态和 `AGENT_LOG.md` 明确写“无延期”或列出延期编号。
 
 ---
 

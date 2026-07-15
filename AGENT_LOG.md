@@ -421,3 +421,11 @@
 - **Superpowers 技能：** 使用 `brainstorming` 探索三种排序方式，选定纵向闭环优先；本轮只形成书面设计，未开始 Task 5 或修改实现代码。
 - **设计产物：** 新增 `docs/superpowers/specs/2026-07-16-usable-product-priority-design.md`，冻结最短产品闭环、不可延期门禁、可延期判定、`DEFERRED_WORK.md` 台账字段及完成规则。
 - **后续门禁：** 等待用户复核书面设计；批准后使用 `writing-plans` 更新 `PLAN.md`，再进入后续实现。未联网、安装依赖、推送或接触凭据。
+
+### 2026-07-16 — PLAN-PRODUCT-PRIORITY
+
+- **用户批准：** 用户复核并批准 `docs/superpowers/specs/2026-07-16-usable-product-priority-design.md`，允许把纵向闭环优先级落实到后续计划。
+- **Superpowers 技能：** 使用 `writing-plans` 更新现有主计划；本次只修改计划、延期台账和过程记录，没有开始 Task 5 实现。
+- **计划变化：** 修正 Task 4 为已完成；为 Task 5—14 冻结发布必需范围、可评估的延期候选、最短完整用户路径和逐 Task 延期审计门禁。
+- **延期台账：** 新增 `DEFERRED_WORK.md`，定义唯一编号、状态、优先级、登记条件、影响/替代/恢复/证据字段。当前没有已批准延期项，未开始的 Task 不计为延期。
+- **范围与安全：** 没有降低课程硬性验收、安全、Mock、反馈闭环、WebUI、E2E、Docker 或 CI 要求；未联网、安装依赖、推送或接触凭据。
