@@ -329,3 +329,13 @@
 - **安全与人工干预：** 未执行测试字符串中的命令，未联网、未安装依赖、未接触凭据、未推送或合并。控制器确认受限 mutation 和宿主来源边界的接口方向。
 - **新鲜验证：** focused `146 passed`；governance `162 passed, 1 skipped`；全量与 PowerShell All 均为 `264 passed, 1 skipped`。Ruff、mypy（17 个源文件）、pip check、Web ESLint/TypeScript、无隔离 wheel/sdist 构建均通过；两种归档的 001/002 各 1 份、003 为 0。唯一 skip 为本机 Windows 符号链接权限。
 - **当前状态：** 纠偏实现与全门禁已完成，仍等待独立规约符合性/代码质量复审；不提前宣称 Task 4 完成。
+
+### 2026-07-15 21:26 +08:00 — IMPL-004-R4
+
+- **任务：** 修复第二轮独立复审发现的审批 mutation 非唯一绑定/命中数缺口，以及 slash 选项被通用路径扫描全局豁免的问题。
+- **Superpowers 技能：** `receiving-code-review`、`systematic-debugging`、`test-driven-development`、`verification-before-completion`；先核对实现与反例，再按审批、策略两组独立 RED—GREEN。
+- **审批 RED—GREEN：** `4fb248e` 聚焦得到 `5 failed, 2 passed`：仅 TASK_ID/仅 APPROVAL_ID 的 INSERT、仅 TASK_ID 的 UPDATE WHERE、UPDATE 零命中/双命中均错误提交；正确双绑定 INSERT 与单行 UPDATE 已通过。`c28525a` 强制 INSERT values 和 UPDATE WHERE 同时含两项绑定，且 UPDATE `rowcount != 1` 固定 `INVALID_MUTATION`，审批消费和业务更新共同回滚。
+- **策略 RED—GREEN：** `00ac97e` 得到 `2 failed, 1 passed`：`echo /s` 错误 ALLOW、`rm /s` 错误进入审批而未先拒绝，合法 cmd 前缀保持通过。`c55c07b` 把 slash 语法限定到实际解包后的 cmd 前缀索引，普通命令的 `/...` 重新作为绝对路径候选围栏。
+- **验证插曲：** 审批全文件首次运行中，既有双实例 WAL 用例出现一次 `database is locked`；未修改迁移代码或测试，原命令重跑后 `46 passed`，随后完整 focused/governance/full/PowerShell All 中该用例均通过。
+- **新鲜验证：** focused `154 passed`；governance `170 passed, 1 skipped`；全量与 PowerShell All 均为 `272 passed, 1 skipped`。Ruff、mypy（17 个源文件）、pip check、Web ESLint/TypeScript、无隔离 wheel/sdist 构建及归档 001/002 各 1、003 为 0 均通过；唯一 skip 为 Windows 符号链接权限。
+- **范围与状态：** 未联网、安装、推送、合并，未实现 Task 6/11、003 migration 或传输服务。第二轮问题已纠偏，仍等待下一轮独立规约符合性与代码质量复审，不宣称 Task 4 完成。
