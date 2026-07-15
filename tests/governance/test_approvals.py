@@ -163,6 +163,59 @@ class _CursorConnection:
         return self.cursor
 
 
+class _OpenConnection:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.closed = False
+
+    async def execute(self, sql: str) -> _RecordingCursor:
+        return _RecordingCursor()
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class _OpenHarness:
+    def __init__(self, *, first_error: BaseException | None = None) -> None:
+        self.first_error = first_error
+        self.connections: list[_OpenConnection] = []
+        self.initializations: list[_OpenConnection] = []
+        self.first_entered = asyncio.Event()
+        self.release_first = asyncio.Event()
+
+    async def connect(self, path: Path) -> _OpenConnection:
+        connection = _OpenConnection(path)
+        self.connections.append(connection)
+        return connection
+
+    async def initialize(self, connection: _OpenConnection) -> None:
+        self.initializations.append(connection)
+        if len(self.initializations) != 1:
+            return
+        self.first_entered.set()
+        await self.release_first.wait()
+        if self.first_error is not None:
+            raise self.first_error
+
+
+async def _skip_wal(connection: _OpenConnection) -> None:
+    return None
+
+
+def _install_open_harness(
+    monkeypatch: pytest.MonkeyPatch,
+    harness: _OpenHarness,
+) -> None:
+    monkeypatch.setattr(database_module.aiosqlite, "connect", harness.connect)
+    monkeypatch.setattr(database_module, "_apply_migrations", harness.initialize)
+    monkeypatch.setattr(database_module, "_ensure_wal_mode", _skip_wal)
+
+
+async def _start_open(path: Path, started: asyncio.Event) -> Database:
+    started.set()
+    return await Database.open(path)
+
+
 def _install_wal_clock(monkeypatch: pytest.MonkeyPatch, clock: _WalClock) -> None:
     monkeypatch.setattr(database_module, "_wal_clock", clock, raising=False)
     monkeypatch.setattr(database_module, "_wal_wait", clock.wait, raising=False)
@@ -284,6 +337,129 @@ async def test_migration_lock_timeout_has_one_fixed_error() -> None:
 
     assert str(captured.value) == "数据库迁移正忙"
     assert "CREATE TABLE" not in str(captured.value)
+
+
+async def test_same_path_open_waits_before_second_connect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _OpenHarness()
+    _install_open_harness(monkeypatch, harness)
+    path = tmp_path / "same.sqlite3"
+    first_task = asyncio.create_task(Database.open(path))
+    await harness.first_entered.wait()
+    second_started = asyncio.Event()
+    second_task = asyncio.create_task(_start_open(path, second_started))
+    await second_started.wait()
+    connections_before_release = len(harness.connections)
+    initializations_before_release = len(harness.initializations)
+    harness.release_first.set()
+    first, second = await asyncio.gather(first_task, second_task)
+    await first.close()
+    await second.close()
+
+    assert connections_before_release == 1
+    assert initializations_before_release == 1
+
+
+async def test_equivalent_paths_share_open_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _OpenHarness()
+    _install_open_harness(monkeypatch, harness)
+    direct_path = tmp_path / "equivalent.sqlite3"
+    equivalent_path = tmp_path / "unused" / ".." / "equivalent.sqlite3"
+    first_task = asyncio.create_task(Database.open(equivalent_path))
+    await harness.first_entered.wait()
+    second_started = asyncio.Event()
+    second_task = asyncio.create_task(_start_open(direct_path, second_started))
+    await second_started.wait()
+    connections_before_release = len(harness.connections)
+    harness.release_first.set()
+    first, second = await asyncio.gather(first_task, second_task)
+    await first.close()
+    await second.close()
+
+    assert connections_before_release == 1
+
+
+async def test_different_paths_can_initialize_in_parallel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _OpenHarness()
+    _install_open_harness(monkeypatch, harness)
+    first_task = asyncio.create_task(Database.open(tmp_path / "first.sqlite3"))
+    await harness.first_entered.wait()
+    second_started = asyncio.Event()
+    second_task = asyncio.create_task(
+        _start_open(tmp_path / "second.sqlite3", second_started)
+    )
+    await second_started.wait()
+    connections_before_release = len(harness.connections)
+    initializations_before_release = len(harness.initializations)
+    second_completed_before_release = second_task.done()
+    harness.release_first.set()
+    first, second = await asyncio.gather(first_task, second_task)
+    await first.close()
+    await second.close()
+
+    assert connections_before_release == 2
+    assert initializations_before_release == 2
+    assert second_completed_before_release
+
+
+async def test_failed_open_releases_gate_for_same_path_waiter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = RuntimeError("FIRST_INITIALIZATION_FAILED")
+    harness = _OpenHarness(first_error=failure)
+    _install_open_harness(monkeypatch, harness)
+    path = tmp_path / "failure.sqlite3"
+    first_task = asyncio.create_task(Database.open(path))
+    await harness.first_entered.wait()
+    second_started = asyncio.Event()
+    second_task = asyncio.create_task(_start_open(path, second_started))
+    await second_started.wait()
+    connections_before_release = len(harness.connections)
+    harness.release_first.set()
+    first_result, second_result = await asyncio.gather(
+        first_task,
+        second_task,
+        return_exceptions=True,
+    )
+    assert connections_before_release == 1
+    assert first_result is failure
+    assert isinstance(second_result, Database)
+    assert len(harness.connections) == 2
+    assert harness.connections[0].closed is True
+    await second_result.close()
+
+
+def test_initialization_gate_does_not_cross_event_loops(tmp_path: Path) -> None:
+    first_loop = asyncio.new_event_loop()
+    second_loop = asyncio.new_event_loop()
+    try:
+        first_gate = database_module._database_initialization_gate(
+            tmp_path / "gate.sqlite3",
+            first_loop,
+        )
+        equivalent_gate = database_module._database_initialization_gate(
+            tmp_path / "unused" / ".." / "gate.sqlite3",
+            first_loop,
+        )
+        second_gate = database_module._database_initialization_gate(
+            tmp_path / "gate.sqlite3",
+            second_loop,
+        )
+    finally:
+        first_loop.close()
+        second_loop.close()
+
+    assert equivalent_gate is first_gate
+    assert second_gate is not first_gate
 
 
 @pytest.mark.parametrize(
