@@ -367,3 +367,50 @@
 - **环境限制：** 唯一 skip 是当前 Windows 账户没有创建测试目录符号链接的权限；其余路径围栏测试已执行。
 - **范围与安全：** 未联网、安装依赖、推送、合并或删除工作树；未接触凭据，未实施 Task 6/11、003 migration 或宿主传输服务。
 - **结论：** Task 4 的实现、独立双重审查和控制器验证均完成；下一步进入开发分支收尾，是否本地合并回 `p1` 仍需按 Git 安全流程处理。
+
+### 2026-07-16 01:13 +08:00 — IMPL-004-R7
+
+- **任务：** 在 Task 4 已本地合并后修复双实例迁移的 WAL owner–waiter 竞态；不重试迁移 DDL 或 WAL 写入，不增加进程全局锁、锁文件、依赖或 003 migration，并把 Task 4 恢复为待复审。
+- **Superpowers 技能：** `test-driven-development`、`systematic-debugging`、`verification-before-completion`，并按 TDD 要求补读 `testing-anti-patterns.md`；先以确定性桩取得 RED，再做最小 GREEN，真实偶发失败出现后立即回到 Phase 1 而未叠加猜测性修复。
+- **首轮 RED—GREEN：** `a6a5702` 用可控单调时钟/等待器和分步连接桩覆盖 BUSY→delete→wal、持续 delete 超时、观察查询 BUSY、观察非锁错误及游标关闭；旧实现聚焦为 `5 failed, 1 passed`。`3bf8365` 增加私有有界观察状态机：WAL 成功者为 owner，竞争者为 waiter，只接受精确 `wal`，观察 BUSY 继续、非锁错误原样传播，所有读取游标在 `finally` 关闭，且绝不重试 WAL 写入。
+- **失败与系统诊断：** 首轮无插桩真实双连接 50 次复验在第 33 次以 `MigrationBusyError` 超时，故首版 GREEN 未被视为完成。Recording 证明迁移版本游标没有显式 `CLOSE`，但 aiosqlite 与 sqlite3 barrier 对照中关闭/不关闭两组始终至少有一个 WAL owner，证伪其为 no-owner 根因。随后无内部插桩的 legacy v1 复刻 `500/500` 成功；控制器受控阻塞证据进一步确认初始 `PRAGMA journal_mode=WAL` 可约耗时 `5498.8ms` 后才返回 BUSY，首版从尝试前计时会使 waiter 收到 contention 时预算已经耗尽。
+- **第二轮 RED—GREEN：** `00a4353` 让初始 WAL 桩先推进 5.5 秒再抛 BUSY，首观察 WAL、次观察 WAL及持续 delete 三项在首版稳定得到 `3 failed`。`cd8f3b5` 只把 5 秒 deadline 的创建移到 lock-contention 分支，使 waiter 从收到 BUSY 时取得完整观察预算；owner 路径、迁移顺序、DDL 次数和 WAL 写入次数均未改变。WAL 聚焦 `6 passed`，审批文件 `52 passed`。
+- **集成与新鲜门禁：** 最终无插桩双连接 legacy 迁移复验 `50/50`；governance `202 passed, 1 skipped`，全量 pytest 与 `scripts/test.ps1 -Mode All` 均为 `304 passed, 1 skipped`。Ruff 全通过，mypy 17 个源文件无问题，`pip check` 无破损依赖，Web ESLint/TypeScript 通过；无隔离 wheel/sdist 构建成功，两种归档内 001/002 各 1 份、003 为 0。唯一 skip 仍为本机 Windows 符号链接权限。
+- **范围、安全与状态：** 未联网、安装依赖、推送、合并、删除工作树或接触凭据；临时诊断仅在外部进程运行且未写入仓库。纠偏实现和门禁已完成，但原 REVIEW-004-FINAL 结论已被本次合并后回归取代；Task 4 与 PLAN 步骤 7 均恢复待独立规约符合性/代码质量复审，不提前宣称完成。
+
+### 2026-07-16 02:18 +08:00 — IMPL-004-R8
+
+- **任务与审查结论：** 处理合并后独立审查的 `Spec: FAIL` / `Quality: CHANGES_REQUIRED` 唯一 Important，并在修复后再次出现真实 WAL 超时后，按用户批准架构增加同 loop、同规范化路径的进程内初始化门闩；跨进程与跨 loop 继续使用 SQLite `BEGIN IMMEDIATE` 和 WAL waiter。
+- **Superpowers 技能：** `receiving-code-review`、`test-driven-development`、`systematic-debugging`、`verification-before-completion`，并用 `brainstorming` 核对用户已批准的冻结设计；所有生产修改均在精确 RED 后实施，没有添加公共接口、文件锁、依赖、003 或 Task 11 内容。
+- **游标异常 RED—GREEN：** `_fetchone_closed` 原 `finally` 在 fetch/close 双失败时稳定抛 `CLOSE_SECONDARY`。RED `6044ac5` 以非锁 `OperationalError` 和自定义 `BaseException` 得到 `2 failed, 2 passed`，同时冻结“读取成功后关闭失败传播”和“双成功返回”。GREEN `30508e1` 在读取失败时仍尝试关闭，次要关闭失败不覆盖主异常，并用 bare raise 保留同一异常对象和 traceback；读取成功路径不吞关闭失败。helper/WAL 聚焦 `10 passed`，审批文件 `56 passed`。
+- **再次失败与停线：** 异常修复后无插桩双连接先通过 `50/50`，但随后完整 governance 在同一集成用例再次抛固定 `MigrationBusyError`，结果为 `1 failed, 205 passed, 1 skipped`、总耗时 6.85 秒；紧随命令自动继续的全量通过未被用于覆盖该失败。按约定立即停止剩余门禁并报告；新进程顺序运行全部假时钟 WAL 测试和真实用例为 `7 passed`，真实 call 0.05 秒，但未把单次重跑作为修复证据。
+- **初始化门闩 RED—GREEN：** 用户批准后，RED `7c3cb53` 用纯 Event 调度握手得到 `4 failed, 1 passed`：旧实现同路径与等价路径会在首初始化完成前第二次 connect，异常路径也提前进入，且没有 loop 隔离 gate；不同路径并行已通过。GREEN `ba48c9f` 先对路径 `resolve(strict=False) + normcase`，以短 `threading.Lock` 原子维护 `WeakKeyDictionary[loop → WeakValueDictionary[path → asyncio.Lock]]`，再于线程锁外用路径 gate 覆盖 connect、PRAGMA、migrations、WAL 和异常清理。同 loop 同路径在 SQLite 外等待且不持连接，不同路径并行，不同 loop 不复用 asyncio.Lock，弱引用避免永久增长。
+- **压力与新鲜门禁：** 最终无插桩真实双连接迁移 `100/100`，governance 连续 `10/10` 轮；最终聚焦 `15 passed`，governance `211 passed, 1 skipped`，全量与 PowerShell All 均为 `313 passed, 1 skipped`。Ruff 全通过，mypy 17 个源文件无问题，`pip check` 无破损依赖，Web ESLint/TypeScript 通过；无隔离 wheel/sdist 构建成功，两种归档内 001/002 各 1、003 为 0。唯一 skip 仍为本机 Windows 符号链接权限。
+- **范围、安全与状态：** 未联网、安装、推送、合并、删除工作树或接触凭据；没有实现 003、Task 11 或新公共接口。Task 4 和 PLAN 步骤 7 保持待新的独立规约符合性/代码质量复审，不宣称完成。
+
+### 2026-07-16 03:30 +08:00 — IMPL-004-R9
+
+- **任务与审查结论：** 处理新一轮独立审查的 `Spec: FAIL` / `Quality: CHANGES_REQUIRED` 唯一 Important：Windows 普通驱动器路径与 `\\?\` 扩展驱动器路径、普通 UNC 与 `\\?\UNC\` 扩展 UNC 指向同一 SQLite 文件时，旧实现仍产生不同的初始化门闩键。只读事实检查确认 `Path.resolve(strict=False)` 和 `normcase` 会规范普通路径的大小写，却保留扩展命名空间前缀。
+- **Superpowers 技能：** `receiving-code-review`、`brainstorming`、`test-driven-development`、`systematic-debugging`、`verification-before-completion`；依照已冻结的精确前缀设计先固化失败，再做最小实现和新鲜验证。
+- **RED—GREEN：** RED `e897586` 用普通/扩展驱动器 Event 握手冻结“首个 open 释放前只允许一次 connect”，并以路径键单元矩阵覆盖扩展驱动器、扩展 UNC、大小写等价和不同路径区分，聚焦得到 `4 failed, 61 deselected`。GREEN `723272d` 仅在 Windows 的 `resolve(strict=False)` 之后精确折叠大小写不敏感的 `\\?\UNC\` 前缀和带盘符根的 `\\?\` 前缀，原样保留后缀；不使用子串替换，不折叠或测试 `\\.\`，未改变门闩/WAL 生命周期。相同聚焦转为 `4 passed, 61 deselected`，普通/扩展握手单测为 `1 passed`。
+- **重复验证异常与归因：** 首次 PowerShell 外层 100 轮命令由执行工具配置 120 秒超时，但异常迟至 2615464ms 才以 124 退出，未返回可定位的轮次输出，因此不计为产品或通过证据。按 `systematic-debugging` 改用外部 Python 驱动，每轮启动全新的 pytest 子进程并设 15 秒子进程超时，原真实双连接用例有效取得 `100/100`；总耗时 55.9 秒，单轮 0.515—0.703 秒，无非零退出或产品挂起，表明前一次是外层 repeater/执行工具异常。
+- **完整门禁：** 最终聚焦 `19 passed, 46 deselected`，governance `215 passed, 1 skipped`，全量 pytest 和 `scripts/test.ps1 -Mode All` 均为 `317 passed, 1 skipped`；Ruff 全通过，mypy 17 个源文件无问题，`pip check` 无破损依赖，Web ESLint/TypeScript 通过。`python -m build --no-isolation` 成功生成 wheel/sdist，两种归档内 001/002 各 1 份、003 为 0。
+- **范围、安全与状态：** 未联网、安装、推送、合并、删除工作树或接触凭据；未扩展 Task 11/003，未改变锁生命周期或 WAL 状态机。Task 4 与 PLAN 步骤 7 继续待独立规约符合性/代码质量复审，不宣称完成。
+
+### 2026-07-16 03:47 +08:00 — IMPL-004-R10
+
+- **任务与审查结论：** 处理窄复审的 `Spec: FAIL` / `Quality: CHANGES_REQUIRED` 唯一 Important。`_collapse_windows_extended_path` 的 `str.isalpha()` 接受 Unicode 字母，因此非 ASCII 拉丁、西里尔和汉字首字符也会被当成 Windows drive-root 并错误去除 `\\?\` 前缀；冻结边界只允许 ASCII `[A-Za-z]:\\` 或 `[A-Za-z]:/`。
+- **Superpowers 技能：** `receiving-code-review`、`brainstorming`、`test-driven-development`、`verification-before-completion`；审查要求已给出并批准精确设计，故未扩展新的架构或公共接口。
+- **RED—GREEN：** RED `a58b962` 参数化覆盖 `é`、西里尔、汉字、`\\.\`、`\\?\Volume{...}\`、`\\?\GLOBALROOT\`、截断及嵌入前缀的原值保留，并增加 ASCII A/a/Z/z 折叠与路径键大小写等价正例；旧实现稳定得到 `3 failed, 12 passed, 63 deselected`，只失败于三种 Unicode 字母。GREEN `23e5f31` 仅把 `isalpha()` 改为显式 ASCII 字母成员判断，不改变其他条件或调用链；相同聚焦为 `15 passed, 63 deselected`，目标 Ruff 和 mypy 均通过。
+- **压力与完整门禁：** 门闩/WAL/路径键聚焦为 `32 passed, 46 deselected`。原真实双连接用例用外部 Python 驱动、每轮独立 pytest 子进程和 15 秒硬超时有效取得 `100/100`，总耗时 57.716 秒，单轮 0.539—1.248 秒，无超时或非零退出。governance 为 `228 passed, 1 skipped`，全量 pytest 与 PowerShell All 均为 `330 passed, 1 skipped`；Ruff 全通过，mypy 17 个源文件无问题，`pip check` 无破损依赖，Web ESLint/TypeScript 通过。
+- **构建与范围：** `python -m build --no-isolation` 成功生成 wheel/sdist，两个归档内 001/002 各 1、003 为 0。未联网、安装、推送、合并、删除工作树、接触凭据或扩展 Task 11/003；未改变门闩或 WAL 生命周期。Task 4 与 PLAN 步骤 7 继续待独立双重复审，不宣称完成。
+
+### 2026-07-16 03:57 +08:00 — REVIEW-004-POSTMERGE-FINAL
+
+- **任务：** 对 Task 4 首次本地合并后暴露的 WAL 并发回归、游标异常优先级、路径级初始化门闩和 Windows extended-path 键进行最终独立双重审查与控制器验证。
+- **Superpowers 技能：** `systematic-debugging`、`brainstorming`、`test-driven-development`、`subagent-driven-development`、`requesting-code-review`、`receiving-code-review`、`verification-before-completion`；每次真实失败均停止完成声明，按根因证据取得新的 RED 后再修复。
+- **独立审查：** 最终窄复审范围 `90187a9..c704c6b`，Critical、Important、Minor 均为 0；`Spec: PASS`，`Quality: APPROVED`。ASCII/extended drive 与 UNC、非 ASCII/设备命名空间负例、不同路径区分、初始化取消/异常释放、loop/path 弱引用门闩、WAL waiter 和游标主异常边界均符合冻结要求。
+- **稳定性证据：** 原真实双连接迁移用例由独立审查者以每轮新 pytest 子进程和 15 秒硬期限再次运行 `100/100`；没有超时或非零退出。此前无法定位轮次的外层重复器 124 超时仍保留为工具异常事实，没有计入产品通过证据。
+- **控制器新鲜验证：** `scripts/test.ps1 -Mode All` 得到 `330 passed, 1 skipped`，Ruff、mypy（17 个源文件）、Web ESLint 与 TypeScript 全部通过；`pip check` 无破损依赖；无隔离 wheel/sdist 构建成功，两个归档内 001/002 各 1、003 为 0；`git diff --check` 和工作树检查清洁。
+- **范围与安全：** 唯一 skip 仍是 Windows 符号链接权限；未联网、安装、推送、删除工作树或接触凭据，未新增锁文件、依赖、公共接口、003 migration 或 Task 11 实现。
+- **结论：** Task 4 合并后补充纠偏完成，可将 `codex/governance` 的新增提交本地补充合并回 `p1`；远端推送仍未获授权。

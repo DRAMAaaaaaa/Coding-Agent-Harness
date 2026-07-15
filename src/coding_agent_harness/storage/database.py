@@ -1,5 +1,10 @@
 import asyncio
+import os
 import sqlite3
+import threading
+import time
+import weakref
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -10,6 +15,15 @@ import aiosqlite
 
 _MIGRATION_DIRECTORY = Path(__file__).with_name("migrations")
 _BUSY_TIMEOUT_MILLISECONDS = 5_000
+_WAL_WAIT_TIMEOUT_SECONDS = 5.0
+_WAL_OBSERVATION_INTERVAL_SECONDS = 0.01
+_wal_clock: Callable[[], float] = time.monotonic
+_wal_wait: Callable[[float], Awaitable[None]] = asyncio.sleep
+_INITIALIZATION_GATES_LOCK = threading.Lock()
+_INITIALIZATION_GATES: weakref.WeakKeyDictionary[
+    asyncio.AbstractEventLoop,
+    weakref.WeakValueDictionary[str, asyncio.Lock],
+] = weakref.WeakKeyDictionary()
 
 
 class MigrationBusyError(RuntimeError):
@@ -30,19 +44,25 @@ class Database:
 
     @classmethod
     async def open(cls, path: str | Path) -> Self:
-        connection = await aiosqlite.connect(Path(path))
-        database = cls(connection)
-        try:
-            await connection.execute(
-                f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MILLISECONDS}"
-            )
-            await connection.execute("PRAGMA foreign_keys=ON")
-            await _apply_migrations(connection)
-            await _ensure_wal_mode(connection)
-        except BaseException:
-            await connection.close()
-            raise
-        return database
+        database_path = Path(path).resolve(strict=False)
+        gate = _database_initialization_gate(
+            database_path,
+            asyncio.get_running_loop(),
+        )
+        async with gate:
+            connection = await aiosqlite.connect(database_path)
+            database = cls(connection)
+            try:
+                await connection.execute(
+                    f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MILLISECONDS}"
+                )
+                await connection.execute("PRAGMA foreign_keys=ON")
+                await _apply_migrations(connection)
+                await _ensure_wal_mode(connection)
+            except BaseException:
+                await connection.close()
+                raise
+            return database
 
     @property
     def connection(self) -> aiosqlite.Connection:
@@ -86,17 +106,96 @@ def _split_migration_statements(sql: str) -> tuple[str, ...]:
     return tuple(statements)
 
 
+def _database_initialization_gate(
+    path: str | Path,
+    loop: asyncio.AbstractEventLoop,
+) -> asyncio.Lock:
+    path_key = _database_path_key(path)
+    with _INITIALIZATION_GATES_LOCK:
+        loop_gates = _INITIALIZATION_GATES.get(loop)
+        if loop_gates is None:
+            loop_gates = weakref.WeakValueDictionary()
+            _INITIALIZATION_GATES[loop] = loop_gates
+        gate = loop_gates.get(path_key)
+        if gate is None:
+            gate = asyncio.Lock()
+            loop_gates[path_key] = gate
+        return gate
+
+
+def _database_path_key(path: str | Path) -> str:
+    resolved = str(Path(path).resolve(strict=False))
+    if os.name == "nt":
+        resolved = _collapse_windows_extended_path(resolved)
+    return os.path.normcase(resolved)
+
+
+def _collapse_windows_extended_path(path: str) -> str:
+    extended_unc_prefix = "\\\\?\\UNC\\"
+    if path[: len(extended_unc_prefix)].casefold() == extended_unc_prefix.casefold():
+        return "\\\\" + path[len(extended_unc_prefix) :]
+
+    extended_prefix = "\\\\?\\"
+    if (
+        path.startswith(extended_prefix)
+        and len(path) >= len(extended_prefix) + 3
+        and path[len(extended_prefix)]
+        in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+        and path[len(extended_prefix) + 1] == ":"
+        and path[len(extended_prefix) + 2] in {"\\", "/"}
+    ):
+        return path[len(extended_prefix) :]
+    return path
+
+
 async def _ensure_wal_mode(connection: aiosqlite.Connection) -> None:
     try:
-        row = await (await connection.execute("PRAGMA journal_mode=WAL")).fetchone()
+        row = await _fetchone_closed(connection, "PRAGMA journal_mode=WAL")
         if row is None or str(row[0]).casefold() != "wal":
             raise RuntimeError("数据库日志模式无效")
     except sqlite3.OperationalError as error:
         if not _is_lock_contention(error):
             raise
-        row = await (await connection.execute("PRAGMA journal_mode")).fetchone()
-        if row is None or str(row[0]).casefold() != "wal":
-            _raise_migration_error(error)
+        deadline = _wal_clock() + _WAL_WAIT_TIMEOUT_SECONDS
+        await _wait_for_wal_owner(connection, deadline, error)
+
+
+async def _wait_for_wal_owner(
+    connection: aiosqlite.Connection,
+    deadline: float,
+    contention_error: sqlite3.OperationalError,
+) -> None:
+    while True:
+        remaining = deadline - _wal_clock()
+        if remaining <= 0:
+            _raise_migration_error(contention_error)
+        await _wal_wait(min(_WAL_OBSERVATION_INTERVAL_SECONDS, remaining))
+        try:
+            row = await _fetchone_closed(connection, "PRAGMA journal_mode")
+        except sqlite3.OperationalError as error:
+            if not _is_lock_contention(error):
+                raise
+            continue
+        if row is not None and str(row[0]).casefold() == "wal":
+            return
+
+
+async def _fetchone_closed(
+    connection: aiosqlite.Connection,
+    sql: str,
+) -> sqlite3.Row | tuple[object, ...] | None:
+    cursor = await connection.execute(sql)
+    try:
+        row = await cursor.fetchone()
+    except BaseException:
+        try:
+            await cursor.close()
+        except BaseException:
+            pass
+        raise
+    else:
+        await cursor.close()
+        return row
 
 
 async def _read_version_locked(connection: aiosqlite.Connection) -> int:

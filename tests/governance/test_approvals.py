@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -36,9 +37,13 @@ class _Clock:
 class _RecordingCursor:
     def __init__(self, row: tuple[object, ...] | None = None) -> None:
         self._row = row
+        self.closed = False
 
     async def fetchone(self) -> tuple[object, ...] | None:
         return self._row
+
+    async def close(self) -> None:
+        self.closed = True
 
 
 class _RecordingConnection:
@@ -76,20 +81,145 @@ class _WalRecordingConnection:
     def __init__(
         self,
         switch_error: sqlite3.OperationalError,
-        current_mode: str,
+        observations: list[str | sqlite3.OperationalError],
+        *,
+        on_switch: Callable[[], None] | None = None,
     ) -> None:
         self.switch_error = switch_error
-        self.current_mode = current_mode
+        self.observations = observations
+        self.on_switch = on_switch
         self.statements: list[str] = []
+        self.cursors: list[_RecordingCursor] = []
 
     async def execute(self, sql: str) -> _RecordingCursor:
         statement = " ".join(sql.split())
         self.statements.append(statement)
         if statement == "PRAGMA journal_mode=WAL":
+            if self.on_switch is not None:
+                self.on_switch()
             raise self.switch_error
         if statement == "PRAGMA journal_mode":
-            return _RecordingCursor((self.current_mode,))
+            observation = self.observations.pop(0)
+            if isinstance(observation, sqlite3.OperationalError):
+                raise observation
+            cursor = _RecordingCursor((observation,))
+            self.cursors.append(cursor)
+            return cursor
+        cursor = _RecordingCursor()
+        self.cursors.append(cursor)
+        return cursor
+
+
+class _WalClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.waits: list[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+    async def wait(self, seconds: float) -> None:
+        self.waits.append(seconds)
+        self.advance(seconds)
+
+
+class _FetchFailure(BaseException):
+    pass
+
+
+class _FetchCloseCursor:
+    def __init__(
+        self,
+        *,
+        row: tuple[object, ...] | None = None,
+        fetch_error: BaseException | None = None,
+        close_error: BaseException | None = None,
+    ) -> None:
+        self.row = row
+        self.fetch_error = fetch_error
+        self.close_error = close_error
+        self.close_attempted = False
+
+    async def fetchone(self) -> tuple[object, ...] | None:
+        if self.fetch_error is not None:
+            raise self.fetch_error
+        return self.row
+
+    async def close(self) -> None:
+        self.close_attempted = True
+        if self.close_error is not None:
+            raise self.close_error
+
+
+class _CursorConnection:
+    def __init__(self, cursor: _FetchCloseCursor) -> None:
+        self.cursor = cursor
+        self.statements: list[str] = []
+
+    async def execute(self, sql: str) -> _FetchCloseCursor:
+        self.statements.append(sql)
+        return self.cursor
+
+
+class _OpenConnection:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.closed = False
+
+    async def execute(self, sql: str) -> _RecordingCursor:
         return _RecordingCursor()
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class _OpenHarness:
+    def __init__(self, *, first_error: BaseException | None = None) -> None:
+        self.first_error = first_error
+        self.connections: list[_OpenConnection] = []
+        self.initializations: list[_OpenConnection] = []
+        self.first_entered = asyncio.Event()
+        self.release_first = asyncio.Event()
+
+    async def connect(self, path: Path) -> _OpenConnection:
+        connection = _OpenConnection(path)
+        self.connections.append(connection)
+        return connection
+
+    async def initialize(self, connection: _OpenConnection) -> None:
+        self.initializations.append(connection)
+        if len(self.initializations) != 1:
+            return
+        self.first_entered.set()
+        await self.release_first.wait()
+        if self.first_error is not None:
+            raise self.first_error
+
+
+async def _skip_wal(connection: _OpenConnection) -> None:
+    return None
+
+
+def _install_open_harness(
+    monkeypatch: pytest.MonkeyPatch,
+    harness: _OpenHarness,
+) -> None:
+    monkeypatch.setattr(database_module.aiosqlite, "connect", harness.connect)
+    monkeypatch.setattr(database_module, "_apply_migrations", harness.initialize)
+    monkeypatch.setattr(database_module, "_ensure_wal_mode", _skip_wal)
+
+
+async def _start_open(path: Path, started: asyncio.Event) -> Database:
+    started.set()
+    return await Database.open(path)
+
+
+def _install_wal_clock(monkeypatch: pytest.MonkeyPatch, clock: _WalClock) -> None:
+    monkeypatch.setattr(database_module, "_wal_clock", clock, raising=False)
+    monkeypatch.setattr(database_module, "_wal_wait", clock.wait, raising=False)
 
 
 async def _seed_task(database: Database, task_id: UUID) -> None:
@@ -210,10 +340,293 @@ async def test_migration_lock_timeout_has_one_fixed_error() -> None:
     assert "CREATE TABLE" not in str(captured.value)
 
 
-async def test_wal_lock_contention_with_non_wal_recheck_has_fixed_error() -> None:
+async def test_same_path_open_waits_before_second_connect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _OpenHarness()
+    _install_open_harness(monkeypatch, harness)
+    path = tmp_path / "same.sqlite3"
+    first_task = asyncio.create_task(Database.open(path))
+    await harness.first_entered.wait()
+    second_started = asyncio.Event()
+    second_task = asyncio.create_task(_start_open(path, second_started))
+    await second_started.wait()
+    connections_before_release = len(harness.connections)
+    initializations_before_release = len(harness.initializations)
+    harness.release_first.set()
+    first, second = await asyncio.gather(first_task, second_task)
+    await first.close()
+    await second.close()
+
+    assert connections_before_release == 1
+    assert initializations_before_release == 1
+
+
+async def test_equivalent_paths_share_open_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _OpenHarness()
+    _install_open_harness(monkeypatch, harness)
+    direct_path = tmp_path / "equivalent.sqlite3"
+    equivalent_path = tmp_path / "unused" / ".." / "equivalent.sqlite3"
+    first_task = asyncio.create_task(Database.open(equivalent_path))
+    await harness.first_entered.wait()
+    second_started = asyncio.Event()
+    second_task = asyncio.create_task(_start_open(direct_path, second_started))
+    await second_started.wait()
+    connections_before_release = len(harness.connections)
+    harness.release_first.set()
+    first, second = await asyncio.gather(first_task, second_task)
+    await first.close()
+    await second.close()
+
+    assert connections_before_release == 1
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended path namespace")
+async def test_extended_drive_path_shares_open_gate_with_ordinary_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _OpenHarness()
+    _install_open_harness(monkeypatch, harness)
+    ordinary_path = tmp_path / "extended.sqlite3"
+    extended_path = Path("\\\\?\\" + str(ordinary_path))
+    first_task = asyncio.create_task(Database.open(ordinary_path))
+    await harness.first_entered.wait()
+    second_started = asyncio.Event()
+    second_task = asyncio.create_task(_start_open(extended_path, second_started))
+    await second_started.wait()
+    connections_before_release = len(harness.connections)
+    harness.release_first.set()
+    first, second = await asyncio.gather(first_task, second_task)
+    await first.close()
+    await second.close()
+
+    assert connections_before_release == 1
+
+
+async def test_different_paths_can_initialize_in_parallel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _OpenHarness()
+    _install_open_harness(monkeypatch, harness)
+    first_task = asyncio.create_task(Database.open(tmp_path / "first.sqlite3"))
+    await harness.first_entered.wait()
+    second_started = asyncio.Event()
+    second_task = asyncio.create_task(
+        _start_open(tmp_path / "second.sqlite3", second_started)
+    )
+    await second_started.wait()
+    connections_before_release = len(harness.connections)
+    initializations_before_release = len(harness.initializations)
+    second_completed_before_release = second_task.done()
+    harness.release_first.set()
+    first, second = await asyncio.gather(first_task, second_task)
+    await first.close()
+    await second.close()
+
+    assert connections_before_release == 2
+    assert initializations_before_release == 2
+    assert second_completed_before_release
+
+
+async def test_failed_open_releases_gate_for_same_path_waiter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = RuntimeError("FIRST_INITIALIZATION_FAILED")
+    harness = _OpenHarness(first_error=failure)
+    _install_open_harness(monkeypatch, harness)
+    path = tmp_path / "failure.sqlite3"
+    first_task = asyncio.create_task(Database.open(path))
+    await harness.first_entered.wait()
+    second_started = asyncio.Event()
+    second_task = asyncio.create_task(_start_open(path, second_started))
+    await second_started.wait()
+    connections_before_release = len(harness.connections)
+    harness.release_first.set()
+    first_result, second_result = await asyncio.gather(
+        first_task,
+        second_task,
+        return_exceptions=True,
+    )
+    assert connections_before_release == 1
+    assert first_result is failure
+    assert isinstance(second_result, Database)
+    assert len(harness.connections) == 2
+    assert harness.connections[0].closed is True
+    await second_result.close()
+
+
+def test_initialization_gate_does_not_cross_event_loops(tmp_path: Path) -> None:
+    first_loop = asyncio.new_event_loop()
+    second_loop = asyncio.new_event_loop()
+    try:
+        first_gate = database_module._database_initialization_gate(
+            tmp_path / "gate.sqlite3",
+            first_loop,
+        )
+        equivalent_gate = database_module._database_initialization_gate(
+            tmp_path / "unused" / ".." / "gate.sqlite3",
+            first_loop,
+        )
+        second_gate = database_module._database_initialization_gate(
+            tmp_path / "gate.sqlite3",
+            second_loop,
+        )
+    finally:
+        first_loop.close()
+        second_loop.close()
+
+    assert equivalent_gate is first_gate
+    assert second_gate is not first_gate
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended path namespace")
+@pytest.mark.parametrize(
+    ("ordinary", "extended"),
+    [
+        (
+            r"C:\Workspace\Folder\same.sqlite3",
+            r"\\?\c:\workspace\folder\SAME.sqlite3",
+        ),
+        (
+            r"A:\Workspace\Folder\same.sqlite3",
+            r"\\?\a:\workspace\folder\SAME.sqlite3",
+        ),
+        (
+            r"z:\Workspace\Folder\same.sqlite3",
+            r"\\?\Z:\workspace\folder\SAME.sqlite3",
+        ),
+        (
+            r"\\Server\Share\Folder\same.sqlite3",
+            r"\\?\unc\server\share\folder\SAME.sqlite3",
+        ),
+    ],
+)
+def test_database_path_key_folds_proven_extended_namespaces(
+    ordinary: str,
+    extended: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(Path, "resolve", lambda self, strict=False: self)
+
+    assert database_module._database_path_key(ordinary) == (
+        database_module._database_path_key(extended)
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        r"\\?\é:\folder\same.sqlite3",
+        r"\\?\Ж:\folder\same.sqlite3",
+        r"\\?\盘:\folder\same.sqlite3",
+        r"\\.\C:\folder\same.sqlite3",
+        r"\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\same.sqlite3",
+        r"\\?\GLOBALROOT\Device\HarddiskVolume1\same.sqlite3",
+        "\\\\?\\",
+        r"\\?\C:",
+        r"prefix\\?\C:\folder\same.sqlite3",
+    ],
+)
+def test_collapse_windows_extended_path_preserves_unproven_namespaces(
+    path: str,
+) -> None:
+    assert database_module._collapse_windows_extended_path(path) == path
+
+
+@pytest.mark.parametrize(
+    ("extended", "ordinary"),
+    [
+        (r"\\?\A:\Folder\same.sqlite3", r"A:\Folder\same.sqlite3"),
+        (r"\\?\z:/folder/same.sqlite3", "z:/folder/same.sqlite3"),
+    ],
+)
+def test_collapse_windows_extended_path_folds_ascii_drive_roots(
+    extended: str,
+    ordinary: str,
+) -> None:
+    assert database_module._collapse_windows_extended_path(extended) == ordinary
+
+
+def test_database_path_key_keeps_different_paths_distinct(
+    tmp_path: Path,
+) -> None:
+    assert database_module._database_path_key(tmp_path / "first.sqlite3") != (
+        database_module._database_path_key(tmp_path / "second.sqlite3")
+    )
+
+
+@pytest.mark.parametrize(
+    "fetch_error",
+    [
+        sqlite3.OperationalError("FETCH_PRIMARY"),
+        _FetchFailure("FETCH_PRIMARY"),
+    ],
+)
+async def test_fetchone_closed_preserves_fetch_error_when_close_also_fails(
+    fetch_error: BaseException,
+) -> None:
+    close_error = RuntimeError("CLOSE_SECONDARY")
+    cursor = _FetchCloseCursor(
+        fetch_error=fetch_error,
+        close_error=close_error,
+    )
+    connection = _CursorConnection(cursor)
+
+    with pytest.raises(BaseException) as captured:
+        await database_module._fetchone_closed(  # type: ignore[arg-type]
+            connection,
+            "PRAGMA journal_mode",
+        )
+
+    assert captured.value is fetch_error
+    assert "CLOSE_SECONDARY" not in str(captured.value)
+    assert cursor.close_attempted is True
+
+
+async def test_fetchone_closed_propagates_close_error_after_successful_fetch() -> None:
+    close_error = RuntimeError("CLOSE_PRIMARY")
+    cursor = _FetchCloseCursor(row=("wal",), close_error=close_error)
+    connection = _CursorConnection(cursor)
+
+    with pytest.raises(RuntimeError) as captured:
+        await database_module._fetchone_closed(  # type: ignore[arg-type]
+            connection,
+            "PRAGMA journal_mode",
+        )
+
+    assert captured.value is close_error
+    assert cursor.close_attempted is True
+
+
+async def test_fetchone_closed_returns_row_after_successful_close() -> None:
+    cursor = _FetchCloseCursor(row=("wal",))
+    connection = _CursorConnection(cursor)
+
+    row = await database_module._fetchone_closed(  # type: ignore[arg-type]
+        connection,
+        "PRAGMA journal_mode",
+    )
+
+    assert row == ("wal",)
+    assert cursor.close_attempted is True
+
+
+async def test_wal_waiter_times_out_with_one_fixed_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _WalClock()
+    _install_wal_clock(monkeypatch, clock)
     connection = _WalRecordingConnection(
         sqlite3.OperationalError("secret database is locked"),
-        "delete",
+        ["delete"] * 600,
+        on_switch=lambda: clock.advance(5.5),
     )
 
     with pytest.raises(database_module.MigrationBusyError) as captured:
@@ -221,16 +634,24 @@ async def test_wal_lock_contention_with_non_wal_recheck_has_fixed_error() -> Non
 
     assert str(captured.value) == "数据库迁移正忙"
     assert "secret" not in str(captured.value)
-    assert connection.statements == [
-        "PRAGMA journal_mode=WAL",
-        "PRAGMA journal_mode",
-    ]
+    assert len(connection.statements) > 2
+    assert connection.statements[0] == "PRAGMA journal_mode=WAL"
+    assert set(connection.statements[1:]) == {"PRAGMA journal_mode"}
+    assert clock.waits
+    assert sum(clock.waits) == pytest.approx(5.0)
+    assert clock.now == pytest.approx(10.5)
+    assert all(cursor.closed for cursor in connection.cursors)
 
 
-async def test_wal_lock_contention_succeeds_when_recheck_is_wal() -> None:
+async def test_wal_lock_contention_succeeds_when_recheck_is_wal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _WalClock()
+    _install_wal_clock(monkeypatch, clock)
     connection = _WalRecordingConnection(
         sqlite3.OperationalError("database is locked"),
-        "WAL",
+        ["WAL"],
+        on_switch=lambda: clock.advance(5.5),
     )
 
     await database_module._ensure_wal_mode(connection)  # type: ignore[arg-type]
@@ -239,11 +660,70 @@ async def test_wal_lock_contention_succeeds_when_recheck_is_wal() -> None:
         "PRAGMA journal_mode=WAL",
         "PRAGMA journal_mode",
     ]
+    assert clock.waits
+    assert all(cursor.closed for cursor in connection.cursors)
+
+
+async def test_wal_waiter_observes_delete_then_wal_without_retrying_switch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _WalClock()
+    _install_wal_clock(monkeypatch, clock)
+    connection = _WalRecordingConnection(
+        sqlite3.OperationalError("database is busy"),
+        ["delete", "wal"],
+        on_switch=lambda: clock.advance(5.5),
+    )
+
+    await database_module._ensure_wal_mode(connection)  # type: ignore[arg-type]
+
+    assert connection.statements == [
+        "PRAGMA journal_mode=WAL",
+        "PRAGMA journal_mode",
+        "PRAGMA journal_mode",
+    ]
+    assert len(clock.waits) == 2
+    assert all(cursor.closed for cursor in connection.cursors)
+
+
+async def test_wal_waiter_continues_when_observation_is_busy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _WalClock()
+    _install_wal_clock(monkeypatch, clock)
+    connection = _WalRecordingConnection(
+        sqlite3.OperationalError("database is locked"),
+        [sqlite3.OperationalError("database is busy"), "wal"],
+    )
+
+    await database_module._ensure_wal_mode(connection)  # type: ignore[arg-type]
+
+    assert connection.statements.count("PRAGMA journal_mode=WAL") == 1
+    assert connection.statements.count("PRAGMA journal_mode") == 2
+    assert len(clock.waits) == 2
+
+
+async def test_wal_waiter_propagates_non_lock_observation_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _WalClock()
+    _install_wal_clock(monkeypatch, clock)
+    observation_error = sqlite3.OperationalError("disk I/O observation error")
+    connection = _WalRecordingConnection(
+        sqlite3.OperationalError("database is locked"),
+        [observation_error],
+    )
+
+    with pytest.raises(sqlite3.OperationalError) as captured:
+        await database_module._ensure_wal_mode(connection)  # type: ignore[arg-type]
+
+    assert captured.value is observation_error
+    assert len(clock.waits) == 1
 
 
 async def test_wal_non_lock_operational_error_is_not_swallowed() -> None:
     error = sqlite3.OperationalError("disk I/O boundary error")
-    connection = _WalRecordingConnection(error, "delete")
+    connection = _WalRecordingConnection(error, ["delete"])
 
     with pytest.raises(sqlite3.OperationalError) as captured:
         await database_module._ensure_wal_mode(connection)  # type: ignore[arg-type]
