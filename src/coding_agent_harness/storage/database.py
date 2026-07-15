@@ -1,6 +1,9 @@
 import asyncio
+import os
 import sqlite3
+import threading
 import time
+import weakref
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +19,11 @@ _WAL_WAIT_TIMEOUT_SECONDS = 5.0
 _WAL_OBSERVATION_INTERVAL_SECONDS = 0.01
 _wal_clock: Callable[[], float] = time.monotonic
 _wal_wait: Callable[[float], Awaitable[None]] = asyncio.sleep
+_INITIALIZATION_GATES_LOCK = threading.Lock()
+_INITIALIZATION_GATES: weakref.WeakKeyDictionary[
+    asyncio.AbstractEventLoop,
+    weakref.WeakValueDictionary[str, asyncio.Lock],
+] = weakref.WeakKeyDictionary()
 
 
 class MigrationBusyError(RuntimeError):
@@ -36,19 +44,25 @@ class Database:
 
     @classmethod
     async def open(cls, path: str | Path) -> Self:
-        connection = await aiosqlite.connect(Path(path))
-        database = cls(connection)
-        try:
-            await connection.execute(
-                f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MILLISECONDS}"
-            )
-            await connection.execute("PRAGMA foreign_keys=ON")
-            await _apply_migrations(connection)
-            await _ensure_wal_mode(connection)
-        except BaseException:
-            await connection.close()
-            raise
-        return database
+        database_path = Path(path).resolve(strict=False)
+        gate = _database_initialization_gate(
+            database_path,
+            asyncio.get_running_loop(),
+        )
+        async with gate:
+            connection = await aiosqlite.connect(database_path)
+            database = cls(connection)
+            try:
+                await connection.execute(
+                    f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MILLISECONDS}"
+                )
+                await connection.execute("PRAGMA foreign_keys=ON")
+                await _apply_migrations(connection)
+                await _ensure_wal_mode(connection)
+            except BaseException:
+                await connection.close()
+                raise
+            return database
 
     @property
     def connection(self) -> aiosqlite.Connection:
@@ -90,6 +104,23 @@ def _split_migration_statements(sql: str) -> tuple[str, ...]:
     if pending.strip():
         raise RuntimeError("数据库迁移 SQL 不完整")
     return tuple(statements)
+
+
+def _database_initialization_gate(
+    path: str | Path,
+    loop: asyncio.AbstractEventLoop,
+) -> asyncio.Lock:
+    path_key = os.path.normcase(str(Path(path).resolve(strict=False)))
+    with _INITIALIZATION_GATES_LOCK:
+        loop_gates = _INITIALIZATION_GATES.get(loop)
+        if loop_gates is None:
+            loop_gates = weakref.WeakValueDictionary()
+            _INITIALIZATION_GATES[loop] = loop_gates
+        gate = loop_gates.get(path_key)
+        if gate is None:
+            gate = asyncio.Lock()
+            loop_gates[path_key] = gate
+        return gate
 
 
 async def _ensure_wal_mode(connection: aiosqlite.Connection) -> None:
