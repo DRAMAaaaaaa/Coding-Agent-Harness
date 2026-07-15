@@ -504,12 +504,22 @@ def _require_mutation(
         raise ApprovalError("INVALID_MUTATION")
     values = _validate_mutation_pairs(mutation.values, require_values=True)
     where = _validate_mutation_pairs(mutation.where, require_values=False)
-    bindings = {ApprovalMutationBinding.APPROVAL_ID, ApprovalMutationBinding.TASK_ID}
+    required_bindings = {
+        ApprovalMutationBinding.APPROVAL_ID,
+        ApprovalMutationBinding.TASK_ID,
+    }
     if mutation.operation is ApprovalMutationOperation.INSERT:
-        if where or not any(value in bindings for _, value in values):
+        value_bindings = {
+            value for _, value in values if type(value) is ApprovalMutationBinding
+        }
+        if where or not required_bindings.issubset(value_bindings):
             raise ApprovalError("INVALID_MUTATION")
-    elif not where or not any(value in bindings for _, value in where):
-        raise ApprovalError("INVALID_MUTATION")
+    else:
+        where_bindings = {
+            value for _, value in where if type(value) is ApprovalMutationBinding
+        }
+        if not where or not required_bindings.issubset(where_bindings):
+            raise ApprovalError("INVALID_MUTATION")
     return mutation
 
 
@@ -567,10 +577,12 @@ async def _execute_mutation(
     where_values = tuple(
         _resolve_mutation_value(value, context) for _, value in mutation.where
     )
-    await connection.execute(
+    cursor = await connection.execute(
         f"UPDATE {_quote_identifier(mutation.table)} SET {assignments} WHERE {predicates}",
         values + where_values,
     )
+    if cursor.rowcount != 1:
+        raise ApprovalError("INVALID_MUTATION")
 
 
 def _resolve_mutation_value(value: object, context: _MutationContext) -> object:

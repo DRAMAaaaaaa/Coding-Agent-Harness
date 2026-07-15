@@ -1026,7 +1026,10 @@ async def test_declarative_request_mutation_failure_rolls_back_approval(
     mutation = mutation_type(
         operation=operation_type.INSERT,  # type: ignore[attr-defined]
         table="missing_bindings",
-        values=(("approval_id", binding_type.APPROVAL_ID),),  # type: ignore[attr-defined]
+        values=(
+            ("approval_id", binding_type.APPROVAL_ID),  # type: ignore[attr-defined]
+            ("task_id", binding_type.TASK_ID),  # type: ignore[attr-defined]
+        ),
     )
     try:
         with pytest.raises(ApprovalError) as captured:
