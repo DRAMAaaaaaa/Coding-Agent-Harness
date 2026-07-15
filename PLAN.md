@@ -152,7 +152,7 @@ class TaskOrchestrator:
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
-| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 第二轮复审纠偏待复审（mutation 唯一绑定 RED `4fb248e` / GREEN `c28525a`；slash 路径 RED `00ac97e` / GREEN `c55c07b`；此前纠偏提交见步骤 6） |
+| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 第三轮复审纠偏待复审（远程操作 option RED `8ae3c37` / GREEN `ab95989`；此前纠偏提交见步骤 6） |
 | 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 待执行 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
@@ -804,6 +804,8 @@ python -m pytest tests/governance -v
 追加评审纠偏（2026-07-15）：补丁真实 `Move to:` 头/零合法头 fail-open、`command` 非前缀 `-v`、包管理器带值选项绕过由 RED `55d504a` 转为 GREEN `12a4328`；任意审批 callable 与调用方取消状态伪造由 RED `aeb5168` 转为受限声明 GREEN `57f5733`；普通 ToolAction 伪造宿主来源由 RED `3996d60` 转为显式内部动作 GREEN `1927bd0`。最新 focused `146 passed`、治理 `162 passed, 1 skipped`、全量/PowerShell All `264 passed, 1 skipped`；Ruff、mypy（17 个源文件）、pip check、Web lint/typecheck、无隔离 wheel/sdist 构建与归档 001/002 各 1、003 为 0 均通过。未实现 Task 6/11、003 migration 或传输服务；步骤 7 仍等待独立两阶段复审。
 
 第二轮复审纠偏（2026-07-15）：审批声明由 RED `4fb248e`（`5 failed, 2 passed`）转为 GREEN `c28525a`，INSERT values 和 UPDATE WHERE 均必须同时含 `APPROVAL_ID`/`TASK_ID`，UPDATE 命中数必须恰为 1，否则固定 `INVALID_MUTATION` 并回滚审批消费。slash 路径由 RED `00ac97e`（`2 failed, 1 passed`）转为 GREEN `c55c07b`，`/d`、`/s`、`/c` 只在实际 `cmd` 前缀位置豁免，普通命令的 `/...` 仍先经路径围栏。最新 focused `154 passed`、治理 `170 passed, 1 skipped`、全量/PowerShell All `272 passed, 1 skipped`；其余静态、前端、构建和归档门禁均通过。步骤 7 仍等待新一轮独立两阶段复审。
+
+第三轮复审纠偏（2026-07-15）：远程/发布命令全局选项由 RED `8ae3c37`（`15 failed, 11 passed`）转为 GREEN `ab95989`。`git/npm/pnpm/yarn/twine/docker/gh` 使用各自确定性的无值/带值 option 表，统一 parser 消费分离值与 `--option=value`，npm/pnpm/yarn 的 install/publish 共用同一 operation parser；未知、缺值和无法可靠解析的远程命令按冻结 `GIT_REMOTE_CHANGE`/`PUBLISH` fail-closed，安全 `git status`、package test、docker images、gh issue 等保持 ALLOW。最新 focused `180 passed`、治理 `196 passed, 1 skipped`、全量/PowerShell All `298 passed, 1 skipped`；其余静态、前端、构建和归档门禁均通过。步骤 7 继续等待独立两阶段复审。
 
 - [ ] **步骤 7：评审与提交**
 

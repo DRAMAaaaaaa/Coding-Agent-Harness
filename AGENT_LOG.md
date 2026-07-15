@@ -339,3 +339,12 @@
 - **验证插曲：** 审批全文件首次运行中，既有双实例 WAL 用例出现一次 `database is locked`；未修改迁移代码或测试，原命令重跑后 `46 passed`，随后完整 focused/governance/full/PowerShell All 中该用例均通过。
 - **新鲜验证：** focused `154 passed`；governance `170 passed, 1 skipped`；全量与 PowerShell All 均为 `272 passed, 1 skipped`。Ruff、mypy（17 个源文件）、pip check、Web ESLint/TypeScript、无隔离 wheel/sdist 构建及归档 001/002 各 1、003 为 0 均通过；唯一 skip 为 Windows 符号链接权限。
 - **范围与状态：** 未联网、安装、推送、合并，未实现 Task 6/11、003 migration 或传输服务。第二轮问题已纠偏，仍等待下一轮独立规约符合性与代码质量复审，不宣称 Task 4 完成。
+
+### 2026-07-15 21:46 +08:00 — IMPL-004-R5
+
+- **任务：** 修复第三轮独立复审发现的发布/远程变更命令全局 option 值遮蔽 operation 问题。
+- **Superpowers 技能：** `receiving-code-review`、`systematic-debugging`、`test-driven-development`、`verification-before-completion`；核对冻结 reason 与通用 `_operation` 数据流后，执行一组 RED—GREEN。
+- **RED：** `8ae3c37` 新增 26 个聚焦案例，旧实现得到 `15 failed, 11 passed`。六个评审反例、pnpm/yarn publish、未知/缺值 option 均暴露 fail-open 或错误 reason；docker 已知 option、三种等号形式及七个安全反例证明既有正常边界。
+- **GREEN：** `ab95989` 为 `git/npm/pnpm/yarn/twine/docker/gh` 建立命令专属无值/带值 option 表，统一 `_parse_operation` 支持分离值与非空等号值；package install/publish 复用同一 parser。git 不可靠解析固定 `GIT_REMOTE_CHANGE`，发布命令固定 `PUBLISH`；npm/pnpm/yarn 明示 publish 时由发布 reason 优先，既有未知普通 package option 仍保留 `DEPENDENCY_INSTALL`。
+- **新鲜验证：** focused `180 passed`；governance `196 passed, 1 skipped`；全量与 PowerShell All 均为 `298 passed, 1 skipped`。Ruff、mypy（17 个源文件）、pip check、Web ESLint/TypeScript、无隔离 wheel/sdist 构建及归档 001/002 各 1、003 为 0 均通过；唯一 skip 为 Windows 符号链接权限。
+- **范围与状态：** 未联网、安装、推送、合并，未实现 Task 6/11、003 migration 或传输服务。第三轮问题已纠偏，仍等待独立规约符合性与代码质量复审，不宣称 Task 4 完成。
