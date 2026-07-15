@@ -449,6 +449,7 @@
 
 ### 2026-07-16 08:42 +08:00 — IMPL-005-R1
 
+- **纠偏提交：** `970cda8`（`fix: 加固 Task 5 路径与有界读取`）。
 - **审查结论与技能：** 首轮独立规约审查为 FAIL，包含 1 个 Critical（Harness 状态子路径 symlink/junction 逃逸及失败清理越界）和 1 个 Important（配置/文档 `stat` 后完整读取的 TOCTOU 与非严格上限）。使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 和 `verification-before-completion`，先验证根因再逐项 RED—GREEN。
 - **Critical RED—GREEN：** 预置 `state_root/worktrees` junction 的确定性 RED 为 `DID NOT RAISE WorktreeStateError`；git add 失败时把 `worktrees` 原子换为 junction 后，旧 `_cleanup_failed_create` 删除了外部 sentinel，目标用例为 `FileNotFoundError`。GREEN 复用 Task 4 `PathGuard`，以已解析状态根建立围栏，在构造、create/release、活动标记与失败清理前重新解析；越界清理不执行 `rmtree`。目标为 `2 passed, 1 skipped`，其中 symlink 正例仅因本机权限 skip，junction 与路径交换均有效执行。
 - **Important RED—GREEN：** detector/scanner 各增加增长与句柄重定向用例；RED 共 `4 failed`，均证明旧构造器没有可注入的低层 opener 边界。新增共享 `BoundedFileReader`，从同一句柄取得 `fstat`、与路径 `lstat` 比对普通文件身份，身份不符在读取前拒绝；有效句柄只执行一次 `read(limit + 1)`。GREEN `4 passed`，增长场景分别记录唯一读取尺寸 17 和 9，重定向场景读取次数为 0。
