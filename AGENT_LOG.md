@@ -367,3 +367,13 @@
 - **环境限制：** 唯一 skip 是当前 Windows 账户没有创建测试目录符号链接的权限；其余路径围栏测试已执行。
 - **范围与安全：** 未联网、安装依赖、推送、合并或删除工作树；未接触凭据，未实施 Task 6/11、003 migration 或宿主传输服务。
 - **结论：** Task 4 的实现、独立双重审查和控制器验证均完成；下一步进入开发分支收尾，是否本地合并回 `p1` 仍需按 Git 安全流程处理。
+
+### 2026-07-16 01:13 +08:00 — IMPL-004-R7
+
+- **任务：** 在 Task 4 已本地合并后修复双实例迁移的 WAL owner–waiter 竞态；不重试迁移 DDL 或 WAL 写入，不增加进程全局锁、锁文件、依赖或 003 migration，并把 Task 4 恢复为待复审。
+- **Superpowers 技能：** `test-driven-development`、`systematic-debugging`、`verification-before-completion`，并按 TDD 要求补读 `testing-anti-patterns.md`；先以确定性桩取得 RED，再做最小 GREEN，真实偶发失败出现后立即回到 Phase 1 而未叠加猜测性修复。
+- **首轮 RED—GREEN：** `a6a5702` 用可控单调时钟/等待器和分步连接桩覆盖 BUSY→delete→wal、持续 delete 超时、观察查询 BUSY、观察非锁错误及游标关闭；旧实现聚焦为 `5 failed, 1 passed`。`3bf8365` 增加私有有界观察状态机：WAL 成功者为 owner，竞争者为 waiter，只接受精确 `wal`，观察 BUSY 继续、非锁错误原样传播，所有读取游标在 `finally` 关闭，且绝不重试 WAL 写入。
+- **失败与系统诊断：** 首轮无插桩真实双连接 50 次复验在第 33 次以 `MigrationBusyError` 超时，故首版 GREEN 未被视为完成。Recording 证明迁移版本游标没有显式 `CLOSE`，但 aiosqlite 与 sqlite3 barrier 对照中关闭/不关闭两组始终至少有一个 WAL owner，证伪其为 no-owner 根因。随后无内部插桩的 legacy v1 复刻 `500/500` 成功；控制器受控阻塞证据进一步确认初始 `PRAGMA journal_mode=WAL` 可约耗时 `5498.8ms` 后才返回 BUSY，首版从尝试前计时会使 waiter 收到 contention 时预算已经耗尽。
+- **第二轮 RED—GREEN：** `00a4353` 让初始 WAL 桩先推进 5.5 秒再抛 BUSY，首观察 WAL、次观察 WAL及持续 delete 三项在首版稳定得到 `3 failed`。`cd8f3b5` 只把 5 秒 deadline 的创建移到 lock-contention 分支，使 waiter 从收到 BUSY 时取得完整观察预算；owner 路径、迁移顺序、DDL 次数和 WAL 写入次数均未改变。WAL 聚焦 `6 passed`，审批文件 `52 passed`。
+- **集成与新鲜门禁：** 最终无插桩双连接 legacy 迁移复验 `50/50`；governance `202 passed, 1 skipped`，全量 pytest 与 `scripts/test.ps1 -Mode All` 均为 `304 passed, 1 skipped`。Ruff 全通过，mypy 17 个源文件无问题，`pip check` 无破损依赖，Web ESLint/TypeScript 通过；无隔离 wheel/sdist 构建成功，两种归档内 001/002 各 1 份、003 为 0。唯一 skip 仍为本机 Windows 符号链接权限。
+- **范围、安全与状态：** 未联网、安装依赖、推送、合并、删除工作树或接触凭据；临时诊断仅在外部进程运行且未写入仓库。纠偏实现和门禁已完成，但原 REVIEW-004-FINAL 结论已被本次合并后回归取代；Task 4 与 PLAN 步骤 7 均恢复待独立规约符合性/代码质量复审，不提前宣称完成。
