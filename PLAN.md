@@ -877,11 +877,11 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 
 **目标：** 安全接入本地 Git 项目，识别 Python/Node.js 验证命令，并隔离任务修改。
 
-**状态：** 实现与实现者新鲜验证完成，待独立规约符合性审查和代码质量审查（2026-07-16；实现提交 `9159e01`；Workspace 归属纠偏已获用户批准；当前无延期）。
+**状态：** 首轮规约审查 FAIL 的 1 个 Critical 与 1 个 Important 已完成 TDD 纠偏及实现者新鲜验证，待独立规约复审和代码质量审查（2026-07-16；原实现提交 `9159e01`；Workspace 归属纠偏已获用户批准；当前无延期）。
 
 **文件：**
 
-- 新建：`src/coding_agent_harness/workspace/models.py`、`detector.py`、`scanner.py`、`worktrees.py`
+- 新建：`src/coding_agent_harness/workspace/models.py`、`files.py`、`detector.py`、`scanner.py`、`worktrees.py`
 - 新建：`tests/workspace/test_detector.py`、`test_scanner.py`、`test_worktrees.py`
 - 新建：`tests/fixtures/python_project/pyproject.toml`、`tests/fixtures/python_project/src/sample.py`、`tests/fixtures/python_project/tests/test_sample.py`
 - 新建：`tests/fixtures/node_project/package.json`、`tests/fixtures/node_project/src/math.ts`、`tests/fixtures/node_project/tests/math.test.ts`

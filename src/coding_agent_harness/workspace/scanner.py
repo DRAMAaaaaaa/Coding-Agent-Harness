@@ -9,6 +9,13 @@ import subprocess
 from typing import Protocol
 
 from coding_agent_harness.workspace.models import RepositoryDocument, RepositoryMap
+from coding_agent_harness.workspace.files import (
+    BinaryFileOpener,
+    BoundedFileReadError,
+    BoundedFileReader,
+    BoundedFileTooLargeError,
+    UnsafeBoundedFileError,
+)
 
 _MAX_TRACKED_FILES = 10_000
 _IGNORED_DIRECTORIES = frozenset(
@@ -83,11 +90,13 @@ class WorkspaceScanner:
         runner: GitRunner | None = None,
         *,
         max_document_bytes: int = 128 * 1024,
+        file_opener: BinaryFileOpener | None = None,
     ) -> None:
         if max_document_bytes < 1:
             raise ValueError("文档大小上限必须为正数")
         self._runner = runner or SubprocessGitRunner()
         self._max_document_bytes = max_document_bytes
+        self._file_reader = BoundedFileReader(file_opener)
 
     def scan(self, root: str | Path) -> RepositoryMap:
         project_root = self._resolve_root(root)
@@ -198,13 +207,16 @@ class WorkspaceScanner:
                 continue
             path = root / portable_path.name
             try:
-                if path.stat().st_size > self._max_document_bytes:
-                    raise RepositoryScanError("仓库文档超过大小限制")
-                content = path.read_text(encoding="utf-8")
+                raw_content = self._file_reader.read(path, self._max_document_bytes)
+                content = raw_content.decode("utf-8")
+            except BoundedFileTooLargeError:
+                raise RepositoryScanError("仓库文档超过大小限制") from None
+            except UnsafeBoundedFileError:
+                raise RepositoryScanError("仓库文档路径已替换或不安全") from None
+            except BoundedFileReadError:
+                raise RepositoryScanError("仓库文档不可读取") from None
             except UnicodeDecodeError:
                 raise RepositoryScanError("仓库文档不是 UTF-8") from None
-            except OSError:
-                raise RepositoryScanError("仓库文档不可读取") from None
             documents.append(RepositoryDocument(path=relative_path, content=content))
         return documents
 

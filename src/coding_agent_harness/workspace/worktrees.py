@@ -68,19 +68,30 @@ class WorktreeManager:
             pass
         else:
             raise WorktreeStateError("Harness 状态目录必须位于项目外")
-        self._workspace_state = self._state_root / "worktrees" / str(workspace.id)
+        try:
+            self._state_root.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            raise WorktreeStateError("Harness 状态目录无效") from None
+        self._state_guard = PathGuard(self._state_root)
+        self._workspace_state = self._resolve_state_path(
+            self._state_root / "worktrees" / str(workspace.id)
+        )
         self._active_marker = self._workspace_state / ".active"
 
     def create(self, task_id: UUID, base_commit: str) -> WorktreeInfo:
         self._validate_git_root()
         resolved_base = self._resolve_base_commit(base_commit)
         branch = f"harness/task-{task_id.hex[:8]}"
-        target = self._workspace_state / str(task_id)
+        workspace_state = self._resolve_state_path(self._workspace_state)
+        target = self._resolve_state_path(workspace_state / str(task_id))
         if self._branch_exists(branch) or target.exists() or target.is_symlink():
             raise WorktreeConflictError("任务分支或工作树已存在")
 
-        self._workspace_state.mkdir(parents=True, exist_ok=True)
+        workspace_state.mkdir(parents=True, exist_ok=True)
+        workspace_state = self._resolve_state_path(workspace_state)
+        target = self._resolve_state_path(workspace_state / str(task_id))
         self._acquire_active_marker(task_id)
+        target = self._resolve_state_path(target)
         try:
             result = self._runner.run(
                 [
@@ -113,7 +124,7 @@ class WorktreeManager:
         marker_task = self._read_active_marker()
         if marker_task != str(task_id):
             raise WorktreeReleaseError("任务工作树不存在")
-        target = self._workspace_state / str(task_id)
+        target = self._resolve_state_path(self._workspace_state / str(task_id))
         status = self._runner.run(
             ["git", "-C", str(target), "status", "--porcelain=v1"]
         )
@@ -181,9 +192,10 @@ class WorktreeManager:
         return result.returncode == 0
 
     def _acquire_active_marker(self, task_id: UUID) -> None:
+        marker = self._resolve_state_path(self._active_marker)
         try:
             descriptor = os.open(
-                self._active_marker,
+                marker,
                 os.O_CREAT | os.O_EXCL | os.O_WRONLY,
                 0o600,
             )
@@ -197,25 +209,40 @@ class WorktreeManager:
             os.close(descriptor)
 
     def _cleanup_failed_create(self, target: Path, branch: str) -> None:
-        if target.is_dir() and not target.is_symlink():
-            shutil.rmtree(target)
+        try:
+            safe_target = self._resolve_state_path(target)
+        except WorktreeStateError:
+            safe_target = None
+        if safe_target is not None and safe_target.is_dir() and not safe_target.is_symlink():
+            shutil.rmtree(safe_target)
         self._runner.run(
             ["git", "-C", str(self._git_root), "branch", "-d", branch]
         )
-        self._remove_active_marker()
+        try:
+            self._remove_active_marker()
+        except WorktreeStateError:
+            pass
 
     def _read_active_marker(self) -> str | None:
+        marker = self._resolve_state_path(self._active_marker)
         try:
-            return self._active_marker.read_text(encoding="ascii")
+            return marker.read_text(encoding="ascii")
         except FileNotFoundError:
             return None
         except (OSError, UnicodeDecodeError):
             raise WorktreeReleaseError("Workspace 活动标记无效") from None
 
     def _remove_active_marker(self) -> None:
+        marker = self._resolve_state_path(self._active_marker)
         try:
-            self._active_marker.unlink()
+            marker.unlink()
         except FileNotFoundError:
             pass
         except OSError:
             raise WorktreeStateError("无法清理 Workspace 活动标记") from None
+
+    def _resolve_state_path(self, candidate: Path) -> Path:
+        try:
+            return self._state_guard.resolve(candidate)
+        except PathEscapeError:
+            raise WorktreeStateError("Harness 状态子路径越界") from None

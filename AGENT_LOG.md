@@ -446,3 +446,11 @@
 - **新鲜验证：** `python -m pytest tests/workspace -q --durations=10` 为 `29 passed, 2 skipped`，10,000 文件合成扫描耗时 `0.40s`；`ruff check src tests` 全通过；`mypy src` 检查 22 个源文件无问题；全量 pytest 为 `359 passed, 3 skipped`；`git diff --check` 通过。两个 Task 5 skip 均为本机 Windows 无符号链接权限，第三个为既有同类 skip。
 - **自审与延期：** Python/Node、严格自定义命令信任标志、10,000/10,001 边界、README/AGENTS/配置大小限制、Git argv、空格路径、脏主工作区保护、同 Workspace 单写、分支/目标/基准冲突、失败清理和脏任务安全释放均有覆盖。Task 5 发布必需范围无延期，`DEFERRED_WORK.md` 保持无记录；其他语言仍是未开始增强候选，不登记延期。
 - **范围与安全：** 未修改 001/002、未新增 003 或仓储、未实现 Task 6；未联网、安装依赖、推送、合并、操作主 worktree 或接触凭据。当前实现者验证通过但仍待独立规约符合性和代码质量审查，不宣称 Task 5 终审完成。
+
+### 2026-07-16 08:42 +08:00 — IMPL-005-R1
+
+- **审查结论与技能：** 首轮独立规约审查为 FAIL，包含 1 个 Critical（Harness 状态子路径 symlink/junction 逃逸及失败清理越界）和 1 个 Important（配置/文档 `stat` 后完整读取的 TOCTOU 与非严格上限）。使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 和 `verification-before-completion`，先验证根因再逐项 RED—GREEN。
+- **Critical RED—GREEN：** 预置 `state_root/worktrees` junction 的确定性 RED 为 `DID NOT RAISE WorktreeStateError`；git add 失败时把 `worktrees` 原子换为 junction 后，旧 `_cleanup_failed_create` 删除了外部 sentinel，目标用例为 `FileNotFoundError`。GREEN 复用 Task 4 `PathGuard`，以已解析状态根建立围栏，在构造、create/release、活动标记与失败清理前重新解析；越界清理不执行 `rmtree`。目标为 `2 passed, 1 skipped`，其中 symlink 正例仅因本机权限 skip，junction 与路径交换均有效执行。
+- **Important RED—GREEN：** detector/scanner 各增加增长与句柄重定向用例；RED 共 `4 failed`，均证明旧构造器没有可注入的低层 opener 边界。新增共享 `BoundedFileReader`，从同一句柄取得 `fstat`、与路径 `lstat` 比对普通文件身份，身份不符在读取前拒绝；有效句柄只执行一次 `read(limit + 1)`。GREEN `4 passed`，增长场景分别记录唯一读取尺寸 17 和 9，重定向场景读取次数为 0。
+- **新鲜验证：** `Python 3.11.9`；workspace 为 `35 passed, 3 skipped in 6.80s`，10,000 文件扫描 `0.39s`；`ruff check src tests` 全通过；`mypy src` 检查 23 个源文件无问题；全量 pytest 为 `365 passed, 4 skipped in 9.67s`；`git diff --check` 通过。三个 Task 5 skip 均为本机 Windows 无 symlink 权限，junction 回归未跳过；全量第四个是既有 Task 4 同类 skip。
+- **范围与延期：** 未改迁移、Task 4 契约、依赖或 Task 6；未联网、安装、推送、合并、操作主 worktree或接触凭据。两项审查发现均已覆盖，Task 5 仍无延期，等待独立规约复审后再进入代码质量审查。

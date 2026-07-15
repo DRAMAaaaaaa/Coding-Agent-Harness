@@ -1,5 +1,6 @@
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+import os
 import subprocess
 from uuid import UUID, uuid4
 
@@ -40,6 +41,22 @@ def workspace_for(root: Path, *, workspace_id: UUID | None = None) -> Workspace:
 
 def head(root: Path) -> str:
     return git(root, "rev-parse", "HEAD").stdout.decode().strip()
+
+
+def create_directory_link(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=True)
+        return
+    except OSError:
+        if os.name != "nt":
+            pytest.skip("当前系统无法创建目录符号链接")
+    created = subprocess.run(
+        ["cmd", "/d", "/c", "mklink", "/J", str(link), str(target)],
+        check=False,
+        capture_output=True,
+    )
+    if created.returncode != 0:
+        pytest.skip("当前系统无法创建目录符号链接或 junction")
 
 
 def test_creates_and_releases_worktree_without_touching_dirty_main_workspace(
@@ -173,6 +190,26 @@ class RaisingAddRunner:
         return self._delegate.run(argv)
 
 
+class SwappingFailingAddRunner:
+    def __init__(self, state_root: Path, outside: Path) -> None:
+        self._delegate = SubprocessGitRunner()
+        self._state_root = state_root
+        self._outside = outside
+        self.sentinel = outside / "not-created"
+
+    def run(self, argv: Sequence[str]) -> CommandResult:
+        if len(argv) > 3 and argv[3:5] == ["worktree", "add"]:
+            worktrees = self._state_root / "worktrees"
+            worktrees.rename(self._state_root / "worktrees-safe")
+            create_directory_link(worktrees, self._outside)
+            target = Path(argv[-2])
+            target.mkdir(parents=True)
+            self.sentinel = target / "external-sentinel.txt"
+            self.sentinel.write_text("must remain\n", encoding="utf-8")
+            return CommandResult(returncode=1, stdout=b"", stderr=b"simulated failure")
+        return self._delegate.run(argv)
+
+
 def test_cleans_only_new_target_after_git_add_failure(
     git_repository_factory: Callable[[str, Mapping[str, str]], Path],
     tmp_path: Path,
@@ -231,3 +268,65 @@ def test_release_refuses_dirty_task_worktree(
     readme.write_text("base\n", encoding="utf-8")
     manager.release(task_id)
     assert not info.path.exists()
+
+
+def test_rejects_state_worktrees_symlink_before_external_write(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("state-symlink", {"README.md": "base\n"})
+    state_root = tmp_path / "state"
+    outside = tmp_path / "outside"
+    state_root.mkdir()
+    outside.mkdir()
+    try:
+        (state_root / "worktrees").symlink_to(outside, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"当前系统无法创建目录符号链接：{type(error).__name__}")
+
+    with pytest.raises(WorktreeStateError, match="^Harness 状态子路径越界$"):
+        WorktreeManager(workspace_for(root), state_root)
+
+    assert list(outside.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows junction 语义")
+def test_rejects_state_worktrees_junction_before_external_write(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("state-junction", {"README.md": "base\n"})
+    state_root = tmp_path / "state"
+    outside = tmp_path / "outside"
+    state_root.mkdir()
+    outside.mkdir()
+    junction = state_root / "worktrees"
+    created = subprocess.run(
+        ["cmd", "/d", "/c", "mklink", "/J", str(junction), str(outside)],
+        check=False,
+        capture_output=True,
+    )
+    if created.returncode != 0:
+        pytest.skip("当前系统无法创建 junction")
+
+    with pytest.raises(WorktreeStateError, match="^Harness 状态子路径越界$"):
+        WorktreeManager(workspace_for(root), state_root)
+
+    assert list(outside.iterdir()) == []
+
+
+def test_failed_create_never_removes_external_target_after_path_swap(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("cleanup-escape", {"README.md": "base\n"})
+    state_root = tmp_path / "state"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    runner = SwappingFailingAddRunner(state_root, outside)
+    manager = WorktreeManager(workspace_for(root), state_root, runner=runner)
+
+    with pytest.raises(WorktreeCreationError, match="^创建任务工作树失败$"):
+        manager.create(uuid4(), head(root))
+
+    assert runner.sentinel.read_text(encoding="utf-8") == "must remain\n"

@@ -1,3 +1,6 @@
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from io import BufferedReader
 from pathlib import Path
 from uuid import uuid4
 
@@ -11,6 +14,39 @@ from coding_agent_harness.workspace.detector import (
 from coding_agent_harness.workspace.models import Workspace
 
 _FIXTURES = Path(__file__).parents[1] / "fixtures"
+
+
+class RecordingBinaryFile:
+    def __init__(self, raw: BufferedReader, read_sizes: list[int]) -> None:
+        self._raw = raw
+        self._read_sizes = read_sizes
+
+    def fileno(self) -> int:
+        return self._raw.fileno()
+
+    def read(self, size: int = -1) -> bytes:
+        self._read_sizes.append(size)
+        return self._raw.read(size)
+
+
+class ControlledFileOpener:
+    def __init__(
+        self,
+        *,
+        after_open: Callable[[Path], None] | None = None,
+        redirect_to: Path | None = None,
+    ) -> None:
+        self._after_open = after_open
+        self._redirect_to = redirect_to
+        self.read_sizes: list[int] = []
+
+    @contextmanager
+    def __call__(self, path: Path) -> Iterator[RecordingBinaryFile]:
+        opened_path = self._redirect_to or path
+        with opened_path.open("rb") as raw:
+            if self._after_open is not None:
+                self._after_open(path)
+            yield RecordingBinaryFile(raw, self.read_sizes)
 
 
 def test_detects_python_and_node_commands(tmp_path: Path) -> None:
@@ -129,3 +165,34 @@ def test_workspace_model_is_strict_and_forbids_extra_fields(tmp_path: Path) -> N
                 "unexpected": True,
             }
         )
+
+
+def test_configuration_growth_after_open_reads_only_limit_plus_one(tmp_path: Path) -> None:
+    config = tmp_path / ".harness.yml"
+    config.write_text("test: [python]\n", encoding="utf-8")
+
+    def grow(path: Path) -> None:
+        with path.open("ab") as stream:
+            stream.write(b"x" * 100)
+
+    opener = ControlledFileOpener(after_open=grow)
+    with pytest.raises(ProjectConfigurationError, match="^项目配置超过大小限制$"):
+        ProjectDetector(max_config_bytes=16, file_opener=opener).detect(tmp_path)
+
+    assert opener.read_sizes == [17]
+
+
+def test_configuration_opener_cannot_redirect_to_replaced_file(tmp_path: Path) -> None:
+    config = tmp_path / ".harness.yml"
+    config.write_text("test: [python]\n", encoding="utf-8")
+    outside = tmp_path / "outside.yml"
+    outside.write_text("test: [outside]\n", encoding="utf-8")
+    opener = ControlledFileOpener(redirect_to=outside)
+
+    with pytest.raises(
+        ProjectConfigurationError,
+        match="^项目配置不得使用符号链接或替换$",
+    ):
+        ProjectDetector(file_opener=opener).detect(tmp_path)
+
+    assert opener.read_sizes == []

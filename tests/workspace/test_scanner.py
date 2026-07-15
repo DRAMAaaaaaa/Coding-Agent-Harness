@@ -1,4 +1,6 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from io import BufferedReader
 from pathlib import Path
 import subprocess
 from time import perf_counter
@@ -31,6 +33,39 @@ class RecordingGitRunner:
         if operation == "status":
             return CommandResult(returncode=0, stdout=b"", stderr=b"")
         raise AssertionError(f"unexpected git operation: {operation}")
+
+
+class RecordingBinaryFile:
+    def __init__(self, raw: BufferedReader, read_sizes: list[int]) -> None:
+        self._raw = raw
+        self._read_sizes = read_sizes
+
+    def fileno(self) -> int:
+        return self._raw.fileno()
+
+    def read(self, size: int = -1) -> bytes:
+        self._read_sizes.append(size)
+        return self._raw.read(size)
+
+
+class ControlledFileOpener:
+    def __init__(
+        self,
+        *,
+        after_open: Callable[[Path], None] | None = None,
+        redirect_to: Path | None = None,
+    ) -> None:
+        self._after_open = after_open
+        self._redirect_to = redirect_to
+        self.read_sizes: list[int] = []
+
+    @contextmanager
+    def __call__(self, path: Path) -> Iterator[RecordingBinaryFile]:
+        opened_path = self._redirect_to or path
+        with opened_path.open("rb") as raw:
+            if self._after_open is not None:
+                self._after_open(path)
+            yield RecordingBinaryFile(raw, self.read_sizes)
 
 
 def mark_git_root(root: Path) -> None:
@@ -154,3 +189,37 @@ def test_rejects_tracked_symlink_escape(
 
     with pytest.raises(RepositoryScanError, match="^跟踪文件路径越界$"):
         WorkspaceScanner().scan(root)
+
+
+def test_document_growth_after_open_reads_only_limit_plus_one(
+    git_repository_factory: Callable[[str, dict[str, str]], Path],
+) -> None:
+    root = git_repository_factory("growing-document", {"README.md": "safe\n"})
+
+    def grow(path: Path) -> None:
+        with path.open("ab") as stream:
+            stream.write(b"x" * 100)
+
+    opener = ControlledFileOpener(after_open=grow)
+    with pytest.raises(RepositoryScanError, match="^仓库文档超过大小限制$"):
+        WorkspaceScanner(max_document_bytes=8, file_opener=opener).scan(root)
+
+    assert opener.read_sizes == [9]
+
+
+def test_document_opener_cannot_redirect_to_replaced_file(
+    git_repository_factory: Callable[[str, dict[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("replaced-document", {"README.md": "safe\n"})
+    outside = tmp_path / "outside.md"
+    outside.write_text("outside\n", encoding="utf-8")
+    opener = ControlledFileOpener(redirect_to=outside)
+
+    with pytest.raises(
+        RepositoryScanError,
+        match="^仓库文档路径已替换或不安全$",
+    ):
+        WorkspaceScanner(file_opener=opener).scan(root)
+
+    assert opener.read_sizes == []

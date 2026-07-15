@@ -12,6 +12,13 @@ from typing import Any, Literal
 import yaml  # type: ignore[import-untyped]
 
 from coding_agent_harness.workspace.models import ProjectProfile, VerificationCommands
+from coding_agent_harness.workspace.files import (
+    BinaryFileOpener,
+    BoundedFileReadError,
+    BoundedFileReader,
+    BoundedFileTooLargeError,
+    UnsafeBoundedFileError,
+)
 
 _COMMAND_NAMES = ("test", "lint", "typecheck", "build")
 _ALLOWED_CONFIG_KEYS = frozenset((*_COMMAND_NAMES, "timeout", "env_allowlist"))
@@ -29,10 +36,16 @@ class ProjectConfigurationError(ProjectDetectionError):
 class ProjectDetector:
     """在不执行项目代码的前提下建议验证命令。"""
 
-    def __init__(self, *, max_config_bytes: int = 128 * 1024) -> None:
+    def __init__(
+        self,
+        *,
+        max_config_bytes: int = 128 * 1024,
+        file_opener: BinaryFileOpener | None = None,
+    ) -> None:
         if max_config_bytes < 1:
             raise ValueError("配置大小上限必须为正数")
         self._max_config_bytes = max_config_bytes
+        self._file_reader = BoundedFileReader(file_opener)
 
     def detect(self, root: str | Path) -> ProjectProfile:
         project_root = self._resolve_root(root)
@@ -95,17 +108,15 @@ class ProjectDetector:
         return resolved
 
     def _read_bounded(self, path: Path) -> bytes:
-        if path.is_symlink():
-            raise ProjectConfigurationError("项目配置不得使用符号链接")
         try:
-            size = path.stat().st_size
-        except OSError:
-            raise ProjectConfigurationError("项目配置不可读取") from None
-        if size > self._max_config_bytes:
+            return self._file_reader.read(path, self._max_config_bytes)
+        except BoundedFileTooLargeError:
             raise ProjectConfigurationError("项目配置超过大小限制")
-        try:
-            return path.read_bytes()
-        except OSError:
+        except UnsafeBoundedFileError:
+            if path.is_symlink():
+                raise ProjectConfigurationError("项目配置不得使用符号链接") from None
+            raise ProjectConfigurationError("项目配置不得使用符号链接或替换") from None
+        except BoundedFileReadError:
             raise ProjectConfigurationError("项目配置不可读取") from None
 
     def _parse_pyproject(self, path: Path) -> dict[str, Any]:
