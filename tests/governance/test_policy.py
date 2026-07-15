@@ -52,11 +52,9 @@ def policy(tmp_path: Path) -> PolicyEngine:
     ("tool", "arguments"),
     [
         ("delete_path", {"path": "src/a.py"}),
-        ("read_file", {"path": "../secret"}),
         ("shell", {"argv": ["pip", "install", "x"]}),
         ("shell", {"argv": ["curl", "https://example.com"]}),
         ("git", {"operation": "push"}),
-        ("shell", {"argv": ["rm", "-rf", "/"]}),
     ],
 )
 def test_dangerous_actions_require_approval(
@@ -81,7 +79,6 @@ def test_dangerous_actions_require_approval(
         ["uv", "pip", "install", "x"],
         ["wget", "https://example.com"],
         ["powershell", "Invoke-WebRequest", "https://example.com"],
-        ["mkfs.ext4", "/dev/sda"],
         ["dd", "if=/dev/zero", "of=/dev/sda"],
         ["shutdown", "/s"],
     ],
@@ -148,7 +145,6 @@ def test_known_tools_with_invalid_required_arguments_are_denied(
 @pytest.mark.parametrize(
     "argv",
     [
-        ["sudo", "rm", "-rf", "/"],
         ["python", "-m", "pip", "install", "x"],
         ["sudo", "git", "push", "origin", "main"],
         ["bash", "-c", "curl https://example.com"],
@@ -187,8 +183,8 @@ def test_llm_authorization_and_spoofed_argument_do_not_authorize_tool_network(
         assert result.decision is PolicyDecision.REQUIRE_APPROVAL
 
 
-@pytest.mark.parametrize("field", ["path", "cwd", "source", "destination", "target"])
-def test_all_path_fields_are_guarded(
+@pytest.mark.parametrize("field", ["cwd", "source", "destination", "target"])
+def test_read_file_does_not_guess_unsupported_path_fields(
     policy: PolicyEngine,
     tmp_path: Path,
     field: str,
@@ -198,8 +194,8 @@ def test_all_path_fields_are_guarded(
         _context(tmp_path / "workspace"),
     )
 
-    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
-    assert "outside" not in result.normalized_scope
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "INVALID_ACTION"
 
 
 @pytest.mark.parametrize(
@@ -466,6 +462,8 @@ def test_safe_commands_remain_allowed(
         ("apply_patch", {"patch": "*** Delete File: ../outside.txt"}),
         ("delete_path", {"path": "../outside.txt"}),
         ("shell", {"argv": ["rm", "../outside.txt"]}),
+        ("shell", {"argv": ["rm", "/"]}),
+        ("shell", {"argv": ["mkfs.ext4", "/dev/sda"]}),
     ],
 )
 def test_every_real_tool_denies_path_escape_before_risk_approval(
