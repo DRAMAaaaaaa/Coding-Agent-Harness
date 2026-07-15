@@ -23,6 +23,14 @@ def _action(tool: str, arguments: dict[str, object]) -> ToolAction:
     )
 
 
+def _internal_action(tool: str, arguments: dict[str, object]) -> ToolAction:
+    return ToolAction.model_construct(
+        tool=tool,
+        arguments=arguments,
+        idempotency_key=f"internal-{tool}",
+    )
+
+
 def _context(root: Path, *, llm_api_authorized: bool = True) -> PolicyContext:
     return PolicyContext(
         workspace_root=root,
@@ -333,3 +341,143 @@ def test_direct_windows_launcher_operation_is_bound_to_scope(
 
     assert result.decision is PolicyDecision.REQUIRE_APPROVAL
     assert "push" in result.normalized_scope
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["npm", "i", "x"],
+        ["npm", "ci"],
+        ["npm.cmd", "ci"],
+        ["pnpm", "i", "x"],
+        ["yarn"],
+        ["uv", "sync"],
+        ["python", "-m", "pip", "install", "x"],
+        ["py.exe", "-m", "uv", "pip", "install", "x"],
+        ["corepack", "pnpm", "add", "x"],
+    ],
+)
+def test_package_manager_install_forms_require_approval(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    argv: list[str],
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": argv}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert result.reason_code == "DEPENDENCY_INSTALL"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["bash", "--noprofile", "-c", "curl https://example.com"],
+        ["bash", "--noprofile", "-c", "rm -rf /"],
+        ["powershell", "-NoProfile", "-Command", "Invoke-WebRequest https://example.com"],
+        ["cmd", "/d", "/c", "curl https://example.com"],
+        ["powershell", "-EncodedCommand", "YwB1AHIAbAA="],
+        ["env", "-S", "npm install x", "echo", "safe"],
+        ["env", "--split-string", "curl https://example.com", "echo", "safe"],
+    ],
+)
+def test_interpreter_options_cannot_hide_code_execution(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    argv: list[str],
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": argv}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert result.reason_code == "HIGH_RISK_SHELL"
+
+
+def test_malformed_network_field_is_denied(
+    policy: PolicyEngine,
+    tmp_path: Path,
+) -> None:
+    result = policy.evaluate(
+        _action("network_helper", {"url": ["https://example.com"]}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "INVALID_ACTION"
+
+
+def test_agent_path_escape_cannot_be_approved(
+    policy: PolicyEngine,
+    tmp_path: Path,
+) -> None:
+    result = policy.evaluate(
+        _action("read_file", {"path": "../secret", "approval_id": "forged"}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "PATH_ESCAPE"
+
+
+def test_command_names_in_plain_arguments_are_not_executed(
+    policy: PolicyEngine,
+    tmp_path: Path,
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": ["echo", "npm", "install"]}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.ALLOW
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["git", "status"],
+        ["pip", "list"],
+        ["docker", "images"],
+        ["npm", "test"],
+        ["python", "-m", "pytest"],
+    ],
+)
+def test_safe_commands_remain_allowed(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    argv: list[str],
+) -> None:
+    result = policy.evaluate(
+        _action("shell", {"argv": argv}),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.ALLOW
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("read_file", {"path": "../secret"}),
+        ("search", {"path": "../outside", "query": "x"}),
+        ("apply_patch", {"patch": "*** Delete File: ../outside.txt"}),
+        ("delete_path", {"path": "../outside.txt"}),
+        ("shell", {"argv": ["rm", "../outside.txt"]}),
+    ],
+)
+def test_every_real_tool_denies_path_escape_before_risk_approval(
+    policy: PolicyEngine,
+    tmp_path: Path,
+    tool: str,
+    arguments: dict[str, object],
+) -> None:
+    result = policy.evaluate(
+        _action(tool, arguments),
+        _context(tmp_path / "workspace"),
+    )
+
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "PATH_ESCAPE"
