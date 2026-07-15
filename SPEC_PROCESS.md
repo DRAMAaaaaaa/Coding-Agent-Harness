@@ -315,3 +315,9 @@ v3 已证明修订后的陌生执行者能够从零取得正确 RED 和 GREEN。
 第六名无历史审计智能体从 `79012bd` 的全新 worktree 开始，完整且仅读取 `SPEC.md` 与 `PLAN.md`。它确认 Task 4 当前返工起点、路径规则优先级、审批权威状态和传输恢复主体已经清楚，但仍以 Fail 阻止实施：`env -S/--split-string` 会把一个参数重新拆成命令，不能当普通带值选项跳过；已有目标只绑定 SHA-256 而没有完整 inode/device/path 身份，同内容替换可绕过 stale 校验。
 
 计划据此把 `env -S/--split-string` 固定为 `HIGH_RISK_SHELL` 并增加绕过 RED；`TransferRecord` 增加可空完整 `target_identity`，scope、003 和三次校验均绑定它，并增加同摘要不同 inode 测试。同时补齐 shell cwd 默认/畸形/越界语义、Windows 解释器精确名称、003 全迁移矩阵和 idempotency 重复请求行为。第六轮仍为 Fail，需新审计智能体复验。
+
+### 9.4 第七次冷启动审计与传输身份入口修订
+
+第七名无历史审计智能体确认 Task 4 步骤 6 已足以独立安全启动，`env -S`、cwd、真实工具越界、002/003、审批原子绑定、目标身份、幂等和 `UNCERTAIN` 均清楚；但总体仍判 Fail，因为 Task 11 的 API 示例使用 workspace ID 而服务契约要求 task ID、源父目录身份没有字段、approval action ID 与 transfer ID 映射未冻结。
+
+计划修订为：API 只接受 `task_id` 并从持久任务定位 worktree；`TransferRecord` 增加 `source_parent_identity` 和 `action_id`；action ID 固定为 `transfer:<transfer_id>`，与 transfer、approval 和 scope 同时持久化，003 对 action/approval/idempotency 分别唯一。该轮仍是 Fail，须由新的审计智能体复验总体门禁。

@@ -256,3 +256,10 @@
 - **结论：** Fail，但主体契约已可执行；剩余 Critical 是 `env -S/--split-string` 的二次命令拆分绕过，以及已有目标缺少完整文件身份导致同内容 inode 替换不失效。
 - **修订：** `env -S/--split-string` 固定进入 `HIGH_RISK_SHELL` 并补 RED；HostTransfer 增加 `target_identity`，003、scope 与每次执行校验均绑定完整身份。同步冻结 shell cwd、Windows 解释器名称、003 迁移矩阵和幂等重复请求语义。
 - **安全与范围：** 只修改文档计划；没有产品代码、依赖安装、联网、推送或凭据操作。门禁等待新的复验。
+
+### 2026-07-15 13:02 +08:00 — COLD-007
+
+- **任务：** 第七次无历史冷启动复验 Task 4 与 Task 11。
+- **结论：** Task 4 可安全启动，但总体 Fail；Task 11 的 workspace/task 身份入口、源父目录身份和 action ID 绑定仍有歧义。
+- **修订：** 传输 API 固定接收 `task_id`；记录并绑定 `source_parent_identity`；`action_id` 固定为 `transfer:<transfer_id>`，在 transfer、approval、scope 和 003 唯一约束中保持一致。
+- **安全与范围：** 仅修改计划和过程记录，未修改实现、安装依赖、联网或推送。等待新审计智能体复验。

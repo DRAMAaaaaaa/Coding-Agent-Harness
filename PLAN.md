@@ -1270,10 +1270,12 @@ class FileIdentity(PathIdentity):
 class TransferRecord(BaseModel):
     id: UUID
     task_id: UUID
+    action_id: str
     approval_id: UUID
     direction: TransferDirection
     external_path: str
     workspace_path: str
+    source_parent_identity: PathIdentity
     source_identity: FileIdentity
     target_parent_identity: PathIdentity
     target_identity: FileIdentity | None
@@ -1291,7 +1293,7 @@ class HostTransferService:
     async def recover(self, transfer_id: UUID) -> TransferRecord: ...
 ```
 
-路由 `{id}` 始终是 `transfer_id`，不是 `approval_id`；响应同时返回两个 ID。`003_host_transfers.sql` 创建 `host_transfers` 表，保存以上字段并对 `approval_id`、`idempotency_key` 建唯一约束；路径与文件身份是执行数据，不能从脱敏展示 scope 反向解析。`target_identity` 在目标已存在时保存完整 `resolved_path/device/inode/size/mtime_ns/sha256`，目标不存在时为 `None`，不能只靠 SHA-256 判断未变化。`Approval.normalized_scope` 只用于精确绑定和展示，其确定性 JSON 含 direction、两端规范化路径、source identity、target parent identity、target identity、expected target digest、transfer ID。`HostTransferService.request` 必须通过 `ApprovalManager.request_and_apply` 在同一事务创建 approval 与 transfer，禁止留下无 transfer 的可执行审批；审批拒绝或过期后 transfer 固定转为 `FAILED`。
+路由 `{id}` 始终是 `transfer_id`，不是 `approval_id`；响应同时返回两个 ID。API 请求必须提交 `task_id`，服务通过该任务的持久 worktree 解析 worktree 内端，不接受 `workspace_id` 推断活跃任务。`action_id` 固定为 `transfer:<transfer_id>` 并同时写入 `TransferRecord` 与 `ApprovalContext.action_id`，禁止使用 approval ID 或临时序号替代。`003_host_transfers.sql` 创建 `host_transfers` 表，保存以上字段并对 `action_id`、`approval_id`、`idempotency_key` 分别建唯一约束；路径与文件身份是执行数据，不能从脱敏展示 scope 反向解析。`source_parent_identity` 始终保存源文件既有父目录的完整 path/device/inode；`target_identity` 在目标已存在时保存完整 `resolved_path/device/inode/size/mtime_ns/sha256`，目标不存在时为 `None`，不能只靠 SHA-256 判断未变化。`Approval.normalized_scope` 只用于精确绑定和展示，其确定性 JSON 含 action ID、direction、两端规范化路径、source parent/source identity、target parent/target identity、expected target digest、transfer ID。`HostTransferService.request` 必须通过 `ApprovalManager.request_and_apply` 在同一事务创建 approval 与 transfer，禁止留下无 transfer 的可执行审批；审批拒绝或过期后 transfer 固定转为 `FAILED`。
 
 `POST /api/transfers` 强制要求非空 `Idempotency-Key` 请求头并传入服务；相同 key 且规范化 direction/source/target/文件身份完全一致时返回既有记录和 HTTP 200；同一 key 对应不同请求时返回 HTTP 409/`IDEMPOTENCY_CONFLICT`，不得泄漏唯一约束异常。
 
@@ -1312,11 +1314,11 @@ def test_sse_resumes_after_last_event_id(client, seeded_task, token) -> None:
     assert "id: 2" not in response.text
 
 
-def test_external_transfer_requires_exact_one_time_approval(client, token, workspace) -> None:
+def test_external_transfer_requires_exact_one_time_approval(client, token, seeded_task) -> None:
     requested = client.post(
         "/api/transfers",
         headers={"X-Harness-Session": token, "Idempotency-Key": "import-a-v1"},
-        json={"workspace_id": workspace.id, "direction": "import", "source": "C:/input/a.py", "target": "src/a.py"},
+        json={"task_id": seeded_task.id, "direction": "import", "source": "C:/input/a.py", "target": "src/a.py"},
     )
     assert requested.status_code == 202
     transfer_id = requested.json()["transfer_id"]
