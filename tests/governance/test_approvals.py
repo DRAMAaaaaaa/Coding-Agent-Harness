@@ -10,6 +10,7 @@ import aiosqlite
 from pydantic import ValidationError
 
 from coding_agent_harness.domain.actions import TaskState
+from coding_agent_harness.governance import approvals as approvals_module
 from coding_agent_harness.governance.approvals import (
     ApprovalContext,
     ApprovalDecision,
@@ -509,7 +510,7 @@ async def test_denied_expired_cancelled_and_invalid_requests_never_execute(
                 _context(task_state=TaskState.CANCELLED),
                 NOW + timedelta(minutes=2),
             )
-        assert cancelled.value.reason_code == "TASK_CANCELLED"
+        assert cancelled.value.reason_code == "STALE_STATE"
     finally:
         await database.close()
 
@@ -892,94 +893,197 @@ async def test_consume_rechecks_authoritative_event_sequence(tmp_path: Path) -> 
         await database.close()
 
 
-async def test_request_and_apply_rolls_back_callback_and_approval_together(
+async def test_request_and_apply_never_invokes_arbitrary_callable(
     tmp_path: Path,
 ) -> None:
     database, manager, task_id = await _manager(tmp_path / "request-apply.sqlite3")
-    await database.connection.execute(
-        "CREATE TABLE approval_bindings (approval_id TEXT PRIMARY KEY)"
-    )
-    await database.connection.commit()
+    called = False
 
-    async def fail_after_insert(
+    async def write_file_side_effect(
         connection: aiosqlite.Connection,
         record: ApprovalRecord,
     ) -> None:
-        await connection.execute(
-            "INSERT INTO approval_bindings (approval_id) VALUES (?)",
-            (str(record.id),),
-        )
-        raise RuntimeError("callback failed")
+        del connection, record
+        nonlocal called
+        called = True
+        raise RuntimeError("secret callback failure")
 
     try:
-        with pytest.raises(RuntimeError, match="^callback failed$"):
+        with pytest.raises(ApprovalError) as captured:
             await manager.request_and_apply(
                 task_id,
                 "EXTERNAL_TRANSFER",
                 _context(),
                 NOW + timedelta(minutes=1),
-                fail_after_insert,
+                write_file_side_effect,
             )
+        assert captured.value.reason_code == "INVALID_MUTATION"
+        assert "secret callback failure" not in str(captured.value)
+        assert called is False
         approvals = await (
             await database.connection.execute("SELECT COUNT(*) FROM approvals")
         ).fetchone()
-        bindings = await (
-            await database.connection.execute("SELECT COUNT(*) FROM approval_bindings")
-        ).fetchone()
         assert approvals == (0,)
-        assert bindings == (0,)
     finally:
         await database.close()
 
 
-async def test_consume_and_apply_rolls_back_consumption_and_callback_together(
+def _mutation_contract() -> tuple[type[object], type[object], type[object]]:
+    mutation_type = getattr(approvals_module, "ApprovalDatabaseMutation", None)
+    binding_type = getattr(approvals_module, "ApprovalMutationBinding", None)
+    operation_type = getattr(approvals_module, "ApprovalMutationOperation", None)
+    assert mutation_type is not None
+    assert binding_type is not None
+    assert operation_type is not None
+    return mutation_type, binding_type, operation_type
+
+
+async def test_declarative_request_mutation_commits_with_approval(
+    tmp_path: Path,
+) -> None:
+    mutation_type, binding_type, operation_type = _mutation_contract()
+    database, manager, task_id = await _manager(tmp_path / "request-declaration.sqlite3")
+    await database.connection.execute(
+        "CREATE TABLE approval_bindings (approval_id TEXT PRIMARY KEY, task_id TEXT NOT NULL)"
+    )
+    await database.connection.commit()
+    mutation = mutation_type(
+        operation=operation_type.INSERT,  # type: ignore[attr-defined]
+        table="approval_bindings",
+        values=(
+            ("approval_id", binding_type.APPROVAL_ID),  # type: ignore[attr-defined]
+            ("task_id", binding_type.TASK_ID),  # type: ignore[attr-defined]
+        ),
+    )
+    try:
+        requested = await manager.request_and_apply(
+            task_id,
+            "EXTERNAL_TRANSFER",
+            _context(),
+            NOW + timedelta(minutes=1),
+            mutation,  # type: ignore[arg-type]
+        )
+        binding = await (
+            await database.connection.execute(
+                "SELECT approval_id, task_id FROM approval_bindings"
+            )
+        ).fetchone()
+        assert binding == (str(requested.id), str(task_id))
+    finally:
+        await database.close()
+
+
+async def test_declarative_request_mutation_failure_rolls_back_approval(
+    tmp_path: Path,
+) -> None:
+    mutation_type, binding_type, operation_type = _mutation_contract()
+    database, manager, task_id = await _manager(tmp_path / "request-rollback.sqlite3")
+    mutation = mutation_type(
+        operation=operation_type.INSERT,  # type: ignore[attr-defined]
+        table="missing_bindings",
+        values=(("approval_id", binding_type.APPROVAL_ID),),  # type: ignore[attr-defined]
+    )
+    try:
+        with pytest.raises(ApprovalError) as captured:
+            await manager.request_and_apply(
+                task_id,
+                "EXTERNAL_TRANSFER",
+                _context(),
+                NOW + timedelta(minutes=1),
+                mutation,  # type: ignore[arg-type]
+            )
+        assert captured.value.reason_code == "STORAGE_ERROR"
+        approvals = await (
+            await database.connection.execute("SELECT COUNT(*) FROM approvals")
+        ).fetchone()
+        assert approvals == (0,)
+    finally:
+        await database.close()
+
+
+async def test_consume_and_apply_never_invokes_arbitrary_callable(
     tmp_path: Path,
 ) -> None:
     database, manager, task_id = await _manager(tmp_path / "consume-apply.sqlite3")
     context = _context()
-    await database.connection.execute(
-        "CREATE TABLE transfer_state (id INTEGER PRIMARY KEY, state TEXT NOT NULL)"
-    )
-    await database.connection.execute(
-        "INSERT INTO transfer_state (id, state) VALUES (1, 'READY')"
-    )
-    await database.connection.commit()
     requested = await manager.request(
         task_id, "EXTERNAL_TRANSFER", context, NOW + timedelta(minutes=1)
     )
     await manager.decide(
         requested.id, ApprovalDecision.APPROVED, "reviewer", context
     )
+    called = False
 
-    async def fail_after_update(
+    async def process_side_effect(
         connection: aiosqlite.Connection,
         consumed_at: datetime,
     ) -> None:
-        assert consumed_at == NOW
-        await connection.execute(
-            "UPDATE transfer_state SET state = 'EXECUTING' WHERE id = 1"
-        )
-        raise RuntimeError("callback failed")
+        del connection, consumed_at
+        nonlocal called
+        called = True
+        raise RuntimeError("secret callback failure")
 
     try:
-        with pytest.raises(RuntimeError, match="^callback failed$"):
+        with pytest.raises(ApprovalError) as captured:
             await manager.consume_and_apply(
                 requested.id,
                 context,
-                fail_after_update,
+                process_side_effect,
             )
+        assert captured.value.reason_code == "INVALID_MUTATION"
+        assert "secret callback failure" not in str(captured.value)
+        assert called is False
         approval = await (
             await database.connection.execute(
                 "SELECT consumed_at FROM approvals WHERE id = ?",
                 (str(requested.id),),
             )
         ).fetchone()
+        assert approval == (None,)
+    finally:
+        await database.close()
+
+
+async def test_declarative_consume_mutation_commits_with_consumption(
+    tmp_path: Path,
+) -> None:
+    mutation_type, binding_type, operation_type = _mutation_contract()
+    database, manager, task_id = await _manager(tmp_path / "consume-declaration.sqlite3")
+    context = _context()
+    requested = await manager.request(
+        task_id, "EXTERNAL_TRANSFER", context, NOW + timedelta(minutes=1)
+    )
+    await manager.decide(
+        requested.id, ApprovalDecision.APPROVED, "reviewer", context
+    )
+    await database.connection.execute(
+        "CREATE TABLE transfer_state (approval_id TEXT PRIMARY KEY, state TEXT NOT NULL, consumed_at TEXT)"
+    )
+    await database.connection.execute(
+        "INSERT INTO transfer_state (approval_id, state) VALUES (?, 'READY')",
+        (str(requested.id),),
+    )
+    await database.connection.commit()
+    mutation = mutation_type(
+        operation=operation_type.UPDATE,  # type: ignore[attr-defined]
+        table="transfer_state",
+        values=(
+            ("state", "EXECUTING"),
+            ("consumed_at", binding_type.CONSUMED_AT),  # type: ignore[attr-defined]
+        ),
+        where=(("approval_id", binding_type.APPROVAL_ID),),  # type: ignore[attr-defined]
+    )
+    try:
+        consumed = await manager.consume_and_apply(
+            requested.id, context, mutation  # type: ignore[arg-type]
+        )
         transfer = await (
             await database.connection.execute(
-                "SELECT state FROM transfer_state WHERE id = 1"
+                "SELECT state, consumed_at FROM transfer_state WHERE approval_id = ?",
+                (str(requested.id),),
             )
         ).fetchone()
-        assert approval == (None,)
-        assert transfer == ("READY",)
+        assert consumed.consumed_at == NOW
+        assert transfer == ("EXECUTING", NOW.isoformat())
     finally:
         await database.close()
