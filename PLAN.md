@@ -809,7 +809,9 @@ python -m pytest tests/governance -v
 
 第四轮复审纠偏（2026-07-15）：WAL 锁竞争公开错误边界由 RED `71aec0b`（聚焦 `1 failed, 2 passed`）转为 GREEN `e3d991b`。确定性连接桩证明三条分支：切换 WAL 遇锁且复查仍非 WAL 时固定抛出 `MigrationBusyError("数据库迁移正忙")`，不泄漏底层 SQLite 文本；复查已为 WAL 时视为其他连接已完成切换并成功返回；非锁型 `OperationalError` 按冻结边界保持原异常向上抛出。最新 focused `183 passed`、治理 `199 passed, 1 skipped`、全量与 PowerShell All 均为 `301 passed, 1 skipped`；Ruff、Mypy（17 个源文件）、`pip check`、Web ESLint/TypeScript、无隔离 wheel/sdist 构建均通过，两个归档内 001/002 各 1 份、003 为 0。步骤 7 继续等待独立两阶段复审。
 
-- [ ] **步骤 7：评审与提交**
+最终复审与控制器验证（2026-07-15）：第五轮独立任务审查覆盖 `35e89d0..7b27d38` 的 27 个提交，结论为 `Spec: PASS`、`Quality: APPROVED`，Critical/Important/Minor 均为 0。控制器随后重新运行 `scripts/test.ps1 -Mode All`，得到 `301 passed, 1 skipped`，Ruff、mypy、Web ESLint/TypeScript 全部通过；`pip check` 无破损依赖，无隔离 wheel/sdist 构建成功，两个归档内 001/002 各 1 份、003 为 0，`git diff --check` 通过。唯一 skip 为本机 Windows 符号链接权限；Task 4 至此完成，未实施 Task 6/11 或 003 migration。
+
+- [x] **步骤 7：评审与提交（实现头 `7b27d38`，完成证据见本提交）**
 
 规约符合性审查重点：真实 Provider 的 LLM API 授权不扩展到工具网络；所有依赖安装入口和解释器代码执行形态均不能绕过；并发迁移在锁内重读版本。代码质量审查重点：只解析实际命令位置、规则次序无绕过且安全命令无误报、Windows 大小写路径、异常也先脱敏。
 

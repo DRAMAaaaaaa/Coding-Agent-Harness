@@ -357,3 +357,13 @@
 - **GREEN：** `e3d991b` 仅把 `_ensure_wal_mode` 的锁竞争非 WAL 分支交给既有 `_raise_migration_error`，得到固定 `MigrationBusyError("数据库迁移正忙")`；不吞掉非锁型 `OperationalError`，不改变其他迁移顺序或事务逻辑。
 - **新鲜验证：** focused `183 passed`；governance `199 passed, 1 skipped`；全量与 PowerShell All 均为 `301 passed, 1 skipped`。Ruff、Mypy（17 个源文件）、`pip check`、Web ESLint/TypeScript、无隔离 wheel/sdist 构建均通过；wheel/sdist 内 001/002 各 1 份、003 为 0。唯一 skip 仍为本机 Windows 符号链接权限。
 - **范围与状态：** 未联网、安装、推送、合并，未实现 Task 6/11、003 migration 或传输服务。第四轮问题已纠偏，仍等待独立规约符合性与代码质量复审，不宣称 Task 4 完成。
+
+### 2026-07-15 22:10 +08:00 — REVIEW-004-FINAL
+
+- **任务：** 对 Task 4 从同步基线 `35e89d0` 到实现头 `7b27d38` 的 27 个提交完成最终独立规约符合性审查、代码质量审查和控制器侧新鲜验证。
+- **Superpowers 技能：** `subagent-driven-development`、`requesting-code-review`、`receiving-code-review`、`verification-before-completion`；所有 Critical/Important 发现均先复现，再交回实现者按 RED—GREEN 修复并重新生成完整审查包。
+- **独立审查：** 第五轮审查无 Critical、Important 或 Minor；`Spec: PASS`，`Quality: APPROVED`。重点复验 WAL 锁竞争固定映射、锁内迁移版本、策略路径与远程操作、受限 mutation 双绑定/单行命中、数据库权威状态和 `HostTransferAction` 来源隔离，均未发现回归。
+- **控制器新鲜验证：** `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test.ps1 -Mode All` 得到 `301 passed, 1 skipped`，Ruff、mypy（17 个源文件）、Web ESLint 与 TypeScript 均通过；`pip check` 返回 `No broken requirements found.`；无隔离 wheel/sdist 构建成功，两个归档中的 001/002 各 1 份、003 为 0；`git diff --check 35e89d0..HEAD` 退出 0。
+- **环境限制：** 唯一 skip 是当前 Windows 账户没有创建测试目录符号链接的权限；其余路径围栏测试已执行。
+- **范围与安全：** 未联网、安装依赖、推送、合并或删除工作树；未接触凭据，未实施 Task 6/11、003 migration 或宿主传输服务。
+- **结论：** Task 4 的实现、独立双重审查和控制器验证均完成；下一步进入开发分支收尾，是否本地合并回 `p1` 仍需按 Git 安全流程处理。
