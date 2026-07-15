@@ -396,3 +396,11 @@
 - **重复验证异常与归因：** 首次 PowerShell 外层 100 轮命令由执行工具配置 120 秒超时，但异常迟至 2615464ms 才以 124 退出，未返回可定位的轮次输出，因此不计为产品或通过证据。按 `systematic-debugging` 改用外部 Python 驱动，每轮启动全新的 pytest 子进程并设 15 秒子进程超时，原真实双连接用例有效取得 `100/100`；总耗时 55.9 秒，单轮 0.515—0.703 秒，无非零退出或产品挂起，表明前一次是外层 repeater/执行工具异常。
 - **完整门禁：** 最终聚焦 `19 passed, 46 deselected`，governance `215 passed, 1 skipped`，全量 pytest 和 `scripts/test.ps1 -Mode All` 均为 `317 passed, 1 skipped`；Ruff 全通过，mypy 17 个源文件无问题，`pip check` 无破损依赖，Web ESLint/TypeScript 通过。`python -m build --no-isolation` 成功生成 wheel/sdist，两种归档内 001/002 各 1 份、003 为 0。
 - **范围、安全与状态：** 未联网、安装、推送、合并、删除工作树或接触凭据；未扩展 Task 11/003，未改变锁生命周期或 WAL 状态机。Task 4 与 PLAN 步骤 7 继续待独立规约符合性/代码质量复审，不宣称完成。
+
+### 2026-07-16 03:47 +08:00 — IMPL-004-R10
+
+- **任务与审查结论：** 处理窄复审的 `Spec: FAIL` / `Quality: CHANGES_REQUIRED` 唯一 Important。`_collapse_windows_extended_path` 的 `str.isalpha()` 接受 Unicode 字母，因此非 ASCII 拉丁、西里尔和汉字首字符也会被当成 Windows drive-root 并错误去除 `\\?\` 前缀；冻结边界只允许 ASCII `[A-Za-z]:\\` 或 `[A-Za-z]:/`。
+- **Superpowers 技能：** `receiving-code-review`、`brainstorming`、`test-driven-development`、`verification-before-completion`；审查要求已给出并批准精确设计，故未扩展新的架构或公共接口。
+- **RED—GREEN：** RED `a58b962` 参数化覆盖 `é`、西里尔、汉字、`\\.\`、`\\?\Volume{...}\`、`\\?\GLOBALROOT\`、截断及嵌入前缀的原值保留，并增加 ASCII A/a/Z/z 折叠与路径键大小写等价正例；旧实现稳定得到 `3 failed, 12 passed, 63 deselected`，只失败于三种 Unicode 字母。GREEN `23e5f31` 仅把 `isalpha()` 改为显式 ASCII 字母成员判断，不改变其他条件或调用链；相同聚焦为 `15 passed, 63 deselected`，目标 Ruff 和 mypy 均通过。
+- **压力与完整门禁：** 门闩/WAL/路径键聚焦为 `32 passed, 46 deselected`。原真实双连接用例用外部 Python 驱动、每轮独立 pytest 子进程和 15 秒硬超时有效取得 `100/100`，总耗时 57.716 秒，单轮 0.539—1.248 秒，无超时或非零退出。governance 为 `228 passed, 1 skipped`，全量 pytest 与 PowerShell All 均为 `330 passed, 1 skipped`；Ruff 全通过，mypy 17 个源文件无问题，`pip check` 无破损依赖，Web ESLint/TypeScript 通过。
+- **构建与范围：** `python -m build --no-isolation` 成功生成 wheel/sdist，两个归档内 001/002 各 1、003 为 0。未联网、安装、推送、合并、删除工作树、接触凭据或扩展 Task 11/003；未改变门闩或 WAL 生命周期。Task 4 与 PLAN 步骤 7 继续待独立双重复审，不宣称完成。

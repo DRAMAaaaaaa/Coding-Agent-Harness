@@ -152,7 +152,7 @@ class TaskOrchestrator:
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
-| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | Windows 扩展路径门闩纠偏待复审（最新 RED/GREEN `e897586`/`723272d`；此前异常与门闩补强见步骤 6） |
+| 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | Windows ASCII 盘符边界纠偏待复审（最新 RED/GREEN `a58b962`/`23e5f31`；此前门闩补强见步骤 6） |
 | 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 待执行 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
@@ -817,7 +817,9 @@ python -m pytest tests/governance -v
 
 Windows 扩展路径门闩纠偏（2026-07-16）：新一轮独立审查仍为 `Spec: FAIL`、`Quality: CHANGES_REQUIRED`，唯一 Important 是 Windows 普通驱动器路径与 `\\?\` 扩展驱动器路径、普通 UNC 与 `\\?\UNC\` 扩展 UNC 会指向同一 SQLite 文件，却生成不同门闩键。RED `e897586` 用普通/扩展驱动器 Event 握手及路径键单元矩阵稳定得到 `4 failed`，覆盖扩展驱动器、扩展 UNC 的大小写等价和不同路径保持区分。GREEN `723272d` 只在 `Path.resolve(strict=False)` 后、Windows 平台上精确折叠大小写不敏感的 `\\?\UNC\` 前缀和具有盘符根的 `\\?\` 前缀，保留全部后缀；不做子串替换、不折叠或测试 `\\.\`，也未改动初始化锁生命周期或 WAL 状态机。普通/扩展驱动器确定性握手为 `1 passed`。首次外层 PowerShell 100 轮命令被执行工具在配置 120 秒超时后异常迟至 2615464ms 才以 124 退出，且没有可定位轮次，故不计为通过；随后按系统化诊断改用外部 Python 驱动、每轮新建 pytest 子进程并设置 15 秒子进程超时，原真实双连接用例有效取得 `100/100`，总计 55.9 秒、单轮 0.515—0.703 秒，没有产品挂起。最终聚焦 `19 passed, 46 deselected`，governance `215 passed, 1 skipped`，全量与 PowerShell All 均为 `317 passed, 1 skipped`；Ruff、mypy（17 个源文件）、`pip check`、Web ESLint/TypeScript、无隔离构建全部通过，wheel/sdist 内 001/002 各 1、003 为 0。步骤 7 继续待新的独立双重复审。
 
-- [ ] **步骤 7：评审与提交（纠偏实现头 `723272d`，待新的独立双重复审）**
+Windows ASCII 盘符边界纠偏（2026-07-16）：窄复审结论为 `Spec: FAIL`、`Quality: CHANGES_REQUIRED`，唯一 Important 是 `_collapse_windows_extended_path` 使用 Unicode `str.isalpha()`，会把 `\\?\é:\...`、西里尔与汉字首字符误判为 Windows 盘符并移除扩展前缀。RED `a58b962` 参数化冻结非 ASCII 拉丁/西里尔/汉字、`\\.\`、`\\?\Volume{...}\`、`\\?\GLOBALROOT\` 以及截断/嵌入前缀必须原样保留，同时确认 ASCII `A-Z/a-z` 扩展盘符继续折叠且路径键大小写等价；旧实现精确得到 `3 failed, 12 passed, 63 deselected`。GREEN `23e5f31` 只把 `isalpha()` 改为显式 ASCII 字母成员判断，未改变前缀、后缀、路径键、门闩或 WAL 的其余逻辑；相同聚焦转为 `15 passed, 63 deselected`。包含门闩/WAL/路径键的聚焦集合为 `32 passed, 46 deselected`。原真实双连接用例以每轮新 pytest 子进程和 15 秒硬超时有效复验 `100/100`，总计 57.716 秒、单轮 0.539—1.248 秒。governance 为 `228 passed, 1 skipped`，全量与 PowerShell All 均为 `330 passed, 1 skipped`；独立 Ruff、mypy（17 个源文件）、`pip check`、Web ESLint/TypeScript、无隔离构建均通过，wheel/sdist 内 001/002 各 1、003 为 0。步骤 7 继续待新的独立双重复审。
+
+- [ ] **步骤 7：评审与提交（纠偏实现头 `23e5f31`，待新的独立双重复审）**
 
 规约符合性审查重点：真实 Provider 的 LLM API 授权不扩展到工具网络；所有依赖安装入口和解释器代码执行形态均不能绕过；并发迁移在锁内重读版本。代码质量审查重点：只解析实际命令位置、规则次序无绕过且安全命令无误报、Windows 大小写路径、异常也先脱敏。
 
