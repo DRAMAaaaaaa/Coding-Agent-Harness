@@ -387,3 +387,12 @@
 - **初始化门闩 RED—GREEN：** 用户批准后，RED `7c3cb53` 用纯 Event 调度握手得到 `4 failed, 1 passed`：旧实现同路径与等价路径会在首初始化完成前第二次 connect，异常路径也提前进入，且没有 loop 隔离 gate；不同路径并行已通过。GREEN `ba48c9f` 先对路径 `resolve(strict=False) + normcase`，以短 `threading.Lock` 原子维护 `WeakKeyDictionary[loop → WeakValueDictionary[path → asyncio.Lock]]`，再于线程锁外用路径 gate 覆盖 connect、PRAGMA、migrations、WAL 和异常清理。同 loop 同路径在 SQLite 外等待且不持连接，不同路径并行，不同 loop 不复用 asyncio.Lock，弱引用避免永久增长。
 - **压力与新鲜门禁：** 最终无插桩真实双连接迁移 `100/100`，governance 连续 `10/10` 轮；最终聚焦 `15 passed`，governance `211 passed, 1 skipped`，全量与 PowerShell All 均为 `313 passed, 1 skipped`。Ruff 全通过，mypy 17 个源文件无问题，`pip check` 无破损依赖，Web ESLint/TypeScript 通过；无隔离 wheel/sdist 构建成功，两种归档内 001/002 各 1、003 为 0。唯一 skip 仍为本机 Windows 符号链接权限。
 - **范围、安全与状态：** 未联网、安装、推送、合并、删除工作树或接触凭据；没有实现 003、Task 11 或新公共接口。Task 4 和 PLAN 步骤 7 保持待新的独立规约符合性/代码质量复审，不宣称完成。
+
+### 2026-07-16 03:30 +08:00 — IMPL-004-R9
+
+- **任务与审查结论：** 处理新一轮独立审查的 `Spec: FAIL` / `Quality: CHANGES_REQUIRED` 唯一 Important：Windows 普通驱动器路径与 `\\?\` 扩展驱动器路径、普通 UNC 与 `\\?\UNC\` 扩展 UNC 指向同一 SQLite 文件时，旧实现仍产生不同的初始化门闩键。只读事实检查确认 `Path.resolve(strict=False)` 和 `normcase` 会规范普通路径的大小写，却保留扩展命名空间前缀。
+- **Superpowers 技能：** `receiving-code-review`、`brainstorming`、`test-driven-development`、`systematic-debugging`、`verification-before-completion`；依照已冻结的精确前缀设计先固化失败，再做最小实现和新鲜验证。
+- **RED—GREEN：** RED `e897586` 用普通/扩展驱动器 Event 握手冻结“首个 open 释放前只允许一次 connect”，并以路径键单元矩阵覆盖扩展驱动器、扩展 UNC、大小写等价和不同路径区分，聚焦得到 `4 failed, 61 deselected`。GREEN `723272d` 仅在 Windows 的 `resolve(strict=False)` 之后精确折叠大小写不敏感的 `\\?\UNC\` 前缀和带盘符根的 `\\?\` 前缀，原样保留后缀；不使用子串替换，不折叠或测试 `\\.\`，未改变门闩/WAL 生命周期。相同聚焦转为 `4 passed, 61 deselected`，普通/扩展握手单测为 `1 passed`。
+- **重复验证异常与归因：** 首次 PowerShell 外层 100 轮命令由执行工具配置 120 秒超时，但异常迟至 2615464ms 才以 124 退出，未返回可定位的轮次输出，因此不计为产品或通过证据。按 `systematic-debugging` 改用外部 Python 驱动，每轮启动全新的 pytest 子进程并设 15 秒子进程超时，原真实双连接用例有效取得 `100/100`；总耗时 55.9 秒，单轮 0.515—0.703 秒，无非零退出或产品挂起，表明前一次是外层 repeater/执行工具异常。
+- **完整门禁：** 最终聚焦 `19 passed, 46 deselected`，governance `215 passed, 1 skipped`，全量 pytest 和 `scripts/test.ps1 -Mode All` 均为 `317 passed, 1 skipped`；Ruff 全通过，mypy 17 个源文件无问题，`pip check` 无破损依赖，Web ESLint/TypeScript 通过。`python -m build --no-isolation` 成功生成 wheel/sdist，两种归档内 001/002 各 1 份、003 为 0。
+- **范围、安全与状态：** 未联网、安装、推送、合并、删除工作树或接触凭据；未扩展 Task 11/003，未改变锁生命周期或 WAL 状态机。Task 4 与 PLAN 步骤 7 继续待独立规约符合性/代码质量复审，不宣称完成。
