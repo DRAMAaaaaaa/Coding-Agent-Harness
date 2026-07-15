@@ -17,6 +17,7 @@ from coding_agent_harness.governance.approvals import (
     ApprovalRecord,
 )
 from coding_agent_harness.storage.database import Database
+from coding_agent_harness.storage import database as database_module
 
 
 NOW = datetime(2026, 7, 15, 8, 0, tzinfo=UTC)
@@ -28,6 +29,38 @@ class _Clock:
 
     def __call__(self) -> datetime:
         return self.now
+
+
+class _RecordingCursor:
+    def __init__(self, row: tuple[int] | None = None) -> None:
+        self._row = row
+
+    async def fetchone(self) -> tuple[int] | None:
+        return self._row
+
+
+class _RecordingConnection:
+    def __init__(self, user_version: int) -> None:
+        self.user_version = user_version
+        self.statements: list[str] = []
+
+    async def execute(self, sql: str) -> _RecordingCursor:
+        statement = " ".join(sql.split())
+        self.statements.append(statement)
+        if statement == "PRAGMA user_version":
+            return _RecordingCursor((self.user_version,))
+        if statement.startswith("PRAGMA user_version = "):
+            self.user_version = int(statement.rsplit(" ", 1)[1])
+        return _RecordingCursor()
+
+    async def commit(self) -> None:
+        self.statements.append("COMMIT")
+
+    async def rollback(self) -> None:
+        self.statements.append("ROLLBACK")
+
+    async def executescript(self, sql: str) -> None:
+        self.statements.append(f"SCRIPT:{sql.strip()}")
 
 
 async def _seed_task(database: Database, task_id: UUID) -> None:
@@ -79,6 +112,60 @@ async def _manager(
     await _seed_task(database, task_id)
     manager = ApprovalManager(database, clock or _Clock(), uuid_factory)
     return database, manager, task_id
+
+
+async def test_migration_acquires_write_lock_before_reading_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    migration_directory = tmp_path / "migrations"
+    migration_directory.mkdir()
+    (migration_directory / "002_marker.sql").write_text(
+        "CREATE TABLE marker (id INTEGER);",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(database_module, "_MIGRATION_DIRECTORY", migration_directory)
+    connection = _RecordingConnection(user_version=1)
+
+    await database_module._apply_migrations(connection)  # type: ignore[arg-type]
+
+    assert connection.statements[:2] == ["BEGIN IMMEDIATE", "PRAGMA user_version"]
+    assert connection.statements[-2:] == ["PRAGMA user_version = 2", "COMMIT"]
+
+
+def test_migration_files_do_not_manage_transactions_or_user_version() -> None:
+    migration_directory = (
+        Path(__file__).parents[2]
+        / "src"
+        / "coding_agent_harness"
+        / "storage"
+        / "migrations"
+    )
+
+    for migration in migration_directory.glob("[0-9][0-9][0-9]_*.sql"):
+        sql = migration.read_text(encoding="utf-8").upper()
+        assert "BEGIN" not in sql
+        assert "COMMIT" not in sql
+        assert "PRAGMA USER_VERSION" not in sql
+
+
+async def test_fresh_database_runs_all_migrations_and_adds_task_config_version(
+    tmp_path: Path,
+) -> None:
+    database = await Database.open(tmp_path / "fresh.sqlite3")
+    try:
+        version = await (
+            await database.connection.execute("PRAGMA user_version")
+        ).fetchone()
+        columns = await (
+            await database.connection.execute("PRAGMA table_info(tasks)")
+        ).fetchall()
+
+        assert version == (2,)
+        config_column = next(row for row in columns if row[1] == "config_version")
+        assert config_column[2:5] == ("TEXT", 1, "'v1'")
+    finally:
+        await database.close()
 
 
 async def test_database_migrates_v1_legacy_approval_and_reopen_is_idempotent(
