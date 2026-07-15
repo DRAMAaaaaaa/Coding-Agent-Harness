@@ -227,6 +227,7 @@ flowchart LR
 | Plan | 版本、内容、状态、批准时间；旧审批随新版本失效 |
 | Action | 类型、参数摘要、风险、幂等键、状态 |
 | Approval | 目标、原因、决定、操作者、事件版本、过期时间 |
+| HostTransfer | 方向、外部路径、worktree 内路径、源/目标文件身份、审批 ID、幂等键、状态、结果摘要；状态只允许 `WAITING_APPROVAL`、`EXECUTING`、`COMPLETED`、`FAILED`、`UNCERTAIN` |
 | ToolExecution | 工具、脱敏输入摘要、状态、耗时、截断输出、错误类 |
 | VerificationRun | 检查类型、命令、失败数、指纹、进展 |
 | Artifact | 类型、路径、关联事件版本；不复制完整源码 |

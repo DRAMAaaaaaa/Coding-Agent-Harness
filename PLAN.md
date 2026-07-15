@@ -92,7 +92,7 @@ src/coding_agent_harness/
   domain/{actions,events,models}.py # 共享枚举与不可变协议模型
   providers/{base,mock,openai_compatible}.py
   storage/{database,event_store,repositories}.py
-  storage/migrations/001_initial.sql
+  storage/migrations/{001_initial,002_governance_approvals,003_host_transfers}.sql
   governance/{paths,redaction,policy,approvals}.py
   workspace/{detector,scanner,worktrees}.py
   tools/{base,registry,files,patch,shell,git}.py
@@ -101,8 +101,8 @@ src/coding_agent_harness/
   agent/{parser,state_machine,orchestrator}.py
   credentials/{base,keyring_store,encrypted_store,service}.py
   artifacts/builder.py
-  api/{app,dependencies}.py
-  api/routes/{workspaces,tasks,approvals,settings,events}.py
+  api/{app,dependencies,transfers}.py
+  api/routes/{workspaces,tasks,approvals,transfers,settings,events}.py
   demo.py
 web/src/
   api/{client,events,types}.ts
@@ -574,16 +574,43 @@ class PolicyEngine:
 class ApprovalManager:
     def __init__(self, database: Database, clock: Callable[[], datetime], uuid_factory: Callable[[], UUID]) -> None: ...
     async def request(self, task_id: UUID, reason_code: str, context: ApprovalContext, expires_at: datetime) -> ApprovalRecord: ...
+    async def request_and_apply(
+        self,
+        task_id: UUID,
+        reason_code: str,
+        context: ApprovalContext,
+        expires_at: datetime,
+        apply: Callable[[aiosqlite.Connection, ApprovalRecord], Awaitable[None]],
+    ) -> ApprovalRecord: ...
     async def decide(self, approval_id: UUID, decision: ApprovalDecision, actor: str, context: ApprovalContext) -> ApprovalRecord: ...
     async def consume(self, approval_id: UUID, context: ApprovalContext) -> ApprovalRecord: ...
+    async def consume_and_apply(
+        self,
+        approval_id: UUID,
+        context: ApprovalContext,
+        apply: Callable[[aiosqlite.Connection, datetime], Awaitable[None]],
+    ) -> ApprovalRecord: ...
 
 
 class Database:
     @property
     def operation_lock(self) -> asyncio.Lock: ...
+
+
+@dataclass(frozen=True)
+class Migration:
+    version: int
+    sql: str
+
+
+def _split_migration_statements(sql: str) -> tuple[str, ...]: ...
+async def _apply_one_migration_locked(connection: aiosqlite.Connection, migration: Migration) -> bool: ...
+async def _apply_migrations(connection: aiosqlite.Connection) -> None: ...
 ```
 
-Task 3 只交付最小 `approvals` 表，没有审批仓储和版本化上下文字段。Task 4 必须通过 `002_governance_approvals.sql` 升级既有表，并把持久仓储封装在 `governance/approvals.py`；不得用进程内状态替代 SQLite 审批。`001_initial.sql` 保持内容不变且不自行写版本；所有迁移 SQL 都不得包含 `BEGIN`、`COMMIT` 或 `PRAGMA user_version`。协调器按三位文件名前缀排序，对每个下一版本执行：`BEGIN IMMEDIATE` → 在锁内读取 `user_version` → 若仍需升级则用 `sqlite3.complete_statement` 切分并逐条执行该 SQL → 设置对应 `user_version` → `COMMIT`；异常必须 `ROLLBACK`。fresh v0 必须依次执行 001、002，legacy v1 只执行 002，v2 重开不执行 DDL，未来版本固定拒绝。
+Task 3 只交付最小 `approvals` 表，没有审批仓储和版本化上下文字段。Task 4 必须通过 `002_governance_approvals.sql` 升级既有表、为 `tasks` 增加 `config_version TEXT NOT NULL DEFAULT 'v1'`，并把持久仓储封装在 `governance/approvals.py`；不得用进程内状态替代 SQLite 审批。`001_initial.sql` 保持内容不变且不自行写版本；所有迁移 SQL 都不得包含 `BEGIN`、`COMMIT` 或 `PRAGMA user_version`。协调器按三位文件名前缀排序，对每个下一版本执行：`BEGIN IMMEDIATE` → 在锁内读取 `user_version` → 若仍需升级则用 `sqlite3.complete_statement` 切分并逐条执行该 SQL → 设置对应 `user_version` → `COMMIT`；异常必须 `ROLLBACK`。fresh v0 必须依次执行 001、002，legacy v1 只执行 002，v2 重开不执行 DDL，未来版本固定拒绝。
+
+`Database.operation_lock` 只串行同一个 Python `Database` 实例；跨实例互斥由 SQLite `BEGIN IMMEDIATE` 提供。每个连接固定 `busy_timeout=5000ms`；超时只返回固定 `MigrationBusyError("数据库迁移正忙")`，不得重试 DDL 或泄漏 SQL。002 对 legacy 审批的回填固定为：`action_id="legacy:<id>"`、`reason_code="LEGACY_APPROVAL"`、`event_sequence=0`、`task_state="CANCELLED"`、`config_version="legacy-v1"`、`decision="DENIED"`、`decided_by="migration"`、1970 UTC 过期且 `consumed_at` 非空；原 ID、task ID 和 created_at 保留。
 
 **状态：** 暂停返工。已有 RED `5a2b8cb`、实现 `c14d50d`、首轮修复 `269c1ae`；第二轮复审仍发现策略与迁移并发缺口。2026-07-15 用户重新批准 `SPEC.md`，当前等待新冷启动门禁通过后继续纠正性 TDD。
 
@@ -725,13 +752,42 @@ def test_command_names_in_plain_arguments_are_not_executed(policy) -> None:
 def test_safe_commands_remain_allowed(policy, argv) -> None:
     result = policy.evaluate(make_action("shell", {"argv": argv}), trusted_context())
     assert result.decision is PolicyDecision.ALLOW
+
+
+@pytest.mark.parametrize(("tool", "arguments"), [
+    ("read_file", {"path": "../secret"}),
+    ("search", {"path": "../outside", "query": "x"}),
+    ("apply_patch", {"patch": "*** Delete File: ../outside.txt"}),
+    ("delete_path", {"path": "../outside.txt"}),
+    ("shell", {"argv": ["rm", "../outside.txt"]}),
+])
+def test_every_real_tool_denies_path_escape_before_risk_approval(policy, tool, arguments) -> None:
+    result = policy.evaluate(make_action(tool, arguments), trusted_context())
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "PATH_ESCAPE"
 ```
 
-策略解析只识别真实命令位置，不得扫描任意后续参数。可执行文件先取 basename、`casefold()`，再剥离 `.exe/.cmd/.bat/.com/.ps1`；允许包装器固定为 `sudo`（跳过其已知选项）、`env`（跳过选项与 `NAME=VALUE`）、`command`、`nohup`、`corepack`，以及 `python|python3|py -m`。包管理器语法至少覆盖 `npm/pnpm install|i|add|ci`、裸 `yarn`、`yarn install|add`、`pip/pip3 install`、`uv pip install|sync|add`、`python|py -m pip|uv ...` 与 `poetry install|add`；安全反例 `git status`、`pip list`、`docker images`、`npm test`、`python -m pytest`、`echo npm install` 必须保持允许。Shell 解释器覆盖 `bash/sh/zsh/cmd/powershell/pwsh` 与 Windows 启动器，跳过已知全局选项后识别 `-c`、`/c`、`-Command`、`-EncodedCommand`/`-Enc`；无法可靠解析的代码执行形态保守要求审批。
+路径规则优先级固定为：参数结构错误 `DENY/INVALID_ACTION` → 普通工具任何路径逃逸 `DENY/PATH_ESCAPE` → worktree 内删除等危险动作 `REQUIRE_APPROVAL` → 其余规则。实际路径 schema 固定为：`read_file.path`、`search.path`、`delete_path.path`；`apply_patch.patch` 必须解析每个 `Add/Update/Delete/Move` 文件头并逐一围栏；`shell.cwd` 必须等于 worktree，argv 中明确的绝对路径、盘符/UNC 路径或 `..` 路径 token 也逐一围栏，URL 与已识别命令选项不当作路径；`git_status/git_diff/checkpoint` 不接受调用方路径字段，额外字段固定拒绝。
+
+策略解析只识别真实命令位置，不得扫描任意后续参数。可执行文件先取 basename、`casefold()`，再剥离 `.exe/.cmd/.bat/.com/.ps1`；包装器最多嵌套 4 层，超过上限固定 `REQUIRE_APPROVAL/HIGH_RISK_SHELL`。语法表固定为：`sudo` 无值选项 `-E/-H/-K/-k/-n/-S/-V/-v`，带值选项 `-u/--user/-g/--group/-h/--host/-p/--prompt/-C/--chdir/-R/--chroot/-T/--command-timeout`；`env` 无值选项 `-i/--ignore-environment/-0/--null`，带值选项 `-u/--unset/-C/--chdir/-S/--split-string`，并跳过 `NAME=VALUE`；`command` 只允许 `-p` 后继续解析，`-v/-V` 作为只读命令直接结束；`nohup` 无包装器选项；`corepack` 只继续解析 `npm/pnpm/yarn`；`python/python3/py` 允许无值选项 `-B/-E/-I/-O/-OO/-P/-q/-s/-S/-u/-v/-V/-x` 与带值选项 `-W/-X`，随后必须出现 `-m` 才作为模块命令。各包装器支持 `--` 结束自身选项；已识别包装器出现未知选项、缺失选项值或不完整嵌套时保守要求审批，不猜测后续 token。
+
+包管理器语法至少覆盖 `npm/pnpm install|i|add|ci`、裸 `yarn`、`yarn install|add`、`pip/pip3 install`、`uv pip install|sync|add`、`python|py -m pip|uv ...` 与 `poetry install|add`；安全反例 `git status`、`pip list`、`docker images`、`npm test`、`python -m pytest`、`echo npm install` 必须保持允许。Shell 解释器覆盖 `bash/sh/zsh/cmd/powershell/pwsh` 与 Windows 启动器，识别 `-c`、`/c`、`-Command`、`-EncodedCommand`/`-Enc`；解释器出现未知选项或无法可靠解析的代码执行形态保守要求审批。
 
 迁移测试分两层且都不得使用 `sleep`：第一层给迁移协调器注入记录 SQL 调用次序的连接替身，确定性断言每次迁移必须先成功执行 `BEGIN IMMEDIATE`、后读取 `PRAGMA user_version`，旧实现因先读版本而稳定失败；第二层先构造 `user_version=1` 且含 UUID legacy 审批的数据库，使用 `asyncio.gather(Database.open(path), Database.open(path))` 同时打开作集成回归。两个连接最终都必须看到 `user_version=2`，legacy 行只能迁移一次且仍为拒绝、已消费、已过期，业务表集合不增加。另测 fresh v0 依次 001→002、v2 重开幂等和未来版本拒绝。
 
-审批并发测试使用两个真实连接和 `asyncio.gather`，同一已批准记录只能有一个 `consume` 成功；消费更新必须在 `operation_lock + BEGIN IMMEDIATE` 内使用带 `decision='APPROVED' AND consumed_at IS NULL` 及完整上下文条件的单条 `UPDATE`，按受影响行数把失败稳定映射为过期、拒绝、上下文变化或 `REPLAYED`，不得先无条件读取后覆盖。
+```python
+async def test_migration_acquires_write_lock_before_reading_version() -> None:
+    connection = RecordingConnection(user_version=1)
+    applied = await _apply_one_migration_locked(
+        connection,
+        Migration(version=2, sql="CREATE TABLE marker (id INTEGER);"),
+    )
+    assert applied is True
+    assert connection.statements[:2] == ["BEGIN IMMEDIATE", "PRAGMA user_version"]
+    assert connection.statements[-2:] == ["PRAGMA user_version = 2", "COMMIT"]
+```
+
+审批并发测试使用两个真实连接和 `asyncio.gather`，同一已批准记录只能有一个 `consume` 成功。`request/request_and_apply/decide/consume/consume_and_apply` 均在 `operation_lock + BEGIN IMMEDIATE` 内读取 `tasks.state/config_version` 和 `MAX(task_events.sequence)` 作为权威状态，调用方 `ApprovalContext` 只用于精确匹配，不能覆盖数据库事实。`request_and_apply` 只允许回调在同一事务插入与审批绑定的数据库记录；`decide` 使用 `decision='PENDING'` 条件更新并测试两名决策者只有一个成功；消费使用带 `decision='APPROVED' AND consumed_at IS NULL AND expires_at > now` 及完整上下文条件的单条 `UPDATE`。`consume_and_apply` 只允许回调在同一事务写数据库绑定状态，不允许回调执行文件、网络或进程副作用；Task 11 用前者原子创建 transfer+approval，用后者把审批消费与 transfer 变为 `EXECUTING` 原子绑定。受影响行数为零时在同一事务重读并稳定映射为过期、拒绝、权威状态变化或 `REPLAYED`。
 
 宿主导入/导出审批使用内部动作名 `host_import`/`host_export`，`normalized_scope` 必须包含脱敏后的规范化源、目标和方向；这些动作不进入 LLM 工具 schema。普通 `read_file`、`apply_patch`、`shell` 等工具即使携带该审批 ID，也不得访问外部路径。修复后运行：
 
@@ -1172,6 +1228,7 @@ git commit -m "安全：实现凭据完整生命周期（凭据子智能体）"
 **文件：**
 
 - 新建：`src/coding_agent_harness/artifacts/builder.py`
+- 新建：`src/coding_agent_harness/storage/migrations/003_host_transfers.sql`
 - 新建：`src/coding_agent_harness/api/app.py`、`dependencies.py`、`transfers.py`
 - 新建：`src/coding_agent_harness/api/routes/workspaces.py`、`tasks.py`、`approvals.py`、`transfers.py`、`settings.py`、`events.py`
 - 新建：`tests/api/test_workspaces.py`、`test_tasks.py`、`test_approvals.py`、`test_transfers.py`、`test_events.py`、`test_security.py`
@@ -1181,6 +1238,57 @@ git commit -m "安全：实现凭据完整生命周期（凭据子智能体）"
 
 - 产出：`create_app(container) -> FastAPI`；`POST /api/workspaces`、`POST /api/tasks`、`POST /api/tasks/{id}/plan-decision`、`POST /api/approvals/{id}/decision`、`POST /api/transfers`、`POST /api/transfers/{id}/execute`、`POST /api/tasks/{id}/{pause|resume|cancel|finalize}`、`GET /api/tasks/{id}`、`GET /api/tasks/{id}/events`、`GET/PUT/DELETE /api/settings/credentials/{provider}`、`GET /health`。
 - 消费：Tasks 4、5、9、10 服务接口。`POST /api/transfers` 只能由已认证用户创建 `host_import` 或 `host_export` 内部动作并返回审批；`execute` 必须消费精确一次性审批后由宿主复制，不能调用普通 Agent 文件或 Shell 工具。import 的目标和 export 的源必须通过 `PathGuard` 位于 worktree；外部端在审批前规范化并展示，执行时重新校验文件身份与目标，状态或文件变化使审批失效。
+
+```python
+class TransferDirection(StrEnum):
+    IMPORT = "IMPORT"
+    EXPORT = "EXPORT"
+
+
+class TransferState(StrEnum):
+    WAITING_APPROVAL = "WAITING_APPROVAL"
+    EXECUTING = "EXECUTING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    UNCERTAIN = "UNCERTAIN"
+
+
+class PathIdentity(BaseModel):
+    resolved_path: str
+    device: int
+    inode: int
+
+
+class FileIdentity(PathIdentity):
+    size: int
+    mtime_ns: int
+    sha256: str
+
+
+class TransferRecord(BaseModel):
+    id: UUID
+    task_id: UUID
+    approval_id: UUID
+    direction: TransferDirection
+    external_path: str
+    workspace_path: str
+    source_identity: FileIdentity
+    target_parent_identity: PathIdentity
+    expected_target_sha256: str | None
+    idempotency_key: str
+    event_sequence: int
+    config_version: str
+    state: TransferState
+    result_sha256: str | None
+
+
+class HostTransferService:
+    async def request(self, task_id: UUID, direction: TransferDirection, source: str, target: str) -> TransferRecord: ...
+    async def execute(self, transfer_id: UUID, approval_context: ApprovalContext) -> TransferRecord: ...
+    async def recover(self, transfer_id: UUID) -> TransferRecord: ...
+```
+
+路由 `{id}` 始终是 `transfer_id`，不是 `approval_id`；响应同时返回两个 ID。`003_host_transfers.sql` 创建 `host_transfers` 表，保存以上字段并对 `approval_id`、`idempotency_key` 建唯一约束；路径与文件身份是执行数据，不能从脱敏展示 scope 反向解析。`Approval.normalized_scope` 只用于精确绑定和展示，其确定性 JSON 含 direction、两端规范化路径、source identity、target parent identity、expected target digest、transfer ID。`HostTransferService.request` 必须通过 `ApprovalManager.request_and_apply` 在同一事务创建 approval 与 transfer，禁止留下无 transfer 的可执行审批；审批拒绝或过期后 transfer 固定转为 `FAILED`。
 
 - [ ] **步骤 1：写未授权、过期审批和 SSE 续传失败测试**
 
@@ -1206,8 +1314,33 @@ def test_external_transfer_requires_exact_one_time_approval(client, token, works
         json={"workspace_id": workspace.id, "direction": "import", "source": "C:/input/a.py", "target": "src/a.py"},
     )
     assert requested.status_code == 202
-    approval_id = requested.json()["approval_id"]
-    assert client.post(f"/api/transfers/{approval_id}/execute", headers={"X-Harness-Session": token}).status_code == 409
+    transfer_id = requested.json()["transfer_id"]
+    assert requested.json()["approval_id"]
+    assert client.post(f"/api/transfers/{transfer_id}/execute", headers={"X-Harness-Session": token}).status_code == 409
+
+
+def test_approved_transfer_executes_once(client, token, approved_transfer) -> None:
+    first = client.post(
+        f"/api/transfers/{approved_transfer.id}/execute",
+        headers={"X-Harness-Session": token},
+    )
+    second = client.post(
+        f"/api/transfers/{approved_transfer.id}/execute",
+        headers={"X-Harness-Session": token},
+    )
+    assert first.status_code == 200
+    assert second.status_code == 409
+
+
+@pytest.mark.parametrize("changed", ["source", "target", "symlink"])
+def test_transfer_rejects_file_identity_change(client, token, approved_transfer, changed) -> None:
+    approved_transfer.mutate(changed)
+    response = client.post(
+        f"/api/transfers/{approved_transfer.id}/execute",
+        headers={"X-Harness-Session": token},
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "STALE_TRANSFER"
 ```
 
 - [ ] **步骤 2：确认红色结果**
@@ -1218,7 +1351,11 @@ def test_external_transfer_requires_exact_one_time_approval(client, token, works
 
 - [ ] **步骤 3：实现命令路由与安全中间件**
 
-启动生成随机会话令牌，只通过启动终端和首屏注入提供；所有 mutation 校验同源 Origin 与 `X-Harness-Session`。服务默认绑定 `127.0.0.1`；公网 demo 使用独立只读/受限配置。错误响应为 `{code, message, details, event_id}` 且先脱敏。`transfers.py` 只接受 `import|export`、单个文件和精确源/目标；创建请求只生成审批，不复制。执行端重新校验任务状态、事件版本、文件身份和 worktree 内端，原子消费审批后只复制一次；目录递归、通配符、设备路径、公网 demo 和 Agent 自发请求固定拒绝。
+启动生成随机会话令牌，只通过启动终端和首屏注入提供；所有 mutation 校验同源 Origin 与 `X-Harness-Session`。服务默认绑定 `127.0.0.1`；公网 demo 使用独立只读/受限配置。错误响应为 `{code, message, details, event_id}` 且先脱敏。`transfers.py` 只接受 `import|export`、单个普通文件和精确源/目标；创建请求计算并持久化源身份、目标现有摘要和幂等键，只生成审批，不复制。目录递归、通配符、设备路径、公网 demo 和 Agent 自发请求固定拒绝。
+
+执行状态机固定为：`WAITING_APPROVAL` → 在消费审批前首次校验两端解析路径、源身份、目标父目录身份和预期目标摘要 → 使用 `ApprovalManager.consume_and_apply` 在同一 SQLite 事务原子消费审批并把 transfer 改为 `EXECUTING` → 副作用前再次执行相同校验 → 在目标同目录写唯一临时文件、flush、`fsync`，第三次校验后用原子替换落盘 → 新事务记录 `COMPLETED/result_sha256`。首次校验失败不消费审批并返回 `STALE_TRANSFER`；进入 `EXECUTING` 后校验失败记录 `FAILED`。进入 `EXECUTING` 后若进程中断、临时文件残留、目标已替换但完成事件未落盘或结果无法确认，恢复时一律变为 `UNCERTAIN`、清理可确认未发布的临时文件且绝不自动重试，等待用户检查并创建新 transfer。import 的目标和 export 的源必须通过 `PathGuard` 位于 worktree；外部端及其既有父目录的解析身份在批准与执行时一致。覆盖已有目标必须把其批准时 SHA-256 纳入审批；目标从不存在变为存在同样固定 `STALE_TRANSFER`。
+
+故障注入测试必须覆盖：原子绑定前失败仍可重新执行；绑定后、原子替换前崩溃恢复为 `UNCERTAIN` 且不复制；替换后、`COMPLETED` 落盘前崩溃恢复为 `UNCERTAIN` 且目标只变化一次；重启不得重放；普通工具携带 transfer 或 approval ID 仍不能越界。所有注入使用事件/Stub，不使用 `sleep`。
 
 - [ ] **步骤 4：实现 SSE 与 ArtifactBuilder**
 
