@@ -37,7 +37,6 @@ _PATCH_HEADER_LIKE = re.compile(
     re.MULTILINE,
 )
 _MAX_WRAPPER_DEPTH = 4
-_KNOWN_SLASH_OPTIONS = frozenset({"/c", "/d", "/s"})
 _PACKAGE_NO_VALUE_OPTIONS = {
     "npm": frozenset({"--silent"}),
     "pnpm": frozenset({"--silent"}),
@@ -258,14 +257,15 @@ class PolicyEngine:
                 escaped = True
         return _ParsedAction(argv=argv, paths=paths, escaped=escaped)
 
-    @staticmethod
-    def _path_tokens(argv: Sequence[str]) -> tuple[str, ...]:
+    @classmethod
+    def _path_tokens(cls, argv: Sequence[str]) -> tuple[str, ...]:
         paths: list[str] = []
-        for token in argv[1:]:
+        cmd_option_indexes = cls._cmd_slash_option_indexes(tuple(argv))
+        for index, token in enumerate(argv[1:], start=1):
             if (
-                PolicyEngine._is_url(token)
+                cls._is_url(token)
                 or token.startswith("-")
-                or token.casefold() in _KNOWN_SLASH_OPTIONS
+                or index in cmd_option_indexes
             ):
                 continue
             windows = PureWindowsPath(token)
@@ -277,6 +277,25 @@ class PolicyEngine:
             ):
                 paths.append(token)
         return tuple(paths)
+
+    @classmethod
+    def _cmd_slash_option_indexes(cls, argv: tuple[str, ...]) -> frozenset[int]:
+        command = cls._unwrap_command(argv)
+        if not command.argv or cls._executable(command.argv[0]) != "cmd":
+            return frozenset()
+        offset = len(argv) - len(command.argv)
+        if offset < 0 or argv[offset:] != command.argv:
+            return frozenset()
+        indexes: set[int] = set()
+        for index, token in enumerate(command.argv[1:], start=1):
+            normalized = token.casefold()
+            if normalized in {"/d", "/s"}:
+                indexes.add(offset + index)
+                continue
+            if normalized == "/c":
+                indexes.add(offset + index)
+            break
+        return frozenset(indexes)
 
     @staticmethod
     def _is_url(token: str) -> bool:

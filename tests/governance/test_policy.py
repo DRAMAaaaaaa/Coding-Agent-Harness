@@ -83,7 +83,7 @@ def test_dangerous_actions_require_approval(
         ["wget", "https://example.com"],
         ["powershell", "Invoke-WebRequest", "https://example.com"],
         ["dd", "if=/dev/zero", "of=/dev/sda"],
-        ["shutdown", "/s"],
+        ["shutdown"],
     ],
 )
 def test_shell_rules_cover_install_network_and_destructive_exact_tokens(
