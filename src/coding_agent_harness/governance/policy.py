@@ -28,11 +28,57 @@ _DESTRUCTIVE_COMMANDS = frozenset(
 )
 _SHELL_INTERPRETERS = frozenset({"bash", "sh", "zsh", "cmd", "powershell", "pwsh"})
 _PATCH_HEADER = re.compile(
-    r"^\*\*\* (?:Add|Update|Delete|Move to) File: (?P<path>.+)$",
+    r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (?P<path>.+)$",
+    re.MULTILINE,
+)
+_PATCH_HEADER_LIKE = re.compile(
+    r"^\*\*\* (?:Add|Update|Delete|Move)\b",
     re.MULTILINE,
 )
 _MAX_WRAPPER_DEPTH = 4
 _KNOWN_SLASH_OPTIONS = frozenset({"/c", "/d", "/s"})
+_PACKAGE_NO_VALUE_OPTIONS = {
+    "npm": frozenset({"--silent"}),
+    "pnpm": frozenset({"--silent"}),
+    "yarn": frozenset({"--silent"}),
+    "pip": frozenset({"--disable-pip-version-check", "--isolated", "--no-input"}),
+    "pip3": frozenset({"--disable-pip-version-check", "--isolated", "--no-input"}),
+    "uv": frozenset({"--offline", "--no-cache"}),
+    "poetry": frozenset({"--no-ansi", "--no-interaction"}),
+}
+_PACKAGE_VALUE_OPTIONS = {
+    "npm": frozenset({"--prefix", "--workspace"}),
+    "pnpm": frozenset({"--dir", "--filter", "--workspace-dir"}),
+    "yarn": frozenset({"--cwd"}),
+    "pip": frozenset(
+        {
+            "--proxy",
+            "--index-url",
+            "--extra-index-url",
+            "--trusted-host",
+            "--cert",
+            "--client-cert",
+            "--timeout",
+            "--retries",
+            "--cache-dir",
+        }
+    ),
+    "pip3": frozenset(
+        {
+            "--proxy",
+            "--index-url",
+            "--extra-index-url",
+            "--trusted-host",
+            "--cert",
+            "--client-cert",
+            "--timeout",
+            "--retries",
+            "--cache-dir",
+        }
+    ),
+    "uv": frozenset({"--project", "--directory", "--config-file"}),
+    "poetry": frozenset({"--directory", "--project", "-C", "-P"}),
+}
 
 
 class PolicyDecision(StrEnum):
@@ -147,7 +193,10 @@ class PolicyEngine:
             patch = arguments.get("patch")
             if not isinstance(patch, str):
                 return None
-            candidates.extend(("patch", match.group("path")) for match in _PATCH_HEADER.finditer(patch))
+            matches = tuple(_PATCH_HEADER.finditer(patch))
+            if not matches or len(matches) != len(tuple(_PATCH_HEADER_LIKE.finditer(patch))):
+                return None
+            candidates.extend(("patch", match.group("path")) for match in matches)
         elif tool == "shell":
             raw_argv = arguments.get("argv")
             if not isinstance(raw_argv, list) or not raw_argv or not all(
@@ -330,9 +379,9 @@ class PolicyEngine:
                     assignments=True,
                 )
             elif command == "command":
-                if any(token in {"-v", "-V"} for token in current[1:]):
+                current, read_only = cls._unwrap_command_builtin(current)
+                if read_only:
                     return _Command(())
-                current = cls._unwrap_options(current, no_value={"-p"}, with_value=set())
             elif command == "nohup":
                 current = cls._unwrap_options(current, no_value=set(), with_value=set())
             elif command == "corepack":
@@ -346,6 +395,26 @@ class PolicyEngine:
             if current is None:
                 return _Command((), high_risk=True)
         return _Command(current or (), high_risk=True)
+
+    @staticmethod
+    def _unwrap_command_builtin(
+        argv: tuple[str, ...],
+    ) -> tuple[tuple[str, ...] | None, bool]:
+        index = 1
+        while index < len(argv):
+            token = argv[index]
+            if token == "-p":
+                index += 1
+                continue
+            if token in {"-v", "-V"}:
+                return None, True
+            if token == "--":
+                index += 1
+                break
+            if token.startswith("-"):
+                return None, False
+            break
+        return (argv[index:] or None), False
 
     @classmethod
     def _unwrap_options(
@@ -410,7 +479,9 @@ class PolicyEngine:
         if not argv:
             return False
         command = cls._executable(argv[0])
-        operation = cls._operation(argv, command)
+        operation, remaining, reliable = cls._package_operation(argv, command)
+        if not reliable:
+            return command in _PACKAGE_NO_VALUE_OPTIONS
         if command in {"npm", "pnpm"}:
             return operation in {"install", "i", "add", "ci"}
         if command == "yarn":
@@ -421,10 +492,49 @@ class PolicyEngine:
             if operation in {"sync", "add"}:
                 return True
             if operation == "pip":
-                return cls._first_operation(argv[2:]) == "install"
+                nested = ("pip", *remaining)
+                nested_operation, _, nested_reliable = cls._package_operation(
+                    nested, "pip"
+                )
+                return not nested_reliable or nested_operation == "install"
         if command == "poetry":
             return operation in {"install", "add"}
         return False
+
+    @classmethod
+    def _package_operation(
+        cls,
+        argv: tuple[str, ...],
+        command: str,
+    ) -> tuple[str, tuple[str, ...], bool]:
+        if command not in _PACKAGE_NO_VALUE_OPTIONS:
+            return "", (), True
+        index = 1
+        no_value = _PACKAGE_NO_VALUE_OPTIONS[command]
+        with_value = _PACKAGE_VALUE_OPTIONS[command]
+        while index < len(argv):
+            token = argv[index]
+            if token == "--":
+                index += 1
+                break
+            if token in no_value:
+                index += 1
+                continue
+            option = token.split("=", 1)[0]
+            if option in with_value:
+                if "=" in token:
+                    index += 1
+                    continue
+                if index + 1 >= len(argv):
+                    return "", (), False
+                index += 2
+                continue
+            if token.startswith("-"):
+                return "", (), False
+            break
+        if index >= len(argv):
+            return "", (), True
+        return argv[index].casefold(), argv[index + 1 :], True
 
     @classmethod
     def _is_network(cls, argv: tuple[str, ...]) -> bool:
