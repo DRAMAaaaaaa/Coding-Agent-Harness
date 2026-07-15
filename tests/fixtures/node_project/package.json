@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "test": "vitest run",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  }
+}

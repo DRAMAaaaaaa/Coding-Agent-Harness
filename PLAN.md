@@ -877,21 +877,23 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 
 **目标：** 安全接入本地 Git 项目，识别 Python/Node.js 验证命令，并隔离任务修改。
 
+**状态：** 实现与实现者新鲜验证完成，待独立规约符合性审查和代码质量审查（2026-07-16；Workspace 归属纠偏已获用户批准；当前无延期）。
+
 **文件：**
 
-- 新建：`src/coding_agent_harness/workspace/detector.py`、`scanner.py`、`worktrees.py`
+- 新建：`src/coding_agent_harness/workspace/models.py`、`detector.py`、`scanner.py`、`worktrees.py`
 - 新建：`tests/workspace/test_detector.py`、`test_scanner.py`、`test_worktrees.py`
 - 新建：`tests/fixtures/python_project/pyproject.toml`、`tests/fixtures/python_project/src/sample.py`、`tests/fixtures/python_project/tests/test_sample.py`
 - 新建：`tests/fixtures/node_project/package.json`、`tests/fixtures/node_project/src/math.ts`、`tests/fixtures/node_project/tests/math.test.ts`
 
 **接口：**
 
-- 产出：`ProjectDetector.detect(root) -> ProjectProfile`、`WorkspaceScanner.scan(root) -> RepositoryMap`、`WorktreeManager.create(task_id, base_commit) -> WorktreeInfo`。
-- 消费：Task 2 `Workspace`、Task 4 `PathGuard`。
+- 产出：最小严格类型化 `Workspace`、`ProjectProfile`、`RepositoryMap`、`WorktreeInfo`，以及 `ProjectDetector.detect(root) -> ProjectProfile`、`WorkspaceScanner.scan(root) -> RepositoryMap`、`WorktreeManager.create(task_id, base_commit) -> WorktreeInfo`。
+- 消费：Task 4 `PathGuard`。Task 5 不消费不存在的 Task 2 `Workspace`；本 Task 产出的 `Workspace` 先作为运行期模型，Task 11 的 003 迁移再补齐其持久化字段、仓储和 `host_transfers`，本 Task 不修改 001/002 或新增迁移。
 
 步骤 1—3 的 detector/scanner 只读部分不消费 `PathGuard`，可与 Task 4 并行；步骤 4 的 `WorktreeManager` 必须等待 Task 4 的 `PathGuard` 契约通过复审并合并，禁止在并行分支复制或猜测路径围栏实现。
 
-- [ ] **步骤 1：写 Python/Node 识别与文件上限失败测试**
+- [x] **步骤 1：写 Python/Node 识别与文件上限失败测试**
 
 ```python
 def test_detects_python_and_node_commands(tmp_git_repo) -> None:
@@ -908,27 +910,27 @@ def test_scanner_rejects_more_than_10000_tracked_files(fake_git) -> None:
         WorkspaceScanner(fake_git).scan(Path("repo"))
 ```
 
-- [ ] **步骤 2：确认红色结果**
+- [x] **步骤 2：确认红色结果**
 
 运行：`python -m pytest tests/workspace -v`
 
 预期：导入失败，workspace 模块不存在。
 
-- [ ] **步骤 3：实现只读扫描与命令识别**
+- [x] **步骤 3：实现只读扫描与命令识别**
 
 仅通过参数数组调用 `git -C <root> ls-files -z`、`git log -n 20` 和 `git status --porcelain=v1`；忽略依赖/构建目录；README/AGENTS/配置读取均受大小限制。自定义 `.harness.yml` schema 只允许 `test`、`lint`、`typecheck`、`build` 的 argv 数组、timeout 与 env allowlist，首次执行进入信任审批。
 
-- [ ] **步骤 4：实现 worktree 隔离**
+- [x] **步骤 4：实现 worktree 隔离**
 
 分支名固定为 `harness/task-<uuid前8位>`；worktree 放在 Harness 状态目录而不是项目目录内；创建前拒绝非 Git、基准提交不存在和同 Workspace 已有写任务。不得清理或覆盖主工作区脏改动。
 
-- [ ] **步骤 5：转绿、性能与双平台边界检查**
+- [x] **步骤 5：转绿、性能与双平台边界检查**
 
 运行：`python -m pytest tests/workspace -v`
 
 预期：识别、限制、脏主工作区保护、worktree 创建/释放和 Windows 空格路径测试通过；10,000 文件合成扫描基准低于 5 秒（CI 慢机只记录，不作硬失败；本机验收硬目标 5 秒）。
 
-- [ ] **步骤 6：评审与提交**
+- [ ] **步骤 6：评审与提交（实现者自审及新鲜验证已完成；待独立双重评审）**
 
 规约符合性审查确认 Python/Node 默认识别、自定义命令信任、10,000 文件边界和主工作区保护；代码质量审查确认 Git 参数数组、临时目录清理与跨平台路径测试。
 

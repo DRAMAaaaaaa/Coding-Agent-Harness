@@ -1,0 +1,156 @@
+from collections.abc import Callable, Sequence
+from pathlib import Path
+import subprocess
+from time import perf_counter
+
+import pytest
+
+from coding_agent_harness.workspace.scanner import (
+    CommandResult,
+    RepositoryScanError,
+    WorkspaceLimitError,
+    WorkspaceScanner,
+)
+
+
+class RecordingGitRunner:
+    def __init__(self, tracked_files: Sequence[str]) -> None:
+        self.tracked_files = tracked_files
+        self.calls: list[list[str]] = []
+
+    def run(self, argv: Sequence[str]) -> CommandResult:
+        self.calls.append(list(argv))
+        operation = argv[3]
+        if operation == "ls-files":
+            stdout = "\0".join(self.tracked_files)
+            if self.tracked_files:
+                stdout += "\0"
+            return CommandResult(returncode=0, stdout=stdout.encode(), stderr=b"")
+        if operation == "log":
+            return CommandResult(returncode=0, stdout=b"", stderr=b"")
+        if operation == "status":
+            return CommandResult(returncode=0, stdout=b"", stderr=b"")
+        raise AssertionError(f"unexpected git operation: {operation}")
+
+
+def mark_git_root(root: Path) -> None:
+    (root / ".git").write_text("gitdir: synthetic\n", encoding="utf-8")
+
+
+def test_scans_real_git_repository_and_preserves_dirty_main_workspace(
+    git_repository_factory: Callable[[str, dict[str, str]], Path],
+) -> None:
+    root = git_repository_factory(
+        "repository with spaces",
+        {
+            "README.md": "# Example\n",
+            "AGENTS.md": "Only deterministic changes.\n",
+            "pyproject.toml": "[tool.pytest.ini_options]\n",
+            "src/sample.py": "value = 1\n",
+            "tests/test_sample.py": "def test_sample():\n    assert True\n",
+            "node_modules/tracked.js": "ignored\n",
+            "dist/output.js": "ignored\n",
+        },
+    )
+    dirty_file = root / "src" / "sample.py"
+    dirty_file.write_text("value = 2\n", encoding="utf-8")
+
+    repository_map = WorkspaceScanner().scan(root)
+
+    assert repository_map.root == root.resolve()
+    assert "src/sample.py" in repository_map.tracked_files
+    assert "node_modules/tracked.js" not in repository_map.tracked_files
+    assert "dist/output.js" not in repository_map.tracked_files
+    assert repository_map.test_paths == ["tests/test_sample.py"]
+    assert {document.path for document in repository_map.documents} == {
+        "AGENTS.md",
+        "README.md",
+        "pyproject.toml",
+    }
+    assert any("initial commit" in entry for entry in repository_map.recent_commits)
+    assert repository_map.dirty_paths == ["src/sample.py"]
+    assert dirty_file.read_text(encoding="utf-8") == "value = 2\n"
+
+
+def test_invokes_only_the_three_read_only_git_commands(tmp_path: Path) -> None:
+    mark_git_root(tmp_path)
+    runner = RecordingGitRunner([])
+
+    WorkspaceScanner(runner).scan(tmp_path)
+
+    root = str(tmp_path.resolve())
+    assert runner.calls == [
+        ["git", "-C", root, "ls-files", "-z"],
+        ["git", "-C", root, "log", "-n", "20"],
+        ["git", "-C", root, "status", "--porcelain=v1"],
+    ]
+
+
+def test_rejects_more_than_10000_tracked_files(tmp_path: Path) -> None:
+    mark_git_root(tmp_path)
+    runner = RecordingGitRunner([f"f{i}" for i in range(10_001)])
+
+    with pytest.raises(WorkspaceLimitError, match="^仓库跟踪文件超过 10000 个$"):
+        WorkspaceScanner(runner).scan(tmp_path)
+
+
+def test_scans_10000_synthetic_files_in_under_five_seconds(tmp_path: Path) -> None:
+    mark_git_root(tmp_path)
+    runner = RecordingGitRunner([f"src/f{i}.py" for i in range(10_000)])
+
+    started = perf_counter()
+    repository_map = WorkspaceScanner(runner).scan(tmp_path)
+    elapsed = perf_counter() - started
+
+    assert len(repository_map.tracked_files) == 10_000
+    assert elapsed < 5.0
+
+
+def test_rejects_oversized_repository_document(
+    git_repository_factory: Callable[[str, dict[str, str]], Path],
+) -> None:
+    root = git_repository_factory("oversized", {"README.md": "x" * 257})
+
+    with pytest.raises(RepositoryScanError, match="^仓库文档超过大小限制$"):
+        WorkspaceScanner(max_document_bytes=256).scan(root)
+
+
+def test_rejects_non_git_directory_with_actionable_error(tmp_path: Path) -> None:
+    with pytest.raises(RepositoryScanError, match="^所选目录不是 Git 根目录$"):
+        WorkspaceScanner().scan(tmp_path)
+
+
+def test_rejects_repository_subdirectory_instead_of_mixing_path_bases(
+    git_repository_factory: Callable[[str, dict[str, str]], Path],
+) -> None:
+    root = git_repository_factory("root-only", {"src/app.py": "value = 1\n"})
+
+    with pytest.raises(RepositoryScanError, match="^所选目录不是 Git 根目录$"):
+        WorkspaceScanner().scan(root / "src")
+
+
+def test_rejects_tracked_symlink_escape(
+    git_repository_factory: Callable[[str, dict[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("symlink", {"README.md": "safe\n"})
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside\n", encoding="utf-8")
+    link = root / "linked.txt"
+    try:
+        link.symlink_to(outside)
+    except OSError as error:
+        pytest.skip(f"当前系统无法创建符号链接：{type(error).__name__}")
+    subprocess.run(
+        ["git", "-C", str(root), "add", "linked.txt"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-m", "add symlink"],
+        check=True,
+        capture_output=True,
+    )
+
+    with pytest.raises(RepositoryScanError, match="^跟踪文件路径越界$"):
+        WorkspaceScanner().scan(root)

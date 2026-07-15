@@ -429,3 +429,19 @@
 - **计划变化：** 修正 Task 4 为已完成；为 Task 5—14 冻结发布必需范围、可评估的延期候选、最短完整用户路径和逐 Task 延期审计门禁。
 - **延期台账：** 新增 `DEFERRED_WORK.md`，定义唯一编号、状态、优先级、登记条件、影响/替代/恢复/证据字段。当前没有已批准延期项，未开始的 Task 不计为延期。
 - **范围与安全：** 没有降低课程硬性验收、安全、Mock、反馈闭环、WebUI、E2E、Docker 或 CI 要求；未联网、安装依赖、推送或接触凭据。
+
+### 2026-07-16 07:18 +08:00 — IMPL-005-START
+
+- **任务与隔离：** 在既有隔离 worktree `codex/workspaces` 开始 Task 5（项目识别、受限仓库地图与每任务独立 worktree）；开始时工作树清洁，Task 1—4 已合入基线。
+- **Superpowers 技能：** 已读取 `using-superpowers`（其子智能体停止条款适用），并使用 `writing-plans`、`executing-plans`、`test-driven-development`；生产代码前先校正计划并设计真实 Git RED。
+- **已批准纠偏：** 用户批准 Task 5 新增最小严格类型化 `Workspace`、`ProjectProfile`、`RepositoryMap`、`WorktreeInfo`，把 `Workspace` 从错误的 Task 2 消费项改为本 Task 产出；Task 11 的 003 以后补齐 Workspace 持久化字段、仓储和 `host_transfers`。本 Task 不修改 001/002、不新增迁移、不实现 Task 6。
+- **延期与安全起点：** Task 5 的 Python/Node 识别、有界仓库地图、脏主工作区保护和独立 worktree 均为发布必需范围，当前无延期；不联网、不安装依赖、不推送、不接触凭据。
+
+### 2026-07-16 08:05 +08:00 — IMPL-005
+
+- **实现范围：** 新增严格运行期 `Workspace`、`ProjectProfile`、`RepositoryMap`、`WorktreeInfo` 与验证命令/仓库文档模型；实现 Python/Node 默认命令识别、严格 `.harness.yml` argv/timeout/env allowlist schema、配置指纹和首次执行信任标志；实现只使用 argv 的 `ls-files -z`、`log -n 20`、`status --porcelain=v1` 有界扫描；实现外置状态目录、原子单写标记及真实 Git worktree 创建/安全释放。
+- **TDD RED—GREEN：** detector 初始 RED 为 `ModuleNotFoundError: coding_agent_harness.workspace`，首轮 GREEN 为 `10 passed, 1 skipped`；撤回未被初始断言证明的 fixture 分支后，Python build/Node scripts RED 为 `2 failed`，恢复最小通用逻辑后转绿。scanner 初始 RED 为缺失 `workspace.scanner`；首轮 GREEN `6 passed, 1 skipped`；真实仓库子目录可被 Git 向上解析造成路径基准混用的纠正 RED 为 `2 failed`，直属非链接 `.git` 根标记校验后转绿。worktree 初始 RED 为缺失 `workspace.worktrees`，首轮 GREEN `8 passed`；runner 在 `git worktree add` 启动时抛 `OSError` 的纠正 RED 为 `1 failed`，归并失败清理后转绿为 `9 passed`。
+- **测试基础设施纠偏：** 全量 pytest 第一遍把独立 `tests/fixtures/python_project/tests/test_sample.py` 当 Harness 测试收集并因 fixture `src` 不在顶层导入路径报错；根因是静态项目 fixture 未排除。`tests/conftest.py` 精确忽略 `fixtures` 后全量恢复，未修改 fixture 的独立项目结构。
+- **新鲜验证：** `python -m pytest tests/workspace -q --durations=10` 为 `29 passed, 2 skipped`，10,000 文件合成扫描耗时 `0.40s`；`ruff check src tests` 全通过；`mypy src` 检查 22 个源文件无问题；全量 pytest 为 `359 passed, 3 skipped`；`git diff --check` 通过。两个 Task 5 skip 均为本机 Windows 无符号链接权限，第三个为既有同类 skip。
+- **自审与延期：** Python/Node、严格自定义命令信任标志、10,000/10,001 边界、README/AGENTS/配置大小限制、Git argv、空格路径、脏主工作区保护、同 Workspace 单写、分支/目标/基准冲突、失败清理和脏任务安全释放均有覆盖。Task 5 发布必需范围无延期，`DEFERRED_WORK.md` 保持无记录；其他语言仍是未开始增强候选，不登记延期。
+- **范围与安全：** 未修改 001/002、未新增 003 或仓储、未实现 Task 6；未联网、安装依赖、推送、合并、操作主 worktree 或接触凭据。当前实现者验证通过但仍待独立规约符合性和代码质量审查，不宣称 Task 5 终审完成。
