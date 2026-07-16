@@ -479,3 +479,14 @@
 
 - **最终规约审查：** Task 5 实现结论为 PASS；唯一 Minor 是 `DEFERRED_WORK.md` 把 worktree 与 Harness 私有状态目录的包含关系写反。
 - **文档纠正：** 仅将该句纠正为“worktree 放在 Harness 私有状态目录中、项目目录外”，与 `SPEC.md:250` 和 `PLAN.md` Task 5 一致；未改写既有历史，待独立复审。
+
+### 2026-07-16 — IMPL-005-R5-QUALITY
+
+- **审查结论与提交：** 最终规约审查已 PASS；独立代码质量审查提出 5 个 Important。使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development`、`executing-plans`、`using-git-worktrees` 与 `verification-before-completion`，在既有隔离 worktree `codex/workspaces` 逐项 RED—GREEN；核心纠偏提交为 `ef31b8b`（`fix: 修复 Task 5 代码质量边界`）。
+- **状态路径 RED—GREEN：** 精确重叠分支起初仅错误消息不匹配，祖先重叠稳定为 `DID NOT RAISE WorktreeStateError`；新增双向真实路径包含检查并在每次状态子路径解析后再次拒绝落入 Git 根，目标 `3 passed`，构造失败前未创建 `worktrees`。
+- **Git runner RED—GREEN：** 初始 runner 选择集为 `5 failed, 1 passed`，证明缺少构造参数、超时、输出上限、kill/wait 与资源关闭；第二临时文件打开失败的资源用例另得 `1 failed`。GREEN 使用临时文件承接 stdout/stderr、50ms 有界轮询、默认 300 秒与每流 64 MiB 上限；超时/超限/communicate 或 wait 异常执行 best-effort kill、communicate、wait，`ExitStack` 始终关闭资源，清理失败仍为 `GitProcessUncertainError`，Popen 构造失败保持 `GitProcessNotStartedError`。最终 runner 8 个参数化行为通过，正常 bytes/returncode 保持兼容。
+- **status RED—GREEN：** 真实 Git 与 argv 契约共 `3 failed`，旧输出把中文转义文本当路径、按 ` -> ` 错切且未使用 `-z`。GREEN 改为 `status --porcelain=v1 -z`，按 NUL bytes 解析普通及 rename/copy 双路径并用 `os.fsdecode`；真实 Git 覆盖中文、空格、单引号与 rename，公开 scanner 协议用例覆盖 Windows 文件系统不能创建的 ASCII ` -> ` 与双引号路径，目标 `3 passed`。
+- **release RED—GREEN：** 预检 runner `OSError` 原样泄漏、remove 已产生副作用后返回非零仍误报普通失败，目标为 `2 failed, 1 passed`。GREEN 将只读 status runner 异常映射为 `WorktreeReleaseError("无法检查任务工作树状态")`；remove 仅专用未启动异常是普通失败，非零、普通 `OSError`、启动后或未知异常均为 `WorktreeUncertainError`，保留 marker 并阻塞下一 writer；专用未启动兼容测试同时证明 worktree/marker 保留。
+- **深不可变 RED—GREEN：** trusted profile 与 repository map 两个用例均因内部 list 仍有 `append` 而失败。GREEN 将 argv、languages、env allowlist、tracked/documents/test/recent/dirty 序列改为 tuple，detector/scanner 构造同步；原地 append/元素赋值不可用，trust fingerprint 不变，`model_dump(mode="json")` 仍输出数组。
+- **新鲜验证：** Python `3.11.9`；五组 focused `19 passed in 5.05s`；workspace `58 passed, 3 skipped in 18.44s`；10,000 文件 `0.40s`；Ruff `All checks passed!`；mypy `Success: no issues found in 23 source files`；全量 pytest `388 passed, 4 skipped in 20.70s`；`git diff --check` 退出 0。三个 workspace skip 均为既有 Windows symlink 权限，第四个是既有 Task 4 同类 skip，未新增 skip。
+- **范围与 concern：** 未联网、安装、推送、修改迁移或实现 Task 6；未接触凭据。`worktrees.py` 无需拆分，本轮仅增加双向隔离检查和 release 错误状态机；`DW-05-001` 边界未改变。当前待独立质量复审，不提前勾选 Task 5 最终完成。
