@@ -8,7 +8,11 @@ import pytest
 
 from coding_agent_harness.workspace.detector import ProjectDetector
 from coding_agent_harness.workspace.models import Workspace
-from coding_agent_harness.workspace.scanner import CommandResult, SubprocessGitRunner
+from coding_agent_harness.workspace.scanner import (
+    CommandResult,
+    GitProcessNotStartedError,
+    SubprocessGitRunner,
+)
 from coding_agent_harness.workspace.worktrees import (
     BaseCommitError,
     NotGitRepositoryError,
@@ -199,7 +203,27 @@ class RaisingAddRunner:
     def run(self, argv: Sequence[str]) -> CommandResult:
         self.calls.append(list(argv))
         if len(argv) > 3 and argv[3:5] == ["worktree", "add"]:
-            raise OSError("simulated process start failure")
+            raise GitProcessNotStartedError("Git 进程未启动")
+        return self._delegate.run(argv)
+
+
+class SideEffectThenOSErrorRunner:
+    def __init__(self) -> None:
+        self._delegate = SubprocessGitRunner()
+        self.sentinel: Path | None = None
+
+    def run(self, argv: Sequence[str]) -> CommandResult:
+        if len(argv) > 3 and argv[3:5] == ["worktree", "add"]:
+            root = argv[2]
+            branch = argv[-3]
+            base = argv[-1]
+            created = self._delegate.run(["git", "-C", root, "branch", branch, base])
+            assert created.returncode == 0
+            target = Path(argv[-2])
+            target.mkdir(parents=True)
+            self.sentinel = target / "ordinary-oserror-sentinel.txt"
+            self.sentinel.write_text("preserve unknown side effect\n", encoding="utf-8")
+            raise OSError("unknown failure after side effect")
         return self._delegate.run(argv)
 
 
@@ -329,6 +353,32 @@ def test_cleans_active_marker_when_git_add_cannot_start(
     manager = WorktreeManager(workspace, state_root)
     manager.create(next_task, head(root))
     manager.release(next_task)
+
+
+def test_ordinary_oserror_after_side_effect_preserves_marker_and_blocks_writer(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("ordinary-oserror", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    state_root = tmp_path / "state"
+    task_id = uuid4()
+    runner = SideEffectThenOSErrorRunner()
+
+    with pytest.raises(
+        WorktreeUncertainError,
+        match="^创建任务工作树结果不确定，需人工处理$",
+    ):
+        WorktreeManager(workspace, state_root, runner=runner).create(task_id, head(root))
+
+    assert runner.sentinel is not None
+    assert runner.sentinel.read_text(encoding="utf-8") == "preserve unknown side effect\n"
+    marker = state_root / "worktrees" / str(workspace.id) / ".active"
+    assert marker.read_text(encoding="ascii") == str(task_id)
+    branch = f"harness/task-{task_id.hex[:8]}"
+    assert git(root, "show-ref", "--verify", f"refs/heads/{branch}").returncode == 0
+    with pytest.raises(WorkspaceBusyError, match="^Workspace 已有写任务$"):
+        WorktreeManager(workspace, state_root).create(uuid4(), head(root))
 
 
 def test_release_refuses_dirty_task_worktree(

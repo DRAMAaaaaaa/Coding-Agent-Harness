@@ -8,7 +8,11 @@ from uuid import UUID
 
 from coding_agent_harness.governance.paths import PathEscapeError, PathGuard
 from coding_agent_harness.workspace.models import Workspace, WorktreeInfo
-from coding_agent_harness.workspace.scanner import GitRunner, SubprocessGitRunner
+from coding_agent_harness.workspace.scanner import (
+    GitProcessNotStartedError,
+    GitRunner,
+    SubprocessGitRunner,
+)
 
 
 class WorktreeError(ValueError):
@@ -109,7 +113,7 @@ class WorktreeManager:
                     resolved_base,
                 ]
             )
-        except OSError:
+        except GitProcessNotStartedError:
             try:
                 self._remove_active_marker()
             except WorktreeStateError:
@@ -117,6 +121,8 @@ class WorktreeManager:
                     "创建任务工作树结果不确定，需人工处理"
                 ) from None
             raise WorktreeCreationError("创建任务工作树失败") from None
+        except Exception:
+            raise WorktreeUncertainError("创建任务工作树结果不确定，需人工处理") from None
         if result.returncode != 0:
             raise WorktreeUncertainError("创建任务工作树结果不确定，需人工处理")
         self._validate_created_worktree(target, branch, resolved_base)
@@ -146,9 +152,16 @@ class WorktreeManager:
             raise WorktreeReleaseError("任务工作树不存在")
         if status.stdout:
             raise WorktreeReleaseError("任务工作树包含未提交改动")
-        removed = self._runner.run(
-            ["git", "-C", str(self._git_root), "worktree", "remove", str(target)]
-        )
+        try:
+            removed = self._runner.run(
+                ["git", "-C", str(self._git_root), "worktree", "remove", str(target)]
+            )
+        except GitProcessNotStartedError:
+            raise WorktreeReleaseError("释放任务工作树失败") from None
+        except Exception:
+            raise WorktreeUncertainError(
+                "释放任务工作树结果不确定，需人工处理"
+            ) from None
         if removed.returncode != 0:
             raise WorktreeReleaseError("释放任务工作树失败")
         self._validate_released_worktree(target)

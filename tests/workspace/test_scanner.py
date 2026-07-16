@@ -9,7 +9,10 @@ import pytest
 
 from coding_agent_harness.workspace.scanner import (
     CommandResult,
+    GitProcessNotStartedError,
+    GitProcessUncertainError,
     RepositoryScanError,
+    SubprocessGitRunner,
     WorkspaceLimitError,
     WorkspaceScanner,
 )
@@ -223,3 +226,30 @@ def test_document_opener_cannot_redirect_to_replaced_file(
         WorkspaceScanner(file_opener=opener).scan(root)
 
     assert opener.read_sizes == []
+
+
+def test_subprocess_runner_maps_popen_construction_failure_to_not_started(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_before_start(*args: object, **kwargs: object) -> None:
+        raise OSError("process construction failed")
+
+    monkeypatch.setattr(subprocess, "Popen", fail_before_start)
+
+    with pytest.raises(GitProcessNotStartedError, match="^Git 进程未启动$"):
+        SubprocessGitRunner().run(["git", "--version"])
+
+
+def test_subprocess_runner_maps_communicate_failure_to_uncertain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class StartedProcess:
+        returncode: int | None = None
+
+        def communicate(self) -> tuple[bytes, bytes]:
+            raise OSError("communicate failed after start")
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: StartedProcess())
+
+    with pytest.raises(GitProcessUncertainError, match="^Git 进程状态不确定$"):
+        SubprocessGitRunner().run(["git", "--version"])

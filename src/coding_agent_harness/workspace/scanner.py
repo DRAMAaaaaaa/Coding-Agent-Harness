@@ -55,6 +55,14 @@ class WorkspaceLimitError(RepositoryScanError):
     """仓库超过正式支持的跟踪文件数量。"""
 
 
+class GitProcessNotStartedError(OSError):
+    """Git 子进程构造失败，能够确认从未启动。"""
+
+
+class GitProcessUncertainError(OSError):
+    """Git 子进程已启动或启动状态无法安全确认。"""
+
+
 @dataclass(frozen=True)
 class CommandResult:
     """子进程边界返回的最小结果。"""
@@ -74,11 +82,24 @@ class SubprocessGitRunner:
     """不经过 shell 执行 Git argv。"""
 
     def run(self, argv: Sequence[str]) -> CommandResult:
-        completed = subprocess.run(list(argv), check=False, capture_output=True)
+        try:
+            process = subprocess.Popen(
+                list(argv),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except OSError:
+            raise GitProcessNotStartedError("Git 进程未启动") from None
+        try:
+            stdout, stderr = process.communicate()
+        except Exception:
+            raise GitProcessUncertainError("Git 进程状态不确定") from None
+        if process.returncode is None:
+            raise GitProcessUncertainError("Git 进程状态不确定")
         return CommandResult(
-            returncode=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
+            returncode=process.returncode,
+            stdout=stdout,
+            stderr=stderr,
         )
 
 
