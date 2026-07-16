@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 import math
+from pathlib import Path
 import subprocess
 import threading
 import time
@@ -13,6 +14,7 @@ from typing import BinaryIO, Protocol, cast
 DEFAULT_GIT_TIMEOUT_SECONDS = 300.0
 DEFAULT_GIT_STDOUT_LIMIT_BYTES = 64 * 1024 * 1024
 DEFAULT_GIT_STDERR_LIMIT_BYTES = 64 * 1024 * 1024
+DEFAULT_PROCESS_STDIN_LIMIT_BYTES = 16 * 1024 * 1024
 OUTPUT_READ_CHUNK_BYTES = 64 * 1024
 _WAIT_POLL_SECONDS = 0.05
 _CLEANUP_TIMEOUT_SECONDS = 1.0
@@ -35,10 +37,20 @@ class CommandResult:
     stderr: bytes
 
 
-class GitRunner(Protocol):
-    """唯一可注入的 Git 子进程边界。"""
+@dataclass(frozen=True)
+class ProcessRequest:
+    """子进程调用的完整、可审计请求。"""
 
-    def run(self, argv: Sequence[str]) -> CommandResult: ...
+    argv: tuple[str, ...]
+    cwd: Path | None = None
+    env: Mapping[str, str] | None = None
+    stdin: bytes = b""
+
+
+class ProcessRunner(Protocol):
+    """唯一可注入的子进程边界。"""
+
+    def run(self, request: ProcessRequest) -> CommandResult: ...
 
 
 class CappedOutputReader:
@@ -129,27 +141,34 @@ class SubprocessGitRunner:
         self._max_stdout_bytes = max_stdout_bytes
         self._max_stderr_bytes = max_stderr_bytes
 
-    def run(self, argv: Sequence[str]) -> CommandResult:
+    def run(self, request: ProcessRequest) -> CommandResult:
+        if len(request.stdin) > DEFAULT_PROCESS_STDIN_LIMIT_BYTES:
+            raise ValueError("子进程 stdin 超过大小限制")
         try:
             process = subprocess.Popen(
-                list(argv),
+                list(request.argv),
+                cwd=request.cwd,
+                env=None if request.env is None else dict(request.env),
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                shell=False,
             )
         except OSError:
             raise GitProcessNotStartedError("Git 进程未启动") from None
         threads: list[threading.Thread] = []
-        if process.stdout is None or process.stderr is None:
+        if process.stdin is None or process.stdout is None or process.stderr is None:
             partial_streams = tuple(
                 cast(BinaryIO, stream)
-                for stream in (process.stdout, process.stderr)
+                for stream in (process.stdin, process.stdout, process.stderr)
                 if stream is not None
             )
             self._cleanup_started_process(process, partial_streams, threads)
             raise GitProcessUncertainError("Git 进程状态不确定")
+        stdin_stream = cast(BinaryIO, process.stdin)
         stdout_stream = cast(BinaryIO, process.stdout)
         stderr_stream = cast(BinaryIO, process.stderr)
-        streams = (stdout_stream, stderr_stream)
+        streams = (stdin_stream, stdout_stream, stderr_stream)
 
         failure = threading.Event()
         kill_lock = threading.Lock()
@@ -175,7 +194,30 @@ class SubprocessGitRunner:
             on_failure=signal_failure,
         )
         readers = (stdout_reader, stderr_reader)
+        stdin_error: list[BaseException] = []
+
+        def write_stdin() -> None:
+            try:
+                if request.stdin:
+                    stdin_stream.write(request.stdin)
+                    stdin_stream.flush()
+            except BaseException as error:
+                stdin_error.append(error)
+                signal_failure()
+            finally:
+                try:
+                    stdin_stream.close()
+                except BaseException as error:
+                    stdin_error.append(error)
+                    signal_failure()
+
         threads = [
+            threading.Thread(
+                target=write_stdin,
+                name="process-stdin",
+                daemon=True,
+            )
+        ] + [
             threading.Thread(
                 target=reader.read_to_eof,
                 name=f"git-output-{name}",
@@ -190,6 +232,7 @@ class SubprocessGitRunner:
             self._join_readers(threads)
             if (
                 failure.is_set()
+                or stdin_error
                 or any(reader.exceeded or reader.error is not None for reader in readers)
                 or process.returncode is None
             ):

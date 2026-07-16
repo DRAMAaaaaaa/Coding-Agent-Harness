@@ -11,6 +11,7 @@ from coding_agent_harness.workspace.models import Workspace
 from coding_agent_harness.workspace.processes import (
     CommandResult,
     GitProcessNotStartedError,
+    ProcessRequest,
     SubprocessGitRunner,
 )
 from coding_agent_harness.workspace.worktrees import (
@@ -300,26 +301,43 @@ def test_rejects_existing_branch_or_target_without_overwriting(
     assert sentinel.read_text(encoding="utf-8") == "keep\n"
 
 
+def request_command(request: ProcessRequest) -> list[str]:
+    argv = list(request.argv)
+    return argv[argv.index("-C") + 2 :]
+
+
+def replace_request_command(
+    request: ProcessRequest,
+    command: Sequence[str],
+) -> ProcessRequest:
+    command_start = request.argv.index("-C") + 2
+    return ProcessRequest(
+        argv=(*request.argv[:command_start], *command),
+        cwd=request.cwd,
+        env=request.env,
+    )
+
+
 class FailingAddRunner:
     def __init__(self) -> None:
         self._delegate = SubprocessGitRunner()
         self.sentinel: Path | None = None
 
-    def run(self, argv: Sequence[str]) -> CommandResult:
-        if len(argv) > 3 and argv[3:5] == ["worktree", "add"]:
-            root = argv[2]
-            branch = argv[-3]
-            base = argv[-1]
+    def run(self, request: ProcessRequest) -> CommandResult:
+        command = request_command(request)
+        if command[:2] == ["worktree", "add"]:
+            branch = command[-3]
+            base = command[-1]
             created = self._delegate.run(
-                ["git", "-C", root, "branch", branch, base]
+                replace_request_command(request, ["branch", branch, base])
             )
             assert created.returncode == 0
-            target = Path(argv[-2])
+            target = Path(command[-2])
             target.mkdir(parents=True)
             self.sentinel = target / "partial-sentinel.txt"
             self.sentinel.write_text("manual recovery\n", encoding="utf-8")
             return CommandResult(returncode=1, stdout=b"", stderr=b"simulated failure")
-        return self._delegate.run(argv)
+        return self._delegate.run(request)
 
 
 class RaisingAddRunner:
@@ -327,11 +345,12 @@ class RaisingAddRunner:
         self._delegate = SubprocessGitRunner()
         self.calls: list[list[str]] = []
 
-    def run(self, argv: Sequence[str]) -> CommandResult:
-        self.calls.append(list(argv))
-        if len(argv) > 3 and argv[3:5] == ["worktree", "add"]:
+    def run(self, request: ProcessRequest) -> CommandResult:
+        command = request_command(request)
+        self.calls.append(command)
+        if command[:2] == ["worktree", "add"]:
             raise GitProcessNotStartedError("Git 进程未启动")
-        return self._delegate.run(argv)
+        return self._delegate.run(request)
 
 
 class SideEffectThenOSErrorRunner:
@@ -339,28 +358,30 @@ class SideEffectThenOSErrorRunner:
         self._delegate = SubprocessGitRunner()
         self.sentinel: Path | None = None
 
-    def run(self, argv: Sequence[str]) -> CommandResult:
-        if len(argv) > 3 and argv[3:5] == ["worktree", "add"]:
-            root = argv[2]
-            branch = argv[-3]
-            base = argv[-1]
-            created = self._delegate.run(["git", "-C", root, "branch", branch, base])
+    def run(self, request: ProcessRequest) -> CommandResult:
+        command = request_command(request)
+        if command[:2] == ["worktree", "add"]:
+            branch = command[-3]
+            base = command[-1]
+            created = self._delegate.run(
+                replace_request_command(request, ["branch", branch, base])
+            )
             assert created.returncode == 0
-            target = Path(argv[-2])
+            target = Path(command[-2])
             target.mkdir(parents=True)
             self.sentinel = target / "ordinary-oserror-sentinel.txt"
             self.sentinel.write_text("preserve unknown side effect\n", encoding="utf-8")
             raise OSError("unknown failure after side effect")
-        return self._delegate.run(argv)
+        return self._delegate.run(request)
 
 
 class MissingRegistrationAfterAddRunner:
     def __init__(self) -> None:
         self._delegate = SubprocessGitRunner()
 
-    def run(self, argv: Sequence[str]) -> CommandResult:
-        result = self._delegate.run(argv)
-        if len(argv) > 5 and argv[3:6] == ["worktree", "list", "--porcelain"]:
+    def run(self, request: ProcessRequest) -> CommandResult:
+        result = self._delegate.run(request)
+        if request_command(request)[:3] == ["worktree", "list", "--porcelain"]:
             return CommandResult(returncode=0, stdout=b"", stderr=b"")
         return result
 
@@ -369,10 +390,10 @@ class FalseSuccessRemoveRunner:
     def __init__(self) -> None:
         self._delegate = SubprocessGitRunner()
 
-    def run(self, argv: Sequence[str]) -> CommandResult:
-        if len(argv) > 4 and argv[3:5] == ["worktree", "remove"]:
+    def run(self, request: ProcessRequest) -> CommandResult:
+        if request_command(request)[:2] == ["worktree", "remove"]:
             return CommandResult(returncode=0, stdout=b"", stderr=b"")
-        return self._delegate.run(argv)
+        return self._delegate.run(request)
 
 
 class StaleRegistrationAfterRemoveRunner:
@@ -380,22 +401,22 @@ class StaleRegistrationAfterRemoveRunner:
         self._delegate = SubprocessGitRunner()
         self._stale_registration: bytes | None = None
 
-    def run(self, argv: Sequence[str]) -> CommandResult:
-        if len(argv) > 4 and argv[3:5] == ["worktree", "remove"]:
-            target = Path(argv[-1])
+    def run(self, request: ProcessRequest) -> CommandResult:
+        command = request_command(request)
+        if command[:2] == ["worktree", "remove"]:
+            target = Path(command[-1])
             branch = git(target, "branch", "--show-current").stdout.decode().strip()
             commit = head(target)
-            result = self._delegate.run(argv)
+            result = self._delegate.run(request)
             if result.returncode == 0:
                 self._stale_registration = (
                     f"worktree {target}\nHEAD {commit}\nbranch refs/heads/{branch}\n\n"
                 ).encode()
             return result
-        result = self._delegate.run(argv)
+        result = self._delegate.run(request)
         if (
             self._stale_registration is not None
-            and len(argv) > 5
-            and argv[3:6] == ["worktree", "list", "--porcelain"]
+            and command[:3] == ["worktree", "list", "--porcelain"]
         ):
             return CommandResult(
                 returncode=0,
@@ -409,10 +430,10 @@ class PreflightStatusErrorRunner:
     def __init__(self) -> None:
         self._delegate = SubprocessGitRunner()
 
-    def run(self, argv: Sequence[str]) -> CommandResult:
-        if len(argv) > 3 and argv[3] == "status":
+    def run(self, request: ProcessRequest) -> CommandResult:
+        if request_command(request)[:1] == ["status"]:
             raise OSError("status runner failed")
-        return self._delegate.run(argv)
+        return self._delegate.run(request)
 
 
 class PartialRemoveRunner:
@@ -420,24 +441,24 @@ class PartialRemoveRunner:
         self._delegate = SubprocessGitRunner()
         self._outcome = outcome
 
-    def run(self, argv: Sequence[str]) -> CommandResult:
-        if len(argv) > 4 and argv[3:5] == ["worktree", "remove"]:
-            removed = self._delegate.run(argv)
+    def run(self, request: ProcessRequest) -> CommandResult:
+        if request_command(request)[:2] == ["worktree", "remove"]:
+            removed = self._delegate.run(request)
             assert removed.returncode == 0
             if self._outcome == "nonzero":
                 return CommandResult(returncode=1, stdout=b"", stderr=b"remove failed")
             raise OSError("remove raised after side effect")
-        return self._delegate.run(argv)
+        return self._delegate.run(request)
 
 
 class RemoveNotStartedRunner:
     def __init__(self) -> None:
         self._delegate = SubprocessGitRunner()
 
-    def run(self, argv: Sequence[str]) -> CommandResult:
-        if len(argv) > 4 and argv[3:5] == ["worktree", "remove"]:
+    def run(self, request: ProcessRequest) -> CommandResult:
+        if request_command(request)[:2] == ["worktree", "remove"]:
             raise GitProcessNotStartedError("Git 进程未启动")
-        return self._delegate.run(argv)
+        return self._delegate.run(request)
 
 
 class SwappingFailingAddRunner:
@@ -447,17 +468,18 @@ class SwappingFailingAddRunner:
         self._outside = outside
         self.sentinel = outside / "not-created"
 
-    def run(self, argv: Sequence[str]) -> CommandResult:
-        if len(argv) > 3 and argv[3:5] == ["worktree", "add"]:
+    def run(self, request: ProcessRequest) -> CommandResult:
+        command = request_command(request)
+        if command[:2] == ["worktree", "add"]:
             worktrees = self._state_root / "worktrees"
             worktrees.rename(self._state_root / "worktrees-safe")
             create_directory_link(worktrees, self._outside)
-            target = Path(argv[-2])
+            target = Path(command[-2])
             target.mkdir(parents=True)
             self.sentinel = target / "external-sentinel.txt"
             self.sentinel.write_text("must remain\n", encoding="utf-8")
             return CommandResult(returncode=1, stdout=b"", stderr=b"simulated failure")
-        return self._delegate.run(argv)
+        return self._delegate.run(request)
 
 
 def test_nonzero_git_add_preserves_partial_state_for_manual_recovery(
@@ -509,7 +531,7 @@ def test_cleans_active_marker_when_git_add_cannot_start(
 
     assert not target.exists()
     assert not (target.parent / ".active").exists()
-    assert not any(call[3:5] == ["branch", "-d"] for call in runner.calls)
+    assert not any(call[:2] == ["branch", "-d"] for call in runner.calls)
 
     next_task = uuid4()
     manager = WorktreeManager(workspace, state_root)

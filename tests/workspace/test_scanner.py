@@ -13,7 +13,7 @@ from coding_agent_harness.workspace.scanner import (
     WorkspaceLimitError,
     WorkspaceScanner,
 )
-from coding_agent_harness.workspace.processes import CommandResult
+from coding_agent_harness.workspace.processes import CommandResult, ProcessRequest
 
 
 class RecordingGitRunner:
@@ -26,10 +26,15 @@ class RecordingGitRunner:
         self.tracked_files = tracked_files
         self.status_output = status_output
         self.calls: list[list[str]] = []
+        self.requests: list[ProcessRequest] = []
 
-    def run(self, argv: Sequence[str]) -> CommandResult:
-        self.calls.append(list(argv))
-        operation = argv[3]
+    def run(self, request: ProcessRequest) -> CommandResult:
+        self.requests.append(request)
+        argv = list(request.argv)
+        command_start = argv.index("-C") + 2
+        command = argv[command_start:]
+        self.calls.append(command)
+        operation = command[0]
         if operation == "ls-files":
             stdout = "\0".join(self.tracked_files)
             if self.tracked_files:
@@ -39,6 +44,14 @@ class RecordingGitRunner:
             return CommandResult(returncode=0, stdout=b"", stderr=b"")
         if operation == "status":
             return CommandResult(returncode=0, stdout=self.status_output, stderr=b"")
+        if operation == "check-attr":
+            paths = request.stdin.split(b"\0")
+            if paths and paths[-1] == b"":
+                paths.pop()
+            stdout = b"".join(
+                path + b"\0filter\0unspecified\0" for path in paths
+            )
+            return CommandResult(returncode=0, stdout=stdout, stderr=b"")
         raise AssertionError(f"unexpected git operation: {operation}")
 
 
@@ -164,18 +177,21 @@ def test_status_z_parser_treats_arrows_and_double_quotes_as_literal_path_bytes(
     )
 
 
-def test_invokes_only_the_three_read_only_git_commands(tmp_path: Path) -> None:
+def test_invokes_only_safe_read_only_git_commands(tmp_path: Path) -> None:
     mark_git_root(tmp_path)
     runner = RecordingGitRunner([])
 
     WorkspaceScanner(runner).scan(tmp_path)
 
-    root = str(tmp_path.resolve())
     assert runner.calls == [
-        ["git", "-C", root, "ls-files", "-z"],
-        ["git", "-C", root, "log", "-n", "20"],
-        ["git", "-C", root, "status", "--porcelain=v1", "-z"],
+        ["ls-files", "-z"],
+        ["check-attr", "--cached", "-z", "--stdin", "filter"],
+        ["check-attr", "-z", "--stdin", "filter"],
+        ["log", "--no-show-signature", "-n", "20"],
+        ["status", "--porcelain=v1", "-z"],
     ]
+    assert all(Path(request.argv[0]).is_absolute() for request in runner.requests)
+    assert all("core.fsmonitor=" in request.argv for request in runner.requests)
 
 
 def test_repository_map_sequences_are_deeply_immutable_and_json_stays_arrays(

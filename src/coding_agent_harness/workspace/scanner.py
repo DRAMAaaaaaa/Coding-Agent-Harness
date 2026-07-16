@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
+import tempfile
 
 from coding_agent_harness.governance.path_identity import (
     UnsafePathNamespaceError,
@@ -18,11 +19,8 @@ from coding_agent_harness.workspace.files import (
     BoundedFileTooLargeError,
     UnsafeBoundedFileError,
 )
-from coding_agent_harness.workspace.processes import (
-    CommandResult,
-    GitRunner,
-    SubprocessGitRunner,
-)
+from coding_agent_harness.workspace.git import SafeGit
+from coding_agent_harness.workspace.processes import CommandResult, ProcessRunner
 
 _MAX_TRACKED_FILES = 10_000
 _IGNORED_DIRECTORIES = frozenset(
@@ -67,24 +65,31 @@ class WorkspaceScanner:
 
     def __init__(
         self,
-        runner: GitRunner | None = None,
+        runner: ProcessRunner | None = None,
         *,
+        safe_git: SafeGit | None = None,
+        state_root: str | Path | None = None,
         max_document_bytes: int = 128 * 1024,
         file_opener: BinaryFileOpener | None = None,
     ) -> None:
         if max_document_bytes < 1:
             raise ValueError("文档大小上限必须为正数")
-        self._runner = runner or SubprocessGitRunner()
+        self._temporary_state: tempfile.TemporaryDirectory[str] | None = None
+        if safe_git is None:
+            if state_root is None:
+                self._temporary_state = tempfile.TemporaryDirectory(
+                    prefix="coding-agent-harness-"
+                )
+                state_root = self._temporary_state.name
+            safe_git = SafeGit(state_root, runner=runner)
+        self._git = safe_git
         self._max_document_bytes = max_document_bytes
         self._file_reader = BoundedFileReader(file_opener)
 
     def scan(self, root: str | Path) -> RepositoryMap:
         project_root = self._resolve_root(root)
         self._validate_git_root_marker(project_root)
-        root_argument = str(project_root)
-        tracked_result = self._run_git(
-            ["git", "-C", root_argument, "ls-files", "-z"]
-        )
+        tracked_result = self._run_git(project_root, ["ls-files", "-z"])
         tracked_files = self._parse_tracked_files(tracked_result.stdout)
         if len(tracked_files) > _MAX_TRACKED_FILES:
             raise WorkspaceLimitError("仓库跟踪文件超过 10000 个")
@@ -100,11 +105,15 @@ class WorkspaceScanner:
                 parent_containment,
             )
 
+        self._git.assert_current_filter_free(project_root, tracked_result.stdout)
+
         log_result = self._run_git(
-            ["git", "-C", root_argument, "log", "-n", "20"]
+            project_root,
+            ["log", "--no-show-signature", "-n", "20"],
         )
         status_result = self._run_git(
-            ["git", "-C", root_argument, "status", "--porcelain=v1", "-z"]
+            project_root,
+            ["status", "--porcelain=v1", "-z"],
         )
         documents = self._read_documents(project_root, filtered_files)
         test_paths = [path for path in filtered_files if self._is_test_path(path)]
@@ -133,9 +142,9 @@ class WorkspaceScanner:
         if marker.is_symlink() or not (marker.is_file() or marker.is_dir()):
             raise RepositoryScanError("所选目录不是 Git 根目录")
 
-    def _run_git(self, argv: list[str]) -> CommandResult:
+    def _run_git(self, root: Path, args: list[str]) -> CommandResult:
         try:
-            result = self._runner.run(argv)
+            result = self._git.run(root, args)
         except OSError:
             raise RepositoryScanError("无法读取 Git 仓库") from None
         if result.returncode != 0:

@@ -557,3 +557,13 @@
 - **GREEN 与当前状态：** focused 集为 `186 passed, 3 skipped in 35.83s`；governance/storage/workspace 回归为 `407 passed, 6 skipped in 43.14s`；定向 Ruff 全通过，定向 mypy 检查 4 个源文件无问题。当前仍为“实现完成，待复审”，`MVP-ISSUE-001/005` 未关闭；最终全量 Ruff、mypy、差异检查与 amend 哈希记录在 Task 2 实现报告中。
 - **范围：** 未修改 scanner、Git runner、安全 Git 环境、信任指纹、fixture、迁移或 Task 3+；未联网、安装依赖、merge、push 或接触凭据。未新增延期，`DW-05-001` 与 `MVP-ISSUE-006` 边界不变。
 - **最终新鲜门禁：** 新增回归 focused `69 passed, 120 deselected in 7.82s`；governance/storage/workspace `407 passed, 6 skipped in 42.36s`；Ruff `All checks passed!`；mypy `Success: no issues found in 25 source files`；`git diff --check` 退出 0。修复按要求 amend 到 Task 2 原提交，不新增第二个 Task 2 提交；新哈希记录在忽略的实现报告并等待独立复审。
+
+### 2026-07-16 — IMPL-MVP-003-GIT-SAFETY
+
+- **任务与技能：** 执行 MVP Task 3“建立不隐式执行仓库代码的 Git 边界”；完整读取 `AGENTS.md`、Task 3 简报、批准的 MVP 设计/计划、现有 workspace 实现与测试，以及 `systematic-debugging`、`test-driven-development`、`verification-before-completion`。固定使用 `E:\Coding Agent Harness\.venv\Scripts\python.exe` 与绝对 Git `E:\Git-Example\Git\cmd\git.exe`，基线为 `26c1222`。
+- **版本根因探针：** 本机 Git `2.31.1.windows.1` 的 `GIT_TRACE` 明确显示 `-c core.fsmonitor=false` 会两次执行名为 `false` 的外部 hook；`-c core.fsmonitor=` 只执行内建 status。安全配置据此固定为空值，未因版本差异放宽门禁。缺失 ref 的 `show-ref --verify` 在本版本返回 128 而非 1，测试只按 Git 契约断言非零。
+- **TDD RED：** 真实 scanner fsmonitor/GPG sentinel 首先失败并产生 marker；SafeGit env/config、ProcessRequest cwd/env/stdin、提交 filter gate、创建前 hook/filter、scanner status 前 filter、release 当前 index/工作树重审，以及 materialize 前二次审计均分别取得预期 RED。release 用例在临时移除 gate 后两项均落到错误的 dirty 状态，恢复 gate 后转为 `UnsupportedGitFilterError` 并保留现场。
+- **最小 GREEN 与重构：** 新增 `SafeGit`，固定绝对 executable、最小宿主环境、空 hooks/global config/global attributes、协议拒绝、`core.fsmonitor=`、`gc.auto=0`、`maintenance.auto=false` 与 `log --no-show-signature`；清除继承的 Git config/dir/worktree/index/objects/alternates/diff/SSH/askpass/exec-path。`ProcessRequest/ProcessRunner` 增加显式 cwd/env/有界 stdin，同时保留双 PIPE、每流 `limit+1`、总超时和 kill/drain/wait/join/close。scanner、创建、materialize 与 release 均先用 `check-attr` 拒绝活动 filter；创建使用 `worktree add --no-checkout`、`read-tree` 与 `checkout-index`，不自行重写 checkout。
+- **Sentinel 与状态语义：** 活动 filter 在 marker、branch、target 任何副作用前拒绝；真实 sentinel 证明 scanner/worktree create/materialize/release 不执行 fsmonitor、GPG、post-checkout、clean、smudge 或 process。release 在当前 index 或工作树发现 filter 时保留 target 与 `.active`；既有未启动、启动后不确定、后验失败和宿主中断的资源/现场语义全部回归。
+- **关闭与当前状态：** `.superpowers/sdd/task-1-review.md` 与 `task-2-rereview.md` 均为 CLEAN，据此把 MVP Task 1/2 与 `MVP-ISSUE-001/005` 登记为关闭。MVP Task 3 仅标记“实现完成，待独立复审”，`MVP-ISSUE-002` 未关闭。
+- **验证、范围与延期：** 实现阶段 git-safety 为 `8 passed`，workspace 为 `98 passed, 4 skipped`，Ruff 与 mypy 均退出 0；提交前最终门禁与提交哈希记录在 Task 3 报告。未修改 detector 信任指纹、fixture、Agent、依赖或迁移，未联网、merge、push 或接触凭据；未新增延期，现有 `DW-05-001` 与 `DW-MVP-005` 边界不变。

@@ -3,6 +3,7 @@ import subprocess
 import sys
 import threading
 from time import perf_counter
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +13,7 @@ from coding_agent_harness.workspace.processes import (
     CommandResult,
     GitProcessNotStartedError,
     GitProcessUncertainError,
+    ProcessRequest,
     SubprocessGitRunner,
 )
 
@@ -70,7 +72,7 @@ def test_runner_caps_and_reaps_real_process_writing_both_streams(
             timeout_seconds=5,
             max_stdout_bytes=4096,
             max_stderr_bytes=4096,
-        ).run([sys.executable, "-c", script])
+        ).run(ProcessRequest((sys.executable, "-c", script)))
 
     assert perf_counter() - started_at < 5
     assert "x" not in str(error.value)
@@ -86,6 +88,7 @@ def test_runner_timeout_kills_only_after_real_wait_timeout(
     class TimedOutProcess:
         args = ["git", "status"]
         returncode: int | None = None
+        stdin = BytesIO()
         stdout = BytesIO()
         stderr = BytesIO()
         timed_out = False
@@ -108,7 +111,9 @@ def test_runner_timeout_kills_only_after_real_wait_timeout(
     monkeypatch.setattr(processes_module.subprocess, "Popen", lambda *a, **k: process)
 
     with pytest.raises(GitProcessUncertainError, match="^Git 进程状态不确定$"):
-        SubprocessGitRunner(timeout_seconds=0.001).run(process.args)
+        SubprocessGitRunner(timeout_seconds=0.001).run(
+            ProcessRequest(tuple(process.args))
+        )
 
     assert process.waited
     assert process.timed_out
@@ -128,6 +133,7 @@ def test_runner_cleanup_exceptions_remain_uncertain_and_close_pipes(
     class CleanupFailingProcess:
         args = ["git", "status"]
         returncode: int | None = None
+        stdin = BytesIO()
         stdout = ExplodingPipe()
         stderr = ExplodingPipe()
         kill_calls = 0
@@ -153,7 +159,7 @@ def test_runner_cleanup_exceptions_remain_uncertain_and_close_pipes(
     monkeypatch.setattr(processes_module.threading.Thread, "join", fail_join)
 
     with pytest.raises(GitProcessUncertainError, match="^Git 进程状态不确定$"):
-        SubprocessGitRunner(timeout_seconds=0.01).run(process.args)
+        SubprocessGitRunner(timeout_seconds=0.01).run(ProcessRequest(tuple(process.args)))
 
     assert process.kill_calls >= 1
     assert process.wait_calls >= 1
@@ -179,6 +185,7 @@ def test_runner_cleans_process_before_propagating_host_interruption(
     class InterruptedProcess:
         args = ["git", "status"]
         returncode: int | None = None
+        stdin = BytesIO()
         stdout = CleanupInterruptingPipe(b"stdout")
         stderr = BytesIO(b"stderr")
         killed = False
@@ -208,14 +215,14 @@ def test_runner_cleans_process_before_propagating_host_interruption(
     monkeypatch.setattr(processes_module.threading, "Thread", record_thread)
 
     with pytest.raises(type(interruption)) as raised:
-        SubprocessGitRunner().run(process.args)
+        SubprocessGitRunner().run(ProcessRequest(tuple(process.args)))
 
     assert raised.value is interruption
     assert process.killed
     assert process.wait_calls >= 2
     assert process.stdout.closed
     assert process.stderr.closed
-    assert len(reader_threads) == 2
+    assert len(reader_threads) == 3
     assert all(not thread.is_alive() for thread in reader_threads)
 
 
@@ -225,6 +232,7 @@ def test_runner_closes_partial_pipe_state_after_process_start(
     class PartialPipeProcess:
         args = ["git", "status"]
         returncode: int | None = None
+        stdin = BytesIO()
         stdout = BytesIO()
         stderr = None
         killed = False
@@ -242,7 +250,7 @@ def test_runner_closes_partial_pipe_state_after_process_start(
     monkeypatch.setattr(processes_module.subprocess, "Popen", lambda *a, **k: process)
 
     with pytest.raises(GitProcessUncertainError, match="^Git 进程状态不确定$"):
-        SubprocessGitRunner().run(process.args)
+        SubprocessGitRunner().run(ProcessRequest(tuple(process.args)))
 
     assert process.killed
     assert process.waited
@@ -260,6 +268,7 @@ def test_runner_maps_normal_path_pipe_close_failure_to_uncertain(
     class CloseFailingProcess:
         args = ["git", "status"]
         returncode: int | None = None
+        stdin = BytesIO()
         stdout = CloseFailingPipe(b"normal stdout")
         stderr = BytesIO(b"normal stderr")
 
@@ -274,7 +283,7 @@ def test_runner_maps_normal_path_pipe_close_failure_to_uncertain(
     monkeypatch.setattr(processes_module.subprocess, "Popen", lambda *a, **k: process)
 
     with pytest.raises(GitProcessUncertainError, match="^Git 进程状态不确定$"):
-        SubprocessGitRunner().run(process.args)
+        SubprocessGitRunner().run(ProcessRequest(tuple(process.args)))
 
     assert process.stdout.closed
     assert process.stderr.closed
@@ -288,11 +297,12 @@ def test_runner_maps_popen_failure_and_preserves_normal_result(
 
     monkeypatch.setattr(processes_module.subprocess, "Popen", fail_before_start)
     with pytest.raises(GitProcessNotStartedError, match="^Git 进程未启动$"):
-        SubprocessGitRunner().run(["git", "--version"])
+        SubprocessGitRunner().run(ProcessRequest(("git", "--version")))
 
     class CompletedProcess:
         args = ["git", "status"]
         returncode: int | None = None
+        stdin = BytesIO()
         stdout = BytesIO(b"normal stdout")
         stderr = BytesIO(b"normal stderr")
 
@@ -308,8 +318,65 @@ def test_runner_maps_popen_failure_and_preserves_normal_result(
         "Popen",
         lambda *a, **k: CompletedProcess(),
     )
-    assert SubprocessGitRunner().run(["git", "status"]) == CommandResult(
+    assert SubprocessGitRunner().run(ProcessRequest(("git", "status"))) == CommandResult(
         returncode=7,
         stdout=b"normal stdout",
         stderr=b"normal stderr",
     )
+
+
+def test_process_request_boundary_is_available() -> None:
+    assert hasattr(processes_module, "ProcessRequest")
+    assert hasattr(processes_module, "ProcessRunner")
+
+
+def test_runner_applies_request_cwd_env_and_bounded_stdin(tmp_path: Path) -> None:
+    request = processes_module.ProcessRequest(
+        argv=(
+            sys.executable,
+            "-c",
+            (
+                "import os,sys; "
+                "data=sys.stdin.buffer.read(); "
+                "sys.stdout.buffer.write(os.getcwd().encode()+b'\\0'+"
+                "os.environ['HARNESS_TEST_ENV'].encode()+b'\\0'+data)"
+            ),
+        ),
+        cwd=tmp_path,
+        env={"HARNESS_TEST_ENV": "controlled"},
+        stdin=b"bounded input",
+    )
+
+    try:
+        result = SubprocessGitRunner().run(request)
+    except TypeError:
+        pytest.fail("runner 尚未接受 ProcessRequest")
+
+    assert result == CommandResult(
+        returncode=0,
+        stdout=str(tmp_path).encode() + b"\0controlled\0bounded input",
+        stderr=b"",
+    )
+
+
+def test_runner_rejects_oversized_stdin_before_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    starts = 0
+
+    def record_start(*args: object, **kwargs: object) -> None:
+        nonlocal starts
+        starts += 1
+        raise AssertionError("超限 stdin 不得启动进程")
+
+    monkeypatch.setattr(processes_module.subprocess, "Popen", record_start)
+    limit = processes_module.DEFAULT_PROCESS_STDIN_LIMIT_BYTES
+    request = processes_module.ProcessRequest(
+        argv=(sys.executable, "-c", "pass"),
+        stdin=b"x" * (limit + 1),
+    )
+
+    with pytest.raises(ValueError, match="^子进程 stdin 超过大小限制$"):
+        SubprocessGitRunner().run(request)
+
+    assert starts == 0

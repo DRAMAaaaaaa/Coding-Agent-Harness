@@ -154,6 +154,8 @@ class TaskOrchestrator:
 > 当前交付顺序由 `docs/superpowers/plans/2026-07-16-minimal-viable-harness.md`
 > 的 MVP-1—MVP-4 取代原 Task 5—14 横向顺序；原条目保留为完整产品路线。
 
+**MVP Task 1 状态：** 已关闭。独立规约符合性与文档质量审查均为 CLEAN，证据见 `.superpowers/sdd/task-1-review.md`；未改变 `MVP-ISSUE-002`—`006` 的实现门禁。
+
 | Task | 交付单元 | 依赖 | 可并行关系 | 建议分支 | 状态/提交 |
 |---|---|---|---|---|---|
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
@@ -881,14 +883,20 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 
 **目标：** 安全接入本地 Git 项目，识别 Python/Node.js 验证命令，并隔离任务修改。
 
-**状态：** 安全返工中。此前阶段审查结论已被整分支冷审查推翻；当前存在 2 个 Critical、2 个 Important 和 3 个 Minor，详见 `MVP_ISSUES.md`。Task 5 不得合并，必须先完成 MVP-1 安全修复与新的双重评审（2026-07-16；`DW-05-001` 仍只覆盖同 UID 主动篡改，不覆盖静态路径别名或 Git 隐式执行）。
+**状态：** 安全返工中。此前阶段审查结论已被整分支冷审查推翻；`MVP-ISSUE-001/005` 已由 MVP Task 2 的 CLEAN 复审关闭，其余问题详见 `MVP_ISSUES.md`。Task 5 不得合并，必须先完成 MVP-1 安全修复与新的双重评审（2026-07-16；`DW-05-001` 仍只覆盖同 UID 主动篡改，不覆盖静态路径别名或 Git 隐式执行）。
 
-**MVP Task 2 状态：** 已修复首次独立审查提出的唯一 Important，待重新执行独立规约符合性审查与代码质量审查；核心提交仍由 `fix: 统一路径身份并阻断扫描逃逸` 固化，实际哈希记录在实现报告和后续复审记录中。
+**MVP Task 2 状态：** 已关闭。提交 `26c1222` 的修复后独立规约符合性审查与代码质量审查均为 CLEAN，证据见 `.superpowers/sdd/task-2-rereview.md`；据此关闭 `MVP-ISSUE-001/005`。
 
 - RED：path identity/scanner/worktree focused 集为 `15 failed, 40 passed, 3 skipped`，代表性失败为扩展 drive 重叠未在 `mkdir` 前拒绝、Windows 逃逸在拒绝前触发 `exists`、未知设备命名空间未 fail closed、既有对象未用 `samefile` 补证。
 - 首次审查修复 RED：drive/UNC 的尾随点/空格、DOS 保留名及带扩展形式、ADS/冒号、Win32 非法字符、控制字符和非根 `/`，连同 PathGuard、Database key、WorktreeManager 零 `mkdir` 消费者回归，共得到 `66 failed, 120 passed, 3 skipped`；Windows 真实尾随点对象探针同时证明旧折叠并非普通路径等价。
-- 修复 GREEN：统一保守的 Win32 组件验证只折叠可证明等价的扩展 drive/UNC；focused 集为 `186 passed, 3 skipped`，governance/storage/workspace 回归为 `407 passed, 6 skipped`。正常 Unicode、合法中间点和根位置 `/` 保持可用；`MVP-ISSUE-001/005` 仍为“实现完成，待复审”，不得提前关闭。
+- 修复 GREEN：统一保守的 Win32 组件验证只折叠可证明等价的扩展 drive/UNC；focused 集为 `186 passed, 3 skipped`，governance/storage/workspace 回归为 `407 passed, 6 skipped`。正常 Unicode、合法中间点和根位置 `/` 保持可用；独立复审 CLEAN 后 `MVP-ISSUE-001/005` 已关闭。
 - 延期审计：本 Task 未新增延期，也未改变 `DW-05-001`；`MVP-ISSUE-006` 仍由后续指定 Task 调整 CI wall-clock 门禁，本 Task 仅避免路径身份检查造成性能回退。
+
+**MVP Task 3 状态：** 实现完成，待独立规约符合性审查与代码质量审查；`MVP-ISSUE-002` 在两项复审均 CLEAN 前不得关闭。
+
+- RED：Git 2.31.1 最小探针证明 `core.fsmonitor=false` 会执行名为 `false` 的外部 hook，而空值不会；真实 scanner sentinel 证明旧边界执行 fsmonitor/GPG；创建前 filter、scanner status 前 clean filter 与 release 重审回归均先得到预期失败。
+- GREEN：新增绝对 Git 与最小受控环境、空 hooks/global config/global attributes、`core.fsmonitor=`、`log --no-show-signature`、提交/current filter gate、`worktree add --no-checkout` 和安全 materialize。创建 filter 拒绝发生在 marker/branch/target 前；release 对当前 index 与工作树重审，异常时保留现场。
+- 实现验证：`tests/workspace/test_git_safety.py -v` 为 `8 passed`；workspace 回归为 `98 passed, 4 skipped`；Ruff、mypy 均退出 0。最终提交哈希与复审结论分别记录在 Task 3 报告和后续复审记录中。
 
 **文件：**
 

@@ -14,10 +14,10 @@ from coding_agent_harness.governance.path_identity import (
 )
 from coding_agent_harness.governance.paths import PathEscapeError, PathGuard
 from coding_agent_harness.workspace.models import Workspace, WorktreeInfo
+from coding_agent_harness.workspace.git import GitSafetyError, SafeGit
 from coding_agent_harness.workspace.processes import (
     GitProcessNotStartedError,
-    GitRunner,
-    SubprocessGitRunner,
+    ProcessRunner,
 )
 
 
@@ -65,10 +65,10 @@ class WorktreeManager:
         workspace: Workspace,
         state_root: str | Path,
         *,
-        runner: GitRunner | None = None,
+        runner: ProcessRunner | None = None,
+        safe_git: SafeGit | None = None,
     ) -> None:
         self._workspace = workspace
-        self._runner = runner or SubprocessGitRunner()
         try:
             self._git_root = workspace.git_root.resolve(strict=True)
             state_root_text = str(state_root)
@@ -86,6 +86,7 @@ class WorktreeManager:
             self._state_root.mkdir(parents=True, exist_ok=True)
         except OSError:
             raise WorktreeStateError("Harness 状态目录无效") from None
+        self._git = safe_git or SafeGit(self._state_root, runner=runner)
         self._state_guard = PathGuard(self._state_root)
         self._workspace_state = self._resolve_state_path(
             self._state_root / "worktrees" / str(workspace.id)
@@ -101,19 +102,26 @@ class WorktreeManager:
         if self._branch_exists(branch) or target.exists() or target.is_symlink():
             raise WorktreeConflictError("任务分支或工作树已存在")
 
+        tracked = self._git.run(
+            self._git_root,
+            ["ls-tree", "-r", "--name-only", "-z", resolved_base],
+        )
+        if tracked.returncode != 0:
+            raise WorktreeCreationError("无法审计任务工作树")
+        self._git.assert_filter_free(self._git_root, resolved_base, tracked.stdout)
+
         workspace_state.mkdir(parents=True, exist_ok=True)
         workspace_state = self._resolve_state_path(workspace_state)
         target = self._resolve_state_path(workspace_state / str(task_id))
         self._acquire_active_marker(task_id)
         target = self._resolve_state_path(target)
         try:
-            result = self._runner.run(
+            result = self._git.run(
+                self._git_root,
                 [
-                    "git",
-                    "-C",
-                    str(self._git_root),
                     "worktree",
                     "add",
+                    "--no-checkout",
                     "-b",
                     branch,
                     str(target),
@@ -132,6 +140,31 @@ class WorktreeManager:
             raise WorktreeUncertainError("创建任务工作树结果不确定，需人工处理") from None
         if result.returncode != 0:
             raise WorktreeUncertainError("创建任务工作树结果不确定，需人工处理")
+        try:
+            read_tree = self._git.run(
+                target,
+                ["read-tree", "--reset", resolved_base],
+            )
+            if read_tree.returncode != 0:
+                raise WorktreeUncertainError(
+                    "创建任务工作树结果不确定，需人工处理"
+                )
+            self._git.assert_current_filter_free(target, tracked.stdout)
+            materialized = self._git.run(target, ["checkout-index", "--all"])
+            if materialized.returncode != 0:
+                raise WorktreeUncertainError(
+                    "创建任务工作树结果不确定，需人工处理"
+                )
+        except GitProcessNotStartedError:
+            raise WorktreeUncertainError(
+                "创建任务工作树结果不确定，需人工处理"
+            ) from None
+        except WorktreeUncertainError:
+            raise
+        except Exception:
+            raise WorktreeUncertainError(
+                "创建任务工作树结果不确定，需人工处理"
+            ) from None
         self._validate_created_worktree(target, branch, resolved_base)
         return WorktreeInfo(
             workspace_id=self._workspace.id,
@@ -153,9 +186,13 @@ class WorktreeManager:
         except WorktreeStateError:
             raise WorktreeUncertainError("任务工作树路径身份变化，需人工处理") from None
         try:
-            status = self._runner.run(
-                ["git", "-C", str(target), "status", "--porcelain=v1"]
-            )
+            tracked = self._git.run(target, ["ls-files", "-z"])
+            if tracked.returncode != 0:
+                raise WorktreeReleaseError("无法检查任务工作树状态")
+            self._git.assert_current_filter_free(target, tracked.stdout)
+            status = self._git.run(target, ["status", "--porcelain=v1"])
+        except GitSafetyError:
+            raise
         except Exception:
             raise WorktreeReleaseError("无法检查任务工作树状态") from None
         if status.returncode != 0:
@@ -163,8 +200,9 @@ class WorktreeManager:
         if status.stdout:
             raise WorktreeReleaseError("任务工作树包含未提交改动")
         try:
-            removed = self._runner.run(
-                ["git", "-C", str(self._git_root), "worktree", "remove", str(target)]
+            removed = self._git.run(
+                self._git_root,
+                ["worktree", "remove", str(target)],
             )
         except GitProcessNotStartedError:
             raise WorktreeReleaseError("释放任务工作树失败") from None
@@ -183,9 +221,7 @@ class WorktreeManager:
             ) from None
 
     def _validate_git_root(self) -> None:
-        result = self._runner.run(
-            ["git", "-C", str(self._git_root), "rev-parse", "--show-toplevel"]
-        )
+        result = self._git.run(self._git_root, ["rev-parse", "--show-toplevel"])
         if result.returncode != 0:
             raise NotGitRepositoryError("Workspace 不是 Git 根目录")
         try:
@@ -202,11 +238,9 @@ class WorktreeManager:
     def _resolve_base_commit(self, base_commit: str) -> str:
         if not base_commit or "\x00" in base_commit:
             raise BaseCommitError("基准提交不存在")
-        result = self._runner.run(
+        result = self._git.run(
+            self._git_root,
             [
-                "git",
-                "-C",
-                str(self._git_root),
                 "rev-parse",
                 "--verify",
                 f"{base_commit}^{{commit}}",
@@ -223,11 +257,9 @@ class WorktreeManager:
         return resolved
 
     def _branch_exists(self, branch: str) -> bool:
-        result = self._runner.run(
+        result = self._git.run(
+            self._git_root,
             [
-                "git",
-                "-C",
-                str(self._git_root),
                 "show-ref",
                 "--verify",
                 "--quiet",
@@ -267,8 +299,9 @@ class WorktreeManager:
                 raise WorktreeUncertainError(
                     "创建任务工作树后验验证失败，需人工处理"
                 )
-            root_result = self._runner.run(
-                ["git", "-C", str(safe_target), "rev-parse", "--show-toplevel"]
+            root_result = self._git.run(
+                safe_target,
+                ["rev-parse", "--show-toplevel"],
             )
             if root_result.returncode != 0:
                 raise WorktreeUncertainError(
@@ -322,11 +355,9 @@ class WorktreeManager:
             )
 
     def _registration_for(self, target: Path) -> tuple[str, str] | None:
-        result = self._runner.run(
+        result = self._git.run(
+            self._git_root,
             [
-                "git",
-                "-C",
-                str(self._git_root),
                 "worktree",
                 "list",
                 "--porcelain",
