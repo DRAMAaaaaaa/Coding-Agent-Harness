@@ -42,7 +42,7 @@
 - **未完成部分与影响：** 尚未用专用服务账户、ACL 或 broker 把 state_root 与同一登录账户下的其他原生进程隔离。攻击者可制造拒绝服务或不确定状态，但普通 Agent 工具仍不能访问 state_root，Harness 不会自动递归删除不确定路径。
 - **临时替代：** 本地单用户部署将 state_root 置于宿主私有目录，要求同一 OS 账户不主动篡改；一旦检测身份或 Git 注册不一致，停止自动处理并由用户检查 Git worktree/branch/marker。
 - **恢复条件与依赖：** 选择 Windows/Linux 均可部署的隔离方案；定义安装权限、容器挂载、备份恢复和升级语义；增加同 UID 对抗进程、ACL 拒绝、broker 崩溃恢复及 WebUI 人工接管 E2E。完成后更新 SPEC 威胁模型并把本条标为 `RESOLVED`。
-- **证据：** R1 规约复审与架构分析、Task 5 R2 RED/GREEN、`PLAN.md`、`AGENT_LOG.md` 和 `.superpowers/sdd/task-5-report.md`；R2 提交哈希在完成提交后回填。
+- **证据：** R1 规约复审与架构分析、Task 5 R2 RED/GREEN、R2 提交 `8c153ed`、`PLAN.md`、`AGENT_LOG.md` 和 `.superpowers/sdd/task-5-report.md`。
 
 ## 记录要求
 
