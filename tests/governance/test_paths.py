@@ -10,6 +10,18 @@ from coding_agent_harness.governance.paths import (
 )
 
 
+_UNPROVEN_EXTENDED_COMPONENTS = [
+    "item.",
+    "item ",
+    "CON",
+    "con.txt",
+    "item:stream",
+    "item<name",
+    "item\x1fcontrol",
+    "parent/child",
+]
+
+
 def test_guard_rejects_missing_or_non_directory_root(tmp_path: Path) -> None:
     for invalid_root in (tmp_path / "missing", tmp_path / "file.txt"):
         if invalid_root.suffix:
@@ -78,3 +90,36 @@ def test_windows_root_comparison_is_case_insensitive(tmp_path: Path) -> None:
     differently_cased = Path(str(root).swapcase())
 
     assert PathGuard(root).resolve(differently_cased) == root.resolve()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows 扩展路径别名语义")
+def test_resolve_collapses_extended_drive_alias(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    child = root / "src" / "module.py"
+    child.parent.mkdir(parents=True)
+    extended_child = Path("\\\\?\\" + str(child))
+
+    assert PathGuard(root).resolve(extended_child) == child.resolve()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows 设备命名空间语义")
+def test_resolve_rejects_unknown_device_namespace(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+
+    with pytest.raises(PathEscapeError, match="^路径超出工作区$"):
+        PathGuard(root).resolve(r"\\?\GLOBALROOT\Device\HarddiskVolume1\secret")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows 扩展路径字面语义")
+@pytest.mark.parametrize("component", _UNPROVEN_EXTENDED_COMPONENTS)
+def test_resolve_rejects_unproven_extended_drive_component(
+    tmp_path: Path,
+    component: str,
+) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    candidate = rf"\\?\{root}\safe\{component}\file.py"
+
+    with pytest.raises(PathEscapeError, match="^路径超出工作区$"):
+        PathGuard(root).resolve(candidate)

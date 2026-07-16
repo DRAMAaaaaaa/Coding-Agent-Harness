@@ -167,6 +167,115 @@ def test_rejects_state_root_equal_to_or_ancestor_of_git_root_without_writing(
     assert not worktrees.exists()
 
 
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows 扩展路径别名语义")
+def test_extended_drive_alias_overlap_is_rejected_before_mkdir(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = git_repository_factory("extended-overlap", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    extended = Path("\\\\?\\" + str(workspace.git_root.resolve()))
+    mkdir_calls: list[Path] = []
+
+    def record_mkdir(
+        self: Path,
+        mode: int = 0o777,
+        parents: bool = False,
+        exist_ok: bool = False,
+    ) -> None:
+        del mode, parents, exist_ok
+        mkdir_calls.append(self)
+
+    monkeypatch.setattr(Path, "mkdir", record_mkdir)
+
+    with pytest.raises(
+        WorktreeStateError,
+        match="^Harness 状态目录必须位于项目外$",
+    ):
+        WorktreeManager(workspace, extended)
+
+    assert mkdir_calls == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows 设备命名空间语义")
+@pytest.mark.parametrize(
+    "state_root",
+    [
+        r"\\.\PhysicalDrive0",
+        r"\\?\GLOBALROOT\Device\HarddiskVolume1\state",
+        r"\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\state",
+    ],
+)
+def test_unknown_device_namespace_is_rejected_before_mkdir(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    monkeypatch: pytest.MonkeyPatch,
+    state_root: str,
+) -> None:
+    root = git_repository_factory("device-namespace", {"README.md": "base\n"})
+    mkdir_calls: list[Path] = []
+
+    def record_mkdir(
+        self: Path,
+        mode: int = 0o777,
+        parents: bool = False,
+        exist_ok: bool = False,
+    ) -> None:
+        del mode, parents, exist_ok
+        mkdir_calls.append(self)
+
+    monkeypatch.setattr(Path, "mkdir", record_mkdir)
+
+    with pytest.raises(WorktreeStateError, match="^Harness 状态目录无效$"):
+        WorktreeManager(workspace_for(root), state_root)
+
+    assert mkdir_calls == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows 扩展路径字面语义")
+@pytest.mark.parametrize("namespace", ["drive", "unc"])
+@pytest.mark.parametrize(
+    "component",
+    [
+        "item.",
+        "item ",
+        "CON",
+        "con.state",
+        "item:stream",
+        "item<name",
+        "item\x1fcontrol",
+        "parent/child",
+    ],
+)
+def test_unproven_extended_component_is_rejected_before_mkdir(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    monkeypatch: pytest.MonkeyPatch,
+    namespace: str,
+    component: str,
+) -> None:
+    root = git_repository_factory("unproven-namespace", {"README.md": "base\n"})
+    if namespace == "drive":
+        state_root = rf"\\?\C:\safe\{component}\state"
+    else:
+        state_root = rf"\\?\UNC\server\share\safe\{component}\state"
+    mkdir_calls: list[Path] = []
+
+    def record_mkdir(
+        self: Path,
+        mode: int = 0o777,
+        parents: bool = False,
+        exist_ok: bool = False,
+    ) -> None:
+        del mode, parents, exist_ok
+        mkdir_calls.append(self)
+
+    monkeypatch.setattr(Path, "mkdir", record_mkdir)
+
+    with pytest.raises(WorktreeStateError, match="^Harness 状态目录无效$"):
+        WorktreeManager(workspace_for(root), state_root)
+
+    assert mkdir_calls == []
+
+
 def test_rejects_existing_branch_or_target_without_overwriting(
     git_repository_factory: Callable[[str, Mapping[str, str]], Path],
     tmp_path: Path,

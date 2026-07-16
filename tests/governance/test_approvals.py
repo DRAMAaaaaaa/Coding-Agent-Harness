@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from coding_agent_harness.domain.actions import TaskState
 from coding_agent_harness.governance import approvals as approvals_module
+from coding_agent_harness.governance.path_identity import UnsafePathNamespaceError
 from coding_agent_harness.governance.approvals import (
     ApprovalContext,
     ApprovalDecision,
@@ -517,41 +518,7 @@ def test_database_path_key_folds_proven_extended_namespaces(
 
     assert database_module._database_path_key(ordinary) == (
         database_module._database_path_key(extended)
-    )
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        r"\\?\é:\folder\same.sqlite3",
-        r"\\?\Ж:\folder\same.sqlite3",
-        r"\\?\盘:\folder\same.sqlite3",
-        r"\\.\C:\folder\same.sqlite3",
-        r"\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\same.sqlite3",
-        r"\\?\GLOBALROOT\Device\HarddiskVolume1\same.sqlite3",
-        "\\\\?\\",
-        r"\\?\C:",
-        r"prefix\\?\C:\folder\same.sqlite3",
-    ],
 )
-def test_collapse_windows_extended_path_preserves_unproven_namespaces(
-    path: str,
-) -> None:
-    assert database_module._collapse_windows_extended_path(path) == path
-
-
-@pytest.mark.parametrize(
-    ("extended", "ordinary"),
-    [
-        (r"\\?\A:\Folder\same.sqlite3", r"A:\Folder\same.sqlite3"),
-        (r"\\?\z:/folder/same.sqlite3", "z:/folder/same.sqlite3"),
-    ],
-)
-def test_collapse_windows_extended_path_folds_ascii_drive_roots(
-    extended: str,
-    ordinary: str,
-) -> None:
-    assert database_module._collapse_windows_extended_path(extended) == ordinary
 
 
 def test_database_path_key_keeps_different_paths_distinct(
@@ -560,6 +527,34 @@ def test_database_path_key_keeps_different_paths_distinct(
     assert database_module._database_path_key(tmp_path / "first.sqlite3") != (
         database_module._database_path_key(tmp_path / "second.sqlite3")
     )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended path namespace")
+@pytest.mark.parametrize("namespace", ["drive", "unc"])
+@pytest.mark.parametrize(
+    "component",
+    [
+        "item.",
+        "item ",
+        "CON",
+        "con.sqlite3",
+        "item:stream",
+        "item<name",
+        "item\x1fcontrol",
+        "parent/child",
+    ],
+)
+def test_database_path_key_rejects_unproven_extended_component(
+    namespace: str,
+    component: str,
+) -> None:
+    if namespace == "drive":
+        path = rf"\\?\C:\safe\{component}\database.sqlite3"
+    else:
+        path = rf"\\?\UNC\server\share\safe\{component}\database.sqlite3"
+
+    with pytest.raises(UnsafePathNamespaceError):
+        database_module._database_path_key(path)
 
 
 @pytest.mark.parametrize(

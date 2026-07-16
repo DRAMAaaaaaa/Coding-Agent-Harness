@@ -539,3 +539,21 @@
 - **执行顺序：** 根 `PLAN.md` 明确由精简计划的 MVP-1—MVP-4 取代原 Task 5—14 横向顺序，原条目只保留为完整产品路线；`MVP_ISSUES.md` 将状态一致性问题标为“已修，待复审”，不提前关闭。
 - **延期登记：** `DEFERRED_WORK.md` 新增 `DW-MVP-001`—`DW-MVP-006`，分别登记长期记忆、多任务/多 Agent、真实 DeepSeek/Qwen 联网验收、依赖安装/工具网络/Git 远端操作、外部 checkout filter 正式执行和高级 UI；每项均记录用户影响、MVP 替代和恢复条件。既有 `DW-05-001` 保持不变。
 - **验证与范围：** 本任务只修改 `DEFERRED_WORK.md`、`PLAN.md`、`AGENT_LOG.md` 和 `MVP_ISSUES.md`，不修改生产代码或测试，不联网、不安装依赖、不 merge/push、不接触凭据。按任务简报执行占位符扫描与 `git diff --check`，证据记录在忽略的 `.superpowers/sdd/task-1-report.md`；追踪变更以 `docs: 冻结最小可用产品执行顺序` 提交，随后等待独立规约符合性审查和代码质量审查。
+
+### 2026-07-16 — IMPL-MVP-002
+
+- **任务与技能：** 执行 MVP Task 2“统一路径身份并在文件访问前拒绝逃逸”；完整读取 `AGENTS.md`、任务简报、`MVP_ISSUES.md`、`superpowers:test-driven-development`、`superpowers:verification-before-completion` 及测试反模式说明。固定使用 `E:\Coding Agent Harness\.venv\Scripts\python.exe`，在既有隔离 worktree `codex/workspaces` 上从基线 `b72215c` 开始。
+- **TDD RED：** 首轮因缺少共享模块得到 1 个收集错误，只添加旧语义等价接口骨架后重新取得有效行为 RED：`15 failed, 40 passed, 3 skipped`。失败覆盖未知 `\\.\`/GLOBALROOT/Volume/畸形扩展命名空间未拒绝、硬链接身份未用 `samefile` 补证、解析权限错误原样泄漏、5 类 Windows drive-relative/绝对 drive/UNC/反斜杠逃逸在拒绝前触发 `exists`，以及 `\\?\` drive 别名与 Git 根重叠却执行 `mkdir`。
+- **最小 GREEN 与重构：** 新增共享 `governance.path_identity`，统一 `collapse_windows_extended_path/path_key/same_path/is_within/paths_overlap`；PathGuard、Database、WorktreeManager 和 Scanner 全部迁移。WorktreeManager 在首次 `mkdir` 前执行双向物理重叠检查；scanner 先按宿主语义拒绝 Windows 逃逸，再以缓存的父目录身份完成 containment，最后才允许 `exists/stat`；POSIX 保留反斜杠文件名语义。既有对象以 `samefile` 补证，权限、网络或重解析错误固定 fail closed。
+- **严格于简报伪代码之处：** `\\?\C:\...` 与 `\\?\UNC\server\share\...` 中出现 `.`/`..` 不被折叠为普通路径，因为扩展命名空间不保证与 Win32 常规规范化语义等价；畸形 UNC、NT `\??\`、`\\.\`、GLOBALROOT 和 Volume GUID 均固定拒绝。该收紧遵循已批准的“只折叠可证明别名、未知设备命名空间 fail closed”不变量。
+- **验证证据：** 实现阶段 focused 集为 `58 passed, 3 skipped`；提交前新鲜 governance/storage/workspace 为 `338 passed, 6 skipped in 25.92s`；Ruff 输出 `All checks passed!`；mypy 输出 `Success: no issues found in 25 source files`；`git diff --check` 退出 0。首次新鲜重跑因新增 UNC 根测试误用 raw string 在收集阶段暴露语法错误，修正测试源码后从头重跑，未将环境/测试语法错误冒充产品 RED。
+- **范围、人工干预与延期：** 控制器要求立即收敛读取并汇报 RED/GREEN；未改变技术边界。未修改 Git runner、信任指纹、fixture、迁移或 Task 3+，未联网、安装依赖、merge/push 或接触凭据。未新增延期；`MVP-ISSUE-006` 保持待后续指定 Task 处理。当前仅为实现完成、待独立双重复审，不提前关闭 `MVP-ISSUE-001/005`。
+
+### 2026-07-16 — IMPL-MVP-002-R1-PATH-COMPONENTS
+
+- **审查输入与技能：** 首次独立双阶段审查只提出 1 个 Important：扩展 drive/UNC 仍放行尾随点/空格、DOS 保留名、ADS、普通 Win32 非法字符、控制字符和非根 `/`，且 WorktreeManager 可能先执行 `mkdir`。完整读取审查、简报与原实现报告，使用 `systematic-debugging`、`test-driven-development`、`verification-before-completion` 及测试反模式说明；根因是共享折叠器只排除空组件和精确 `.`/`..`，drive 分支还会在校验前把 `/` 归一化。
+- **TDD RED：** 新增 drive/UNC 失败参数矩阵，并直接经过 PathGuard、Database key 和 WorktreeManager；后者对每类未证明形式记录 `Path.mkdir` 调用。Windows 真实探针用 `\\?\` 创建尾随点目录，证明扩展对象存在而普通 Win32 路径不存在。旧实现得到 `66 failed, 120 passed, 3 skipped`，失败均由旧放行或消费者过早丢失原始分隔符触发。
+- **最小 GREEN 与兼容性：** `path_identity` 使用统一保守组件验证器，拒绝尾随点/空格、DOS 设备名及带扩展形式、ADS/冒号、`<>:\"/\\|?*`、U+0000—U+001F 和非根 `/`；UNC 的 server/share 与剩余组件使用同一规则。PathGuard、Database 和 WorktreeManager 在字符串转为 `Path` 前调用共享折叠器，避免 WindowsPath 先归一化 `/`。正向回归保留正常 Unicode、`.git`、连续中间点以及 drive 根位置 `/`。
+- **GREEN 与当前状态：** focused 集为 `186 passed, 3 skipped in 35.83s`；governance/storage/workspace 回归为 `407 passed, 6 skipped in 43.14s`；定向 Ruff 全通过，定向 mypy 检查 4 个源文件无问题。当前仍为“实现完成，待复审”，`MVP-ISSUE-001/005` 未关闭；最终全量 Ruff、mypy、差异检查与 amend 哈希记录在 Task 2 实现报告中。
+- **范围：** 未修改 scanner、Git runner、安全 Git 环境、信任指纹、fixture、迁移或 Task 3+；未联网、安装依赖、merge、push 或接触凭据。未新增延期，`DW-05-001` 与 `MVP-ISSUE-006` 边界不变。
+- **最终新鲜门禁：** 新增回归 focused `69 passed, 120 deselected in 7.82s`；governance/storage/workspace `407 passed, 6 skipped in 42.36s`；Ruff `All checks passed!`；mypy `Success: no issues found in 25 source files`；`git diff --check` 退出 0。修复按要求 amend 到 Task 2 原提交，不新增第二个 Task 2 提交；新哈希记录在忽略的实现报告并等待独立复审。

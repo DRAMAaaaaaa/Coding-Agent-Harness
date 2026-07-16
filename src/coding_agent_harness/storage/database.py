@@ -12,6 +12,11 @@ from typing import Self
 
 import aiosqlite
 
+from coding_agent_harness.governance.path_identity import (
+    collapse_windows_extended_path,
+    path_key,
+)
+
 
 _MIGRATION_DIRECTORY = Path(__file__).with_name("migrations")
 _BUSY_TIMEOUT_MILLISECONDS = 5_000
@@ -22,7 +27,7 @@ _wal_wait: Callable[[float], Awaitable[None]] = asyncio.sleep
 _INITIALIZATION_GATES_LOCK = threading.Lock()
 _INITIALIZATION_GATES: weakref.WeakKeyDictionary[
     asyncio.AbstractEventLoop,
-    weakref.WeakValueDictionary[str, asyncio.Lock],
+    weakref.WeakValueDictionary[tuple[str, ...], asyncio.Lock],
 ] = weakref.WeakKeyDictionary()
 
 
@@ -44,7 +49,10 @@ class Database:
 
     @classmethod
     async def open(cls, path: str | Path) -> Self:
-        database_path = Path(path).resolve(strict=False)
+        raw_path = str(path)
+        if os.name == "nt":
+            raw_path = collapse_windows_extended_path(raw_path)
+        database_path = Path(raw_path).resolve(strict=False)
         gate = _database_initialization_gate(
             database_path,
             asyncio.get_running_loop(),
@@ -123,29 +131,11 @@ def _database_initialization_gate(
         return gate
 
 
-def _database_path_key(path: str | Path) -> str:
-    resolved = str(Path(path).resolve(strict=False))
+def _database_path_key(path: str | Path) -> tuple[str, ...]:
+    raw_path = str(path)
     if os.name == "nt":
-        resolved = _collapse_windows_extended_path(resolved)
-    return os.path.normcase(resolved)
-
-
-def _collapse_windows_extended_path(path: str) -> str:
-    extended_unc_prefix = "\\\\?\\UNC\\"
-    if path[: len(extended_unc_prefix)].casefold() == extended_unc_prefix.casefold():
-        return "\\\\" + path[len(extended_unc_prefix) :]
-
-    extended_prefix = "\\\\?\\"
-    if (
-        path.startswith(extended_prefix)
-        and len(path) >= len(extended_prefix) + 3
-        and path[len(extended_prefix)]
-        in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-        and path[len(extended_prefix) + 1] == ":"
-        and path[len(extended_prefix) + 2] in {"\\", "/"}
-    ):
-        return path[len(extended_prefix) :]
-    return path
+        raw_path = collapse_windows_extended_path(raw_path)
+    return path_key(Path(raw_path))
 
 
 async def _ensure_wal_mode(connection: aiosqlite.Connection) -> None:

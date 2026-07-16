@@ -6,6 +6,12 @@ import os
 from pathlib import Path
 from uuid import UUID
 
+from coding_agent_harness.governance.path_identity import (
+    UnsafePathNamespaceError,
+    collapse_windows_extended_path,
+    paths_overlap,
+    same_path,
+)
 from coding_agent_harness.governance.paths import PathEscapeError, PathGuard
 from coding_agent_harness.workspace.models import Workspace, WorktreeInfo
 from coding_agent_harness.workspace.processes import (
@@ -65,15 +71,17 @@ class WorktreeManager:
         self._runner = runner or SubprocessGitRunner()
         try:
             self._git_root = workspace.git_root.resolve(strict=True)
-            self._state_root = Path(state_root).resolve(strict=False)
-        except (OSError, RuntimeError):
+            state_root_text = str(state_root)
+            if os.name == "nt":
+                state_root_text = collapse_windows_extended_path(state_root_text)
+            raw_state_root = Path(state_root_text)
+            if paths_overlap(raw_state_root, self._git_root):
+                raise WorktreeStateError("Harness 状态目录必须位于项目外")
+            self._state_root = raw_state_root.resolve(strict=False)
+        except WorktreeStateError:
+            raise
+        except (OSError, RuntimeError, UnsafePathNamespaceError):
             raise WorktreeStateError("Harness 状态目录无效") from None
-        if (
-            self._state_root == self._git_root
-            or self._state_root.is_relative_to(self._git_root)
-            or self._git_root.is_relative_to(self._state_root)
-        ):
-            raise WorktreeStateError("Harness 状态目录必须位于项目外")
         try:
             self._state_root.mkdir(parents=True, exist_ok=True)
         except OSError:
@@ -184,7 +192,11 @@ class WorktreeManager:
             reported_root = Path(result.stdout.decode("utf-8").strip()).resolve(strict=True)
         except (UnicodeDecodeError, OSError, RuntimeError):
             raise NotGitRepositoryError("Workspace 不是 Git 根目录") from None
-        if reported_root != self._git_root:
+        try:
+            matches_git_root = same_path(reported_root, self._git_root)
+        except UnsafePathNamespaceError:
+            matches_git_root = False
+        if not matches_git_root:
             raise NotGitRepositoryError("Workspace 不是 Git 根目录")
 
     def _resolve_base_commit(self, base_commit: str) -> str:
@@ -251,7 +263,7 @@ class WorktreeManager:
     ) -> None:
         try:
             safe_target = self._resolve_state_path(target)
-            if safe_target != target or not safe_target.is_dir():
+            if not same_path(safe_target, target) or not safe_target.is_dir():
                 raise WorktreeUncertainError(
                     "创建任务工作树后验验证失败，需人工处理"
                 )
@@ -266,12 +278,18 @@ class WorktreeManager:
                 strict=True
             )
             registration = self._registration_for(safe_target)
-        except (OSError, RuntimeError, UnicodeDecodeError, WorktreeStateError):
+        except (
+            OSError,
+            RuntimeError,
+            UnicodeDecodeError,
+            UnsafePathNamespaceError,
+            WorktreeStateError,
+        ):
             raise WorktreeUncertainError(
                 "创建任务工作树后验验证失败，需人工处理"
             ) from None
         if (
-            reported_root != safe_target
+            not same_path(reported_root, safe_target)
             or registration is None
             or registration[0] != base_commit
             or registration[1] != f"refs/heads/{branch}"
@@ -283,12 +301,18 @@ class WorktreeManager:
     def _validate_released_worktree(self, target: Path) -> None:
         try:
             safe_target = self._resolve_state_path(target)
-            if safe_target != target or safe_target.exists():
+            if not same_path(safe_target, target) or safe_target.exists():
                 raise WorktreeUncertainError(
                     "释放任务工作树后验验证失败，需人工处理"
                 )
             registration = self._registration_for(target)
-        except (OSError, RuntimeError, UnicodeDecodeError, WorktreeStateError):
+        except (
+            OSError,
+            RuntimeError,
+            UnicodeDecodeError,
+            UnsafePathNamespaceError,
+            WorktreeStateError,
+        ):
             raise WorktreeUncertainError(
                 "释放任务工作树后验验证失败，需人工处理"
             ) from None
@@ -324,7 +348,11 @@ class WorktreeManager:
                 resolved_path = Path(registered_path).resolve(strict=False)
             except (OSError, RuntimeError):
                 raise WorktreeUncertainError("Git worktree 注册表无效") from None
-            if resolved_path == target:
+            try:
+                matches_target = same_path(resolved_path, target)
+            except UnsafePathNamespaceError:
+                raise WorktreeUncertainError("Git worktree 注册表无效") from None
+            if matches_target:
                 return fields.get("HEAD", ""), fields.get("branch", "")
         return None
 
@@ -351,6 +379,10 @@ class WorktreeManager:
             resolved = self._state_guard.resolve(candidate)
         except PathEscapeError:
             raise WorktreeStateError("Harness 状态子路径越界") from None
-        if resolved == self._git_root or resolved.is_relative_to(self._git_root):
+        try:
+            overlaps_git_root = paths_overlap(resolved, self._git_root)
+        except UnsafePathNamespaceError:
+            raise WorktreeStateError("Harness 状态子路径越界") from None
+        if overlaps_git_root:
             raise WorktreeStateError("Harness 状态子路径与项目重叠")
         return resolved

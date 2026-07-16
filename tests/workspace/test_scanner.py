@@ -2,6 +2,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from io import BufferedReader
 from pathlib import Path
+import os
 import subprocess
 from time import perf_counter
 
@@ -244,6 +245,64 @@ def test_rejects_repository_subdirectory_instead_of_mixing_path_bases(
 
     with pytest.raises(RepositoryScanError, match="^所选目录不是 Git 根目录$"):
         WorkspaceScanner().scan(root / "src")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows 路径语义")
+@pytest.mark.parametrize(
+    "tracked",
+    [
+        r"..\outside.py",
+        r"safe\..\..\outside.py",
+        r"C:outside.py",
+        r"C:\outside.py",
+        r"\\server\share\outside.py",
+    ],
+)
+def test_rejects_windows_escape_before_metadata_probe(
+    tmp_path: Path,
+    tracked: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mark_git_root(tmp_path)
+    probes: list[tuple[str, Path]] = []
+    original_exists = Path.exists
+    original_stat = Path.stat
+
+    def fail_probe(self: Path) -> bool:
+        if self.name.casefold() == "outside.py":
+            probes.append(("exists", self))
+            raise AssertionError("越界路径不得被探测")
+        return original_exists(self)
+
+    def fail_stat(
+        self: Path,
+        *,
+        follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        if self.name.casefold() == "outside.py":
+            probes.append(("stat", self))
+            raise AssertionError("越界路径不得被探测")
+        return original_stat(self, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "exists", fail_probe)
+    monkeypatch.setattr(Path, "stat", fail_stat)
+
+    with pytest.raises(RepositoryScanError, match="^跟踪文件路径越界$"):
+        WorkspaceScanner(RecordingGitRunner([tracked])).scan(tmp_path)
+
+    assert probes == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX 文件名允许反斜杠")
+def test_posix_backslash_filename_is_not_treated_as_windows_traversal(
+    tmp_path: Path,
+) -> None:
+    mark_git_root(tmp_path)
+    tracked = r"literal\..\name.py"
+
+    repository_map = WorkspaceScanner(RecordingGitRunner([tracked])).scan(tmp_path)
+
+    assert repository_map.tracked_files == (tracked,)
 
 
 def test_rejects_tracked_symlink_escape(

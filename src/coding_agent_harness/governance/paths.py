@@ -1,4 +1,12 @@
+import os
 from pathlib import Path
+
+from coding_agent_harness.governance.path_identity import (
+    UnsafePathNamespaceError,
+    collapse_windows_extended_path,
+    is_within,
+    path_key,
+)
 
 
 class PathGuardError(ValueError):
@@ -12,8 +20,13 @@ class PathEscapeError(ValueError):
 class PathGuard:
     def __init__(self, root: str | Path) -> None:
         try:
-            resolved_root = Path(root).resolve(strict=True)
-        except (OSError, RuntimeError):
+            raw_root = str(root)
+            if os.name == "nt":
+                raw_root = collapse_windows_extended_path(raw_root)
+            root_path = Path(raw_root)
+            path_key(root_path)
+            resolved_root = root_path.resolve(strict=True)
+        except (OSError, RuntimeError, UnsafePathNamespaceError):
             raise PathGuardError("工作区根目录无效") from None
         if not resolved_root.is_dir():
             raise PathGuardError("工作区根目录无效")
@@ -24,13 +37,24 @@ class PathGuard:
         return self._root
 
     def resolve(self, candidate: str | Path) -> Path:
-        path = Path(candidate)
+        raw_candidate = str(candidate)
+        if os.name == "nt":
+            try:
+                raw_candidate = collapse_windows_extended_path(raw_candidate)
+            except UnsafePathNamespaceError:
+                raise PathEscapeError("路径超出工作区") from None
+        path = Path(raw_candidate)
         if not path.is_absolute():
             path = self._root / path
         try:
+            path_key(path)
             resolved = path.resolve(strict=False)
-        except (OSError, RuntimeError):
+        except (OSError, RuntimeError, UnsafePathNamespaceError):
             raise PathEscapeError("路径超出工作区") from None
-        if not resolved.is_relative_to(self._root):
+        try:
+            contained = is_within(resolved, self._root)
+        except UnsafePathNamespaceError:
+            raise PathEscapeError("路径超出工作区") from None
+        if not contained:
             raise PathEscapeError("路径超出工作区")
         return resolved
