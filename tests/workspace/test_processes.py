@@ -1,6 +1,7 @@
 from io import BytesIO
 import subprocess
 import sys
+import threading
 from time import perf_counter
 
 import pytest
@@ -159,6 +160,63 @@ def test_runner_cleanup_exceptions_remain_uncertain_and_close_pipes(
     assert join_calls >= 1
     assert process.stdout.closed
     assert process.stderr.closed
+
+
+@pytest.mark.parametrize(
+    "interruption",
+    [KeyboardInterrupt("host interrupt"), SystemExit(23)],
+    ids=["keyboard-interrupt", "system-exit"],
+)
+def test_runner_cleans_process_before_propagating_host_interruption(
+    monkeypatch: pytest.MonkeyPatch,
+    interruption: BaseException,
+) -> None:
+    class CleanupInterruptingPipe(BytesIO):
+        def close(self) -> None:
+            super().close()
+            raise SystemExit("cleanup interruption")
+
+    class InterruptedProcess:
+        args = ["git", "status"]
+        returncode: int | None = None
+        stdout = CleanupInterruptingPipe(b"stdout")
+        stderr = BytesIO(b"stderr")
+        killed = False
+        wait_calls = 0
+
+        def wait(self, *, timeout: float | None = None) -> int:
+            self.wait_calls += 1
+            if self.wait_calls == 1:
+                raise interruption
+            assert self.killed
+            self.returncode = -9
+            return -9
+
+        def kill(self) -> None:
+            self.killed = True
+
+    process = InterruptedProcess()
+    original_thread = threading.Thread
+    reader_threads: list[threading.Thread] = []
+
+    def record_thread(*args: object, **kwargs: object) -> threading.Thread:
+        thread = original_thread(*args, **kwargs)
+        reader_threads.append(thread)
+        return thread
+
+    monkeypatch.setattr(processes_module.subprocess, "Popen", lambda *a, **k: process)
+    monkeypatch.setattr(processes_module.threading, "Thread", record_thread)
+
+    with pytest.raises(type(interruption)) as raised:
+        SubprocessGitRunner().run(process.args)
+
+    assert raised.value is interruption
+    assert process.killed
+    assert process.wait_calls >= 2
+    assert process.stdout.closed
+    assert process.stderr.closed
+    assert len(reader_threads) == 2
+    assert all(not thread.is_alive() for thread in reader_threads)
 
 
 def test_runner_closes_partial_pipe_state_after_process_start(

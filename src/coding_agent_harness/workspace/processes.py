@@ -201,9 +201,11 @@ class SubprocessGitRunner:
             )
             self._close_streams_strict(streams)
             return result
-        except Exception:
+        except BaseException as error:
             self._cleanup_started_process(process, streams, threads)
-            raise GitProcessUncertainError("Git 进程状态不确定") from None
+            if isinstance(error, Exception):
+                raise GitProcessUncertainError("Git 进程状态不确定") from None
+            raise
 
     def _wait_bounded(
         self,
@@ -241,7 +243,7 @@ class SubprocessGitRunner:
         cls._kill_best_effort(process)
         try:
             process.wait(timeout=_CLEANUP_TIMEOUT_SECONDS)
-        except Exception:
+        except BaseException:
             pass
         cls._join_best_effort(threads)
         cls._close_streams_best_effort(streams)
@@ -251,7 +253,7 @@ class SubprocessGitRunner:
     def _kill_best_effort(process: subprocess.Popen[bytes]) -> None:
         try:
             process.kill()
-        except Exception:
+        except BaseException:
             pass
 
     @staticmethod
@@ -259,16 +261,16 @@ class SubprocessGitRunner:
         for thread in threads:
             try:
                 thread.join(timeout=_CLEANUP_TIMEOUT_SECONDS)
-            except Exception:
+            except BaseException:
                 pass
 
     @staticmethod
     def _close_streams_strict(streams: Sequence[BinaryIO]) -> None:
-        first_error: Exception | None = None
+        first_error: BaseException | None = None
         for stream in streams:
             try:
                 stream.close()
-            except Exception as error:
+            except BaseException as error:
                 if first_error is None:
                     first_error = error
         if first_error is not None:
@@ -278,5 +280,5 @@ class SubprocessGitRunner:
     def _close_streams_best_effort(cls, streams: Sequence[BinaryIO]) -> None:
         try:
             cls._close_streams_strict(streams)
-        except Exception:
+        except BaseException:
             pass
