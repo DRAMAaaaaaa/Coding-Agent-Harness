@@ -490,3 +490,11 @@
 - **深不可变 RED—GREEN：** trusted profile 与 repository map 两个用例均因内部 list 仍有 `append` 而失败。GREEN 将 argv、languages、env allowlist、tracked/documents/test/recent/dirty 序列改为 tuple，detector/scanner 构造同步；原地 append/元素赋值不可用，trust fingerprint 不变，`model_dump(mode="json")` 仍输出数组。
 - **新鲜验证：** Python `3.11.9`；五组 focused `19 passed in 5.05s`；workspace `58 passed, 3 skipped in 18.44s`；10,000 文件 `0.40s`；Ruff `All checks passed!`；mypy `Success: no issues found in 23 source files`；全量 pytest `388 passed, 4 skipped in 20.70s`；`git diff --check` 退出 0。三个 workspace skip 均为既有 Windows symlink 权限，第四个是既有 Task 4 同类 skip，未新增 skip。
 - **范围与 concern：** 未联网、安装、推送、修改迁移或实现 Task 6；未接触凭据。`worktrees.py` 无需拆分，本轮仅增加双向隔离检查和 release 错误状态机；`DW-05-001` 边界未改变。当前待独立质量复审，不提前勾选 Task 5 最终完成。
+
+### 2026-07-16 — IMPL-005-R6-QUALITY-REREVIEW
+
+- **复审结论与技能：** 最终规约审查仍为 PASS；独立质量复审提出 1 个 Important 与 2 个 Minor。使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 和 `verification-before-completion` 核对根因、逐项 RED—GREEN，并把 runner 独立为 `workspace/processes.py`；核心提交为 `f9f0b72`（`fix: 有界治理 Git 子进程输出`）。
+- **Important RED—GREEN：** 原 runner 接受 `NaN`/正负无穷 timeout，并以 `TemporaryFile` 把无界输出转移到磁盘。非有限参数测试先证明 `NaN` 与正无穷未拒绝；缺失 `workspace.processes` 的 focused 测试先在收集阶段 RED。GREEN 以 `math.isfinite` 严格拒绝非有限 timeout，双 PIPE reader 各按固定 64 KiB chunk 并发读取、只保留 `limit+1`、超限立即 best-effort kill 后继续 drain 到 EOF，再 join/wait/关闭资源。真实双流子进程、携带真实 `.args` 的超时替身、kill/wait/join/read/close 清理失败、部分 PIPE 初始化和正常路径 close 失败均有确定性覆盖；后两条纠正 RED 分别证明旧分支遗留已取得的 pipe，以及 close 失败曾被误报成功。
+- **Minor 文档纠偏：** 报告顶部与实现摘要改为当前事实，初始结果明确标为历史快照；延期审计准确记录既有 `DW-05-001`，不再声称台账为空。`PLAN.md` 文件清单加入 `processes.py`/`test_processes.py`，进程治理描述与最终实现一致。
+- **新鲜验证：** 固定使用 `E:\Coding Agent Harness\.venv\Scripts\python.exe`（Python 3.11.9）并设置 `PYTHONPATH=src`。processes focused `10 passed in 0.24s`；workspace `60 passed, 3 skipped in 22.55s`；10,000 文件单测 `1 passed`、call `0.73s`；Ruff `All checks passed!`；mypy `Success: no issues found in 24 source files`；全量 pytest `390 passed, 4 skipped in 24.54s`；`git diff --check` 退出 0。三个 workspace skip 与全量第四个 skip 均为既有 Windows symlink 权限，未新增 skip。
+- **环境与范围：** 一次误用系统 Python 3.9 因缺少 pytest 在收集前失败，已明确排除为工具环境误调用，不计产品 RED 或门禁证据；随后所有有效命令均使用固定 Python 3.11。未联网、安装依赖、推送、修改迁移、实现 Task 6 或接触凭据；`DW-05-001` 范围不变。当前仅待独立质量复审，不提前标记 Task 5 最终完成。
