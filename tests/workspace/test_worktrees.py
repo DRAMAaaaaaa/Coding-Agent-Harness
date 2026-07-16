@@ -8,7 +8,7 @@ import pytest
 
 from coding_agent_harness.workspace.detector import ProjectDetector
 from coding_agent_harness.workspace.models import Workspace
-from coding_agent_harness.workspace.scanner import (
+from coding_agent_harness.workspace.processes import (
     CommandResult,
     GitProcessNotStartedError,
     SubprocessGitRunner,

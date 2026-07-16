@@ -2,15 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from contextlib import ExitStack
-from dataclasses import dataclass
 import os
 from pathlib import Path, PurePosixPath
-import subprocess
-import tempfile
-import time
-from typing import BinaryIO, Protocol, cast
 
 from coding_agent_harness.workspace.models import RepositoryDocument, RepositoryMap
 from coding_agent_harness.workspace.files import (
@@ -20,14 +13,13 @@ from coding_agent_harness.workspace.files import (
     BoundedFileTooLargeError,
     UnsafeBoundedFileError,
 )
+from coding_agent_harness.workspace.processes import (
+    CommandResult,
+    GitRunner,
+    SubprocessGitRunner,
+)
 
 _MAX_TRACKED_FILES = 10_000
-# 64 MiB 可容纳 10,000 条平均约 6.7 KiB 的 Git 路径，同时给错误输出留出同等上限。
-DEFAULT_GIT_TIMEOUT_SECONDS = 300.0
-DEFAULT_GIT_STDOUT_LIMIT_BYTES = 64 * 1024 * 1024
-DEFAULT_GIT_STDERR_LIMIT_BYTES = 64 * 1024 * 1024
-_OUTPUT_POLL_SECONDS = 0.05
-_CLEANUP_TIMEOUT_SECONDS = 1.0
 _IGNORED_DIRECTORIES = frozenset(
     {
         ".git",
@@ -63,156 +55,6 @@ class RepositoryScanError(ValueError):
 
 class WorkspaceLimitError(RepositoryScanError):
     """仓库超过正式支持的跟踪文件数量。"""
-
-
-class GitProcessNotStartedError(OSError):
-    """Git 子进程构造失败，能够确认从未启动。"""
-
-
-class GitProcessUncertainError(OSError):
-    """Git 子进程已启动或启动状态无法安全确认。"""
-
-
-@dataclass(frozen=True)
-class CommandResult:
-    """子进程边界返回的最小结果。"""
-
-    returncode: int
-    stdout: bytes
-    stderr: bytes
-
-
-class GitRunner(Protocol):
-    """唯一可注入的 Git 子进程边界。"""
-
-    def run(self, argv: Sequence[str]) -> CommandResult: ...
-
-
-class SubprocessGitRunner:
-    """以 300 秒和每流 64 MiB 默认上限执行 Git argv。"""
-
-    def __init__(
-        self,
-        *,
-        timeout_seconds: float = DEFAULT_GIT_TIMEOUT_SECONDS,
-        max_stdout_bytes: int = DEFAULT_GIT_STDOUT_LIMIT_BYTES,
-        max_stderr_bytes: int = DEFAULT_GIT_STDERR_LIMIT_BYTES,
-    ) -> None:
-        if (
-            isinstance(timeout_seconds, bool)
-            or not isinstance(timeout_seconds, (int, float))
-            or timeout_seconds <= 0
-        ):
-            raise ValueError("Git 超时必须为正数")
-        if (
-            isinstance(max_stdout_bytes, bool)
-            or not isinstance(max_stdout_bytes, int)
-            or max_stdout_bytes < 1
-            or isinstance(max_stderr_bytes, bool)
-            or not isinstance(max_stderr_bytes, int)
-            or max_stderr_bytes < 1
-        ):
-            raise ValueError("Git 输出上限必须为正整数")
-        self._timeout_seconds = float(timeout_seconds)
-        self._max_stdout_bytes = max_stdout_bytes
-        self._max_stderr_bytes = max_stderr_bytes
-
-    def run(self, argv: Sequence[str]) -> CommandResult:
-        with ExitStack() as resources:
-            try:
-                stdout_buffer = cast(
-                    BinaryIO,
-                    resources.enter_context(tempfile.TemporaryFile()),
-                )
-                stderr_buffer = cast(
-                    BinaryIO,
-                    resources.enter_context(tempfile.TemporaryFile()),
-                )
-            except OSError:
-                raise GitProcessNotStartedError("Git 进程未启动") from None
-            try:
-                process = subprocess.Popen(
-                    list(argv),
-                    stdout=stdout_buffer,
-                    stderr=stderr_buffer,
-                )
-            except OSError:
-                raise GitProcessNotStartedError("Git 进程未启动") from None
-            try:
-                self._communicate_bounded(process, stdout_buffer, stderr_buffer)
-                if process.returncode is None:
-                    raise RuntimeError("Git 进程缺少退出状态")
-                stdout = self._read_bounded(
-                    stdout_buffer, self._max_stdout_bytes
-                )
-                stderr = self._read_bounded(
-                    stderr_buffer, self._max_stderr_bytes
-                )
-            except Exception:
-                self._cleanup_started_process(process)
-                raise GitProcessUncertainError("Git 进程状态不确定") from None
-            return CommandResult(
-                returncode=process.returncode,
-                stdout=stdout,
-                stderr=stderr,
-            )
-
-    def _communicate_bounded(
-        self,
-        process: subprocess.Popen[bytes],
-        stdout_buffer: BinaryIO,
-        stderr_buffer: BinaryIO,
-    ) -> None:
-        deadline = time.monotonic() + self._timeout_seconds
-        while True:
-            self._check_output_limits(stdout_buffer, stderr_buffer)
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise subprocess.TimeoutExpired(process.args, self._timeout_seconds)
-            try:
-                process.communicate(timeout=min(_OUTPUT_POLL_SECONDS, remaining))
-            except subprocess.TimeoutExpired:
-                self._check_output_limits(stdout_buffer, stderr_buffer)
-                continue
-            self._check_output_limits(stdout_buffer, stderr_buffer)
-            return
-
-    def _check_output_limits(
-        self,
-        stdout_buffer: BinaryIO,
-        stderr_buffer: BinaryIO,
-    ) -> None:
-        stdout_buffer.flush()
-        stderr_buffer.flush()
-        if (
-            os.fstat(stdout_buffer.fileno()).st_size > self._max_stdout_bytes
-            or os.fstat(stderr_buffer.fileno()).st_size > self._max_stderr_bytes
-        ):
-            raise RuntimeError("Git 输出超过上限")
-
-    @staticmethod
-    def _read_bounded(buffer: BinaryIO, limit: int) -> bytes:
-        buffer.flush()
-        buffer.seek(0)
-        output = buffer.read(limit + 1)
-        if len(output) > limit:
-            raise RuntimeError("Git 输出超过上限")
-        return output
-
-    @staticmethod
-    def _cleanup_started_process(process: subprocess.Popen[bytes]) -> None:
-        try:
-            process.kill()
-        except Exception:
-            pass
-        try:
-            process.communicate(timeout=_CLEANUP_TIMEOUT_SECONDS)
-        except Exception:
-            pass
-        try:
-            process.wait(timeout=_CLEANUP_TIMEOUT_SECONDS)
-        except Exception:
-            pass
 
 
 class WorkspaceScanner:

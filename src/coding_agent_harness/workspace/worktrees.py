@@ -8,7 +8,7 @@ from uuid import UUID
 
 from coding_agent_harness.governance.paths import PathEscapeError, PathGuard
 from coding_agent_harness.workspace.models import Workspace, WorktreeInfo
-from coding_agent_harness.workspace.scanner import (
+from coding_agent_harness.workspace.processes import (
     GitProcessNotStartedError,
     GitRunner,
     SubprocessGitRunner,
