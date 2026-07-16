@@ -151,6 +151,9 @@ class TaskOrchestrator:
 
 ## Task 依赖、并行与状态
 
+> **当前 MVP 执行计划：** `docs/superpowers/plans/2026-07-16-minimal-viable-harness.md`。
+> MVP-1—MVP-4 取代原 Task 5—14 的横向执行顺序；下方原任务保留为完整产品路线和历史接口依据，不代表首版必须全部实现。
+
 | Task | 交付单元 | 依赖 | 可并行关系 | 建议分支 | 状态/提交 |
 |---|---|---|---|---|---|
 | 1 | 工程骨架与质量门禁 | 无 | 无 | `codex/foundation` | 完成（0aa862c、93863de；复审通过，书面回填 4325ecf） |
