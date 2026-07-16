@@ -247,7 +247,7 @@ flowchart LR
 
 威胁包括凭据误提交/泄漏、仓库 prompt injection、路径/符号链接逃逸、恶意验证配置、Shell 注入、审批重放、用户并发修改、日志泄漏和副作用重复执行。对策包括钥匙串/认证加密、统一脱敏、规范化路径、类型化动作、策略引擎、版本化审批、原子 patch、worktree、幂等键和不确定副作用人工接管。
 
-Harness `state_root` 是宿主进程私有状态边界，不进入 LLM 上下文、普通 Agent 工具 schema 或普通 read/patch/delete/shell 的能力范围。首版信任运行 Harness 的同一 OS 账户不会用原生进程主动替换、移动或篡改该私有目录；“用户并发修改”只指用户对项目或任务 worktree 的正常编辑，不包含同 UID 恶意进程攻击。首版不宣称能够跨平台抵御同 UID 原生进程对父目录的竞争交换；检测到路径身份、Git worktree 注册或副作用结果不一致时保留 target、branch 和活动标记并进入人工接管，禁止自动递归清理不确定路径。
+Harness `state_root` 是宿主进程私有状态边界，不进入 LLM 上下文、普通 Agent 工具 schema 或普通 read/patch/delete/shell 的能力范围。首版信任运行 Harness 的同一 OS 账户不会用原生进程主动替换、移动或篡改该私有目录；“用户并发修改”只指用户对项目或任务 worktree 的正常编辑，不包含同 UID 恶意进程攻击。首版不宣称能够跨平台抵御同 UID 原生进程对父目录的竞争交换；检测到路径身份、Git worktree 注册或副作用结果不一致时，不主动删除仍存在的 target/branch 等现场、不回滚 Git 已完成的副作用，并保留活动标记进入人工接管；禁止自动递归清理不确定路径。
 
 ### 9.3 可用性
 

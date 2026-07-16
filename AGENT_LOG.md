@@ -461,7 +461,16 @@
 - **R2 提交：** `8c153ed`（`fix: 采用工作树不确定状态安全接管`）。
 - **架构结论与用户授权：** R1 规约复审仍 FAIL。独立分析确认在 Python 3.11、Windows/Linux 和外部 Git CLI 组合下，无法仅靠同一进程的路径检查跨平台绝对阻止同 UID 恶意原生进程在检查后交换父目录。用户批准首版采用“宿主私有 `state_root` + 后验验证 + 不确定即保留现场人工接管”的 fail-safe 边界，并把独立 OS 身份/ACL/broker 加固登记为 `DW-05-001`。
 - **TDD RED：** 首轮因缺少 `WorktreeUncertainError` 得到收集错误；仅添加错误类型后，5 个状态机目标全部失败：add 非零仍抛普通创建错误并清理现场、未启动 OSError 仍调用 `branch -d`、add 返回 0 不检查注册、remove 假成功与残留注册仍删除 marker。另一个 release 路径身份交换用例稳定 RED 为泄漏 `WorktreeStateError`。
-- **GREEN 状态机：** Git add 返回非零后不删除 target/branch/marker，抛固定 `WorktreeUncertainError`，后续 create 被 `.active` 阻塞；只有 runner 抛 `OSError`（定义为 subprocess 未启动）才只删除本次 marker，不递归 target、不处理 branch，并允许下一任务继续。add 返回 0 后验证目标仍在私有状态根、目标自身 Git 根、worktree 注册的 path/HEAD/branch；remove 返回 0 后验证目标消失且注册移除。任何身份、注册或结果不一致均保留现场和 marker、进入人工处理；生产代码完全移除 `shutil.rmtree` 与自动 branch 删除。
+- **GREEN 状态机（经 R3 收窄）：** Git add 返回非零后不主动删除仍存在的 target/branch 等现场、不回滚 Git 已完成的副作用并保留 marker，抛固定 `WorktreeUncertainError`；后续 create 被 `.active` 阻塞。只有 runner 抛专用“进程确定未启动”异常才只删除本次 marker，不递归 target、不处理 branch，并允许下一任务继续；普通 `OSError` 不再带有未启动语义。add 返回 0 后验证目标仍在私有状态根、目标自身 Git 根、worktree 注册的 path/HEAD/branch；remove 返回 0 后验证目标消失且注册移除。任何身份、注册或结果不一致均保留 marker、进入人工处理；生产代码完全移除 `shutil.rmtree` 与自动 branch 删除。
 - **文档与延期：** `SPEC.md` 9.2/14 明确 state_root 不进入 LLM/普通工具，首版信任同一 OS 账户不主动篡改；正常用户并发仅指项目/worktree 编辑，不宣称抵御同 UID 恶意进程。`PLAN.md` 冻结 Task 6/13 必须验证普通工具访问 state_root 固定 `DENY/PATH_ESCAPE`。`DEFERRED_WORK.md` 新增 P1 `DW-05-001`，记录用户影响、临时替代和恢复门禁。
 - **新鲜验证：** `Python 3.11.9`；workspace `39 passed, 3 skipped in 9.93s`；10,000 文件小于 5 秒硬断言通过且未进入 0.43 秒以上的前十慢项；Ruff 全通过；mypy 检查 23 个源文件无问题；全量 pytest `369 passed, 4 skipped in 12.09s`；`git diff --check` 通过。三个 Task 5 skip 均为本机 symlink 权限，junction 与路径交换测试有效运行；第四个为既有 Task 4 同类 skip。
 - **范围与残余风险：** 未新增依赖、迁移或 Task 6 代码，未联网、推送、合并或接触凭据。残余风险被准确限定为同 UID 原生进程可制造拒绝服务/人工恢复状态，当前没有提供独立身份隔离保证；R2 实现与验证完成，等待独立规约复审。
+
+### 2026-07-16 — IMPL-005-R3
+
+- **R3 提交与审查结论：** R2 独立规约复审仍为 FAIL，唯一 Critical 指出任意 `GitRunner.run()` 的普通 `OSError` 不能证明子进程未启动；唯一 Minor 要求文档准确表述为“不主动删除仍存在现场、不回滚 Git 已完成副作用并保留 marker”。纠偏提交为 `cfac874`（`fix: 区分 Git 进程启动失败与不确定状态`）。
+- **Superpowers 技能：** 使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 和 `verification-before-completion`；先核对审查意见与原实现，再以失败测试冻结 runner 的进程生命周期契约。
+- **RED 证据：** 首轮因缺少 `GitProcessNotStartedError/GitProcessUncertainError` 得到导入收集错误；只添加异常类型后，三个目标稳定为 `3 failed`：Popen 构造 `OSError` 原样泄漏、communicate 启动后失败未映射为不确定、普通 `OSError` 在已创建 branch/target/sentinel 后仍被旧代码删除 marker 并误报普通创建失败。
+- **GREEN 与兼容性：** `SubprocessGitRunner` 改为显式 `Popen`；仅构造阶段 `OSError` 映射为 `GitProcessNotStartedError`，communicate/启动后异常或缺失 returncode 映射为 `GitProcessUncertainError`。正常 scanner 只读命令仍使用同一 argv/cwd、捕获 bytes stdout/stderr、保留真实 returncode，既有非零退出处理未变。`WorktreeManager` 只有捕获专用未启动异常时才删除本次 marker；普通 `OSError`、启动后和未知异常均保留 Git 已完成副作用及 `.active`，后续 writer 固定被阻塞。三个目标转为 `3 passed`。
+- **新鲜验证：** `Python 3.11.9`；workspace `42 passed, 3 skipped in 10.31s`；`ruff check src tests` 全通过；mypy 检查 23 个源文件无问题；全量 pytest `372 passed, 4 skipped in 12.23s`；`git diff --check` 通过。三个 Task 5 skip 仍为本机 symlink 权限，第四个为既有 Task 4 同类 skip。
+- **范围、延期与状态：** 文档同步为“不主动删除仍存在的 target/branch 等现场、不回滚 Git 已完成副作用并保留 `.active`”；`DW-05-001` 的 OS 身份/ACL/broker 边界未改变。未新增依赖、迁移或 Task 6 实现，未联网、推送、合并或接触凭据。R3 实现者验证完成，但 Task 5 仍待独立规约复审，不能提前进入代码质量审查或宣称完成。
