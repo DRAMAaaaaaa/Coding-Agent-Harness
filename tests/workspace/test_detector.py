@@ -61,11 +61,11 @@ def test_detects_python_and_node_commands(tmp_path: Path) -> None:
 
     profile = ProjectDetector().detect(tmp_path)
 
-    assert profile.languages == ["python", "node"]
-    assert profile.commands.test == ["python", "-m", "pytest"]
-    assert profile.commands.lint == ["python", "-m", "ruff", "check", "."]
-    assert profile.commands.typecheck == ["python", "-m", "mypy", "."]
-    assert profile.commands.build == ["npm", "run", "build"]
+    assert profile.languages == ("python", "node")
+    assert profile.commands.test == ("python", "-m", "pytest")
+    assert profile.commands.lint == ("python", "-m", "ruff", "check", ".")
+    assert profile.commands.typecheck == ("python", "-m", "mypy", ".")
+    assert profile.commands.build == ("npm", "run", "build")
     assert profile.requires_trust is False
     assert profile.trust_fingerprint is None
 
@@ -73,21 +73,21 @@ def test_detects_python_and_node_commands(tmp_path: Path) -> None:
 def test_detects_all_python_fixture_commands() -> None:
     profile = ProjectDetector().detect(_FIXTURES / "python_project")
 
-    assert profile.languages == ["python"]
-    assert profile.commands.test == ["python", "-m", "pytest"]
-    assert profile.commands.lint == ["python", "-m", "ruff", "check", "."]
-    assert profile.commands.typecheck == ["python", "-m", "mypy", "."]
-    assert profile.commands.build == ["python", "-m", "build"]
+    assert profile.languages == ("python",)
+    assert profile.commands.test == ("python", "-m", "pytest")
+    assert profile.commands.lint == ("python", "-m", "ruff", "check", ".")
+    assert profile.commands.typecheck == ("python", "-m", "mypy", ".")
+    assert profile.commands.build == ("python", "-m", "build")
 
 
 def test_detects_all_node_fixture_scripts() -> None:
     profile = ProjectDetector().detect(_FIXTURES / "node_project")
 
-    assert profile.languages == ["node"]
-    assert profile.commands.test == ["npm", "run", "test"]
-    assert profile.commands.lint == ["npm", "run", "lint"]
-    assert profile.commands.typecheck == ["npm", "run", "typecheck"]
-    assert profile.commands.build == ["npm", "run", "build"]
+    assert profile.languages == ("node",)
+    assert profile.commands.test == ("npm", "run", "test")
+    assert profile.commands.lint == ("npm", "run", "lint")
+    assert profile.commands.typecheck == ("npm", "run", "typecheck")
+    assert profile.commands.build == ("npm", "run", "build")
 
 
 def test_custom_commands_are_argv_only_and_require_trust(tmp_path: Path) -> None:
@@ -101,13 +101,37 @@ def test_custom_commands_are_argv_only_and_require_trust(tmp_path: Path) -> None
 
     profile = ProjectDetector().detect(tmp_path)
 
-    assert profile.commands.test == ["python", "-m", "pytest", "-q"]
-    assert profile.commands.lint == ["python", "-m", "ruff", "check", "."]
+    assert profile.commands.test == ("python", "-m", "pytest", "-q")
+    assert profile.commands.lint == ("python", "-m", "ruff", "check", ".")
     assert profile.command_timeout_seconds == 90
-    assert profile.env_allowlist == ["CI", "TEST_MODE"]
+    assert profile.env_allowlist == ("CI", "TEST_MODE")
     assert profile.requires_trust is True
     assert profile.trust_fingerprint is not None
     assert len(profile.trust_fingerprint) == 64
+
+
+def test_trusted_profile_sequences_are_deeply_immutable_and_json_stays_arrays(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".harness.yml").write_text(
+        "test: [python, -m, pytest]\n"
+        "env_allowlist: [CI]\n",
+        encoding="utf-8",
+    )
+    profile = ProjectDetector().detect(tmp_path)
+    fingerprint = profile.trust_fingerprint
+
+    assert not hasattr(profile.languages, "append")
+    assert profile.commands.test is not None
+    assert not hasattr(profile.commands.test, "append")
+    assert not hasattr(profile.env_allowlist, "append")
+    with pytest.raises(TypeError):
+        profile.commands.test[0] = "untrusted"  # type: ignore[index]
+    assert profile.trust_fingerprint == fingerprint
+    dumped = profile.model_dump(mode="json")
+    assert dumped["languages"] == []
+    assert dumped["commands"]["test"] == ["python", "-m", "pytest"]
+    assert dumped["env_allowlist"] == ["CI"]
 
 
 @pytest.mark.parametrize(

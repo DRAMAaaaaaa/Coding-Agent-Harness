@@ -16,14 +16,14 @@ class WorkspaceModel(BaseModel):
 class VerificationCommands(WorkspaceModel):
     """按 argv 保存的项目验证命令。"""
 
-    test: list[str] | None = None
-    lint: list[str] | None = None
-    typecheck: list[str] | None = None
-    build: list[str] | None = None
+    test: tuple[str, ...] | None = None
+    lint: tuple[str, ...] | None = None
+    typecheck: tuple[str, ...] | None = None
+    build: tuple[str, ...] | None = None
 
     @field_validator("test", "lint", "typecheck", "build")
     @classmethod
-    def validate_argv(cls, value: list[str] | None) -> list[str] | None:
+    def validate_argv(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
         if value is not None and (
             not value or any(not item or "\x00" in item for item in value)
         ):
@@ -34,10 +34,10 @@ class VerificationCommands(WorkspaceModel):
 class ProjectProfile(WorkspaceModel):
     """项目语言与建议验证配置。"""
 
-    languages: list[Literal["python", "node"]]
+    languages: tuple[Literal["python", "node"], ...]
     commands: VerificationCommands
     command_timeout_seconds: int = Field(default=300, ge=1)
-    env_allowlist: list[str] = Field(default_factory=list)
+    env_allowlist: tuple[str, ...] = Field(default_factory=tuple)
     requires_trust: bool = False
     trust_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
@@ -63,11 +63,11 @@ class RepositoryMap(WorkspaceModel):
     """仅由 Git 跟踪内容和有界元数据构成的仓库地图。"""
 
     root: Path
-    tracked_files: list[str]
-    documents: list[RepositoryDocument]
-    test_paths: list[str]
-    recent_commits: list[str]
-    dirty_paths: list[str]
+    tracked_files: tuple[str, ...]
+    documents: tuple[RepositoryDocument, ...]
+    test_paths: tuple[str, ...]
+    recent_commits: tuple[str, ...]
+    dirty_paths: tuple[str, ...]
 
 
 class WorktreeInfo(WorkspaceModel):

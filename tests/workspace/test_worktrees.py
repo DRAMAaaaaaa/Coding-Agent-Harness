@@ -149,6 +149,24 @@ def test_rejects_state_directory_inside_project(
         WorktreeManager(workspace_for(root), root / ".harness-state")
 
 
+@pytest.mark.parametrize("relationship", ["exact", "ancestor"])
+def test_rejects_state_root_equal_to_or_ancestor_of_git_root_without_writing(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    relationship: str,
+) -> None:
+    root = git_repository_factory("overlapping-state", {"README.md": "base\n"})
+    state_root = root if relationship == "exact" else root.parent
+    worktrees = state_root / "worktrees"
+
+    with pytest.raises(
+        WorktreeStateError,
+        match="^Harness 状态目录必须位于项目外$",
+    ):
+        WorktreeManager(workspace_for(root), state_root)
+
+    assert not worktrees.exists()
+
+
 def test_rejects_existing_branch_or_target_without_overwriting(
     git_repository_factory: Callable[[str, Mapping[str, str]], Path],
     tmp_path: Path,
@@ -278,6 +296,41 @@ class StaleRegistrationAfterRemoveRunner:
         return result
 
 
+class PreflightStatusErrorRunner:
+    def __init__(self) -> None:
+        self._delegate = SubprocessGitRunner()
+
+    def run(self, argv: Sequence[str]) -> CommandResult:
+        if len(argv) > 3 and argv[3] == "status":
+            raise OSError("status runner failed")
+        return self._delegate.run(argv)
+
+
+class PartialRemoveRunner:
+    def __init__(self, outcome: str) -> None:
+        self._delegate = SubprocessGitRunner()
+        self._outcome = outcome
+
+    def run(self, argv: Sequence[str]) -> CommandResult:
+        if len(argv) > 4 and argv[3:5] == ["worktree", "remove"]:
+            removed = self._delegate.run(argv)
+            assert removed.returncode == 0
+            if self._outcome == "nonzero":
+                return CommandResult(returncode=1, stdout=b"", stderr=b"remove failed")
+            raise OSError("remove raised after side effect")
+        return self._delegate.run(argv)
+
+
+class RemoveNotStartedRunner:
+    def __init__(self) -> None:
+        self._delegate = SubprocessGitRunner()
+
+    def run(self, argv: Sequence[str]) -> CommandResult:
+        if len(argv) > 4 and argv[3:5] == ["worktree", "remove"]:
+            raise GitProcessNotStartedError("Git 进程未启动")
+        return self._delegate.run(argv)
+
+
 class SwappingFailingAddRunner:
     def __init__(self, state_root: Path, outside: Path) -> None:
         self._delegate = SubprocessGitRunner()
@@ -399,6 +452,88 @@ def test_release_refuses_dirty_task_worktree(
     readme.write_text("base\n", encoding="utf-8")
     manager.release(task_id)
     assert not info.path.exists()
+
+
+def test_release_maps_preflight_runner_error_and_preserves_marker(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("release-preflight", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    state_root = tmp_path / "state"
+    task_id = uuid4()
+    manager = WorktreeManager(
+        workspace,
+        state_root,
+        runner=PreflightStatusErrorRunner(),
+    )
+    manager.create(task_id, head(root))
+
+    with pytest.raises(
+        WorktreeReleaseError,
+        match="^无法检查任务工作树状态$",
+    ):
+        manager.release(task_id)
+
+    marker = state_root / "worktrees" / str(workspace.id) / ".active"
+    assert marker.read_text(encoding="ascii") == str(task_id)
+    with pytest.raises(WorkspaceBusyError, match="^Workspace 已有写任务$"):
+        WorktreeManager(workspace, state_root).create(uuid4(), head(root))
+    WorktreeManager(workspace, state_root).release(task_id)
+
+
+@pytest.mark.parametrize("outcome", ["nonzero", "exception"])
+def test_release_partial_remove_is_uncertain_and_blocks_next_writer(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+    outcome: str,
+) -> None:
+    root = git_repository_factory(f"partial-remove-{outcome}", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    state_root = tmp_path / "state"
+    task_id = uuid4()
+    manager = WorktreeManager(
+        workspace,
+        state_root,
+        runner=PartialRemoveRunner(outcome),
+    )
+    info = manager.create(task_id, head(root))
+
+    with pytest.raises(
+        WorktreeUncertainError,
+        match="^释放任务工作树结果不确定，需人工处理$",
+    ):
+        manager.release(task_id)
+
+    assert not info.path.exists()
+    marker = state_root / "worktrees" / str(workspace.id) / ".active"
+    assert marker.read_text(encoding="ascii") == str(task_id)
+    with pytest.raises(WorkspaceBusyError, match="^Workspace 已有写任务$"):
+        WorktreeManager(workspace, state_root).create(uuid4(), head(root))
+
+
+def test_release_remove_not_started_is_ordinary_failure_and_preserves_worktree(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("remove-not-started", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    state_root = tmp_path / "state"
+    task_id = uuid4()
+    manager = WorktreeManager(
+        workspace,
+        state_root,
+        runner=RemoveNotStartedRunner(),
+    )
+    info = manager.create(task_id, head(root))
+
+    with pytest.raises(WorktreeReleaseError, match="^释放任务工作树失败$"):
+        manager.release(task_id)
+
+    assert info.path.is_dir()
+    marker = state_root / "worktrees" / str(workspace.id) / ".active"
+    assert marker.read_text(encoding="ascii") == str(task_id)
+    WorktreeManager(workspace, state_root).release(task_id)
 
 
 def test_rejects_state_worktrees_symlink_before_external_write(

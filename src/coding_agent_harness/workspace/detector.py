@@ -50,19 +50,19 @@ class ProjectDetector:
     def detect(self, root: str | Path) -> ProjectProfile:
         project_root = self._resolve_root(root)
         languages: list[Literal["python", "node"]] = []
-        commands: dict[str, list[str] | None] = dict.fromkeys(_COMMAND_NAMES)
+        commands: dict[str, tuple[str, ...] | None] = dict.fromkeys(_COMMAND_NAMES)
 
         pyproject = project_root / "pyproject.toml"
         if pyproject.exists() or pyproject.is_symlink():
             python_config = self._parse_pyproject(pyproject)
             languages.append("python")
-            commands["test"] = ["python", "-m", "pytest"]
+            commands["test"] = ("python", "-m", "pytest")
             if "ruff" in python_config.get("tool", {}):
-                commands["lint"] = ["python", "-m", "ruff", "check", "."]
+                commands["lint"] = ("python", "-m", "ruff", "check", ".")
             if "mypy" in python_config.get("tool", {}):
-                commands["typecheck"] = ["python", "-m", "mypy", "."]
+                commands["typecheck"] = ("python", "-m", "mypy", ".")
             if "build-system" in python_config:
-                commands["build"] = ["python", "-m", "build"]
+                commands["build"] = ("python", "-m", "build")
 
         package_json = project_root / "package.json"
         if package_json.exists() or package_json.is_symlink():
@@ -70,10 +70,10 @@ class ProjectDetector:
             languages.append("node")
             for name in _COMMAND_NAMES:
                 if commands[name] is None and name in scripts:
-                    commands[name] = ["npm", "run", name]
+                    commands[name] = ("npm", "run", name)
 
         timeout = 300
-        env_allowlist: list[str] = []
+        env_allowlist: tuple[str, ...] = ()
         requires_trust = False
         trust_fingerprint: str | None = None
         harness_config = project_root / ".harness.yml"
@@ -82,14 +82,14 @@ class ProjectDetector:
             parsed = self._parse_harness_config(raw_config)
             for name in _COMMAND_NAMES:
                 if name in parsed:
-                    commands[name] = parsed[name]
+                    commands[name] = tuple(parsed[name])
             timeout = parsed.get("timeout", timeout)
-            env_allowlist = parsed.get("env_allowlist", env_allowlist)
+            env_allowlist = tuple(parsed.get("env_allowlist", env_allowlist))
             requires_trust = True
             trust_fingerprint = hashlib.sha256(raw_config).hexdigest()
 
         return ProjectProfile(
-            languages=languages,
+            languages=tuple(languages),
             commands=VerificationCommands(**commands),
             command_timeout_seconds=timeout,
             env_allowlist=env_allowlist,

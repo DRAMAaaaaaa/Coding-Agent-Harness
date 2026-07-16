@@ -878,7 +878,7 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 
 **目标：** 安全接入本地 Git 项目，识别 Python/Node.js 验证命令，并隔离任务修改。
 
-**状态：** R2 规约复审仍 FAIL；R3 已用专用 runner 异常区分“进程确定未启动”与“启动后/未知状态”，完成纠正性 TDD 和新鲜验证，待独立规约复审（2026-07-16；原实现 `9159e01`，R1 `970cda8`，R2 `8c153ed`，R3 `cfac874`；登记延期 `DW-05-001`）。
+**状态：** 最终规约审查已 PASS；代码质量审查发现的 5 个 Important 已完成纠正性 TDD与新鲜全量验证，待提交与独立质量复审（2026-07-16；原实现 `9159e01`，R1 `970cda8`，R2 `8c153ed`，R3 `cfac874`，R4 文档 `aa60348`；登记延期 `DW-05-001`）。
 
 **文件：**
 
@@ -901,8 +901,8 @@ def test_detects_python_and_node_commands(tmp_git_repo) -> None:
     (tmp_git_repo / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
     (tmp_git_repo / "package.json").write_text('{"scripts":{"test":"vitest run","build":"vite build"}}', encoding="utf-8")
     profile = ProjectDetector().detect(tmp_git_repo)
-    assert profile.commands.test == ["python", "-m", "pytest"]
-    assert profile.commands.build == ["npm", "run", "build"]
+    assert profile.commands.test == ("python", "-m", "pytest")
+    assert profile.commands.build == ("npm", "run", "build")
 
 
 def test_scanner_rejects_more_than_10000_tracked_files(fake_git) -> None:
@@ -919,11 +919,11 @@ def test_scanner_rejects_more_than_10000_tracked_files(fake_git) -> None:
 
 - [x] **步骤 3：实现只读扫描与命令识别**
 
-仅通过参数数组调用 `git -C <root> ls-files -z`、`git log -n 20` 和 `git status --porcelain=v1`；忽略依赖/构建目录；README/AGENTS/配置读取均受大小限制。自定义 `.harness.yml` schema 只允许 `test`、`lint`、`typecheck`、`build` 的 argv 数组、timeout 与 env allowlist，首次执行进入信任审批。
+仅通过参数数组调用 `git -C <root> ls-files -z`、`git log -n 20` 和 `git status --porcelain=v1 -z`；status 按 NUL bytes 解析普通及 rename/copy 双路径，并以 `os.fsdecode` 保留跨平台真实路径。Git runner 默认超时 300 秒，stdout/stderr 各限 64 MiB；使用临时文件避免 `communicate()` 在 Windows/Linux 聚合无界内存，超时、超限或启动后等待/清理异常均 best-effort kill、drain/wait、关闭资源后进入不确定状态。忽略依赖/构建目录；README/AGENTS/配置读取均受大小限制。自定义 `.harness.yml` schema 只允许 `test`、`lint`、`typecheck`、`build` 的 argv 数组、timeout 与 env allowlist，首次执行进入信任审批。运行期安全序列使用 tuple 深不可变表示，JSON 仍序列化为数组，信任指纹关联命令不能在模型内部被原地修改。
 
 - [x] **步骤 4：实现 worktree 隔离**
 
-分支名固定为 `harness/task-<uuid前8位>`；worktree 放在不暴露给 LLM/普通工具的 Harness 私有状态目录，而不是项目目录内；创建前拒绝非 Git、基准提交不存在和同 Workspace 已有写任务。Git add 已启动或 create/release 后验不一致时，不主动删除仍存在的 target/branch 等现场、不回滚 Git 已完成的副作用，并保留 `.active` 进入人工接管；只有 runner 抛出专用“进程确定未启动”异常时可安全删除本次 marker，普通 `OSError` 不具备该语义。不得递归清理不确定路径或清理/覆盖主工作区脏改动。
+分支名固定为 `harness/task-<uuid前8位>`；worktree 放在不暴露给 LLM/普通工具的 Harness 私有状态目录，而不是项目目录内；`state_root` 与 Git 根任一方向的真实路径重叠均在创建目录前拒绝，create 前再次保证 workspace state/target 不落入 Git 根。创建前拒绝非 Git、基准提交不存在和同 Workspace 已有写任务。Git add 已启动或 create/release 后验不一致时，不主动删除仍存在的 target/branch 等现场、不回滚 Git 已完成的副作用，并保留 `.active` 进入人工接管；只有 runner 抛出专用“进程确定未启动”异常时可安全删除本次 marker，普通 `OSError` 不具备该语义。release 的只读 status runner 异常映射为领域失败并保留 marker；remove 只有专用未启动异常是普通失败，任意非零或启动后/未知异常均进入不确定状态并阻塞下一 writer。不得递归清理不确定路径或清理/覆盖主工作区脏改动。
 
 - [x] **步骤 5：转绿、性能与双平台边界检查**
 
@@ -931,7 +931,7 @@ def test_scanner_rejects_more_than_10000_tracked_files(fake_git) -> None:
 
 预期：识别、限制、脏主工作区保护、worktree 创建/释放和 Windows 空格路径测试通过；10,000 文件合成扫描基准低于 5 秒（CI 慢机只记录，不作硬失败；本机验收硬目标 5 秒）。
 
-- [ ] **步骤 6：评审与提交（R3 实现者自审及新鲜验证已完成；待独立规约复审通过后进行代码质量审查）**
+- [ ] **步骤 6：评审与提交（最终规约审查 PASS；5 个代码质量 Important 已纠偏并完成新鲜全量验证，待提交与独立质量复审）**
 
 规约符合性审查确认 Python/Node 默认识别、自定义命令信任、10,000 文件边界和主工作区保护；代码质量审查确认 Git 参数数组、临时目录清理与跨平台路径测试。
 

@@ -68,12 +68,11 @@ class WorktreeManager:
             self._state_root = Path(state_root).resolve(strict=False)
         except (OSError, RuntimeError):
             raise WorktreeStateError("Harness 状态目录无效") from None
-        guard = PathGuard(self._git_root)
-        try:
-            guard.resolve(self._state_root)
-        except PathEscapeError:
-            pass
-        else:
+        if (
+            self._state_root == self._git_root
+            or self._state_root.is_relative_to(self._git_root)
+            or self._git_root.is_relative_to(self._state_root)
+        ):
             raise WorktreeStateError("Harness 状态目录必须位于项目外")
         try:
             self._state_root.mkdir(parents=True, exist_ok=True)
@@ -145,9 +144,12 @@ class WorktreeManager:
             target = self._resolve_state_path(self._workspace_state / str(task_id))
         except WorktreeStateError:
             raise WorktreeUncertainError("任务工作树路径身份变化，需人工处理") from None
-        status = self._runner.run(
-            ["git", "-C", str(target), "status", "--porcelain=v1"]
-        )
+        try:
+            status = self._runner.run(
+                ["git", "-C", str(target), "status", "--porcelain=v1"]
+            )
+        except Exception:
+            raise WorktreeReleaseError("无法检查任务工作树状态") from None
         if status.returncode != 0:
             raise WorktreeReleaseError("任务工作树不存在")
         if status.stdout:
@@ -163,7 +165,7 @@ class WorktreeManager:
                 "释放任务工作树结果不确定，需人工处理"
             ) from None
         if removed.returncode != 0:
-            raise WorktreeReleaseError("释放任务工作树失败")
+            raise WorktreeUncertainError("释放任务工作树结果不确定，需人工处理")
         self._validate_released_worktree(target)
         try:
             self._remove_active_marker()
@@ -346,6 +348,9 @@ class WorktreeManager:
 
     def _resolve_state_path(self, candidate: Path) -> Path:
         try:
-            return self._state_guard.resolve(candidate)
+            resolved = self._state_guard.resolve(candidate)
         except PathEscapeError:
             raise WorktreeStateError("Harness 状态子路径越界") from None
+        if resolved == self._git_root or resolved.is_relative_to(self._git_root):
+            raise WorktreeStateError("Harness 状态子路径与项目重叠")
+        return resolved
