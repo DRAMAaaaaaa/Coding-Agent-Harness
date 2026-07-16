@@ -506,3 +506,9 @@
 - **最小 GREEN：** 仅将启动后受管生命周期边界改为捕获 `BaseException` 以执行 `_cleanup_started_process`；清理的 kill/wait/join/close 各自隔离 `BaseException` 并继续后续回收。若原异常属于普通 `Exception`，仍映射为 `GitProcessUncertainError`；否则用裸 `raise` 原样传播原对象，cleanup 的二次中断不能覆盖它。测试断言原对象身份、kill、第二次 wait、双 PIPE 关闭和两个 reader 线程均已终止。
 - **新鲜验证：** 固定 Python 3.11.9 与 `PYTHONPATH=src`；中断目标 `2 passed in 0.17s`；processes `12 passed in 0.20s`；workspace `62 passed, 3 skipped in 21.60s`；10,000 文件 call `0.64s`；Ruff 全通过；mypy 检查 24 个源文件无问题；全量 pytest `392 passed, 4 skipped in 23.86s`；`git diff --check` 退出 0。未新增 skip。
 - **范围与门禁：** 未扩大 Task 5、未修改迁移或实现 Task 6，未联网、安装、push、merge 或接触凭据；`DW-05-001` 不变。当前等待新的独立质量复审，不提前标记 Task 5 完成。
+
+### 2026-07-16 — REVIEW-005-FINAL
+
+- **独立最终复核：** 最终规约审查为 PASS，最终代码质量审查为 APPROVED；生产代码与测试的 Critical、Important、Minor 均为 0。复核确认核心 `cf2a84a` 在普通启动后/cleanup `Exception` 与宿主级 `BaseException` 之间保持正确分类，参数化 `KeyboardInterrupt/SystemExit` 覆盖清理后原样传播。
+- **复核证据：** `tests/workspace/test_processes.py` 为 `12 passed`，`git diff --check` 退出 0。唯一 ignored 文档 Minor 是 `.superpowers/sdd/task-5-report.md` 顶部仍笼统声称所有启动后/cleanup 异常均为不确定状态，且历史导航只写 R1—R6；现已改为普通 `Exception` 映射不确定、宿主级 `BaseException` 清理后原样传播，并更新为 R1—R7。
+- **完成与范围：** `PLAN.md` Task 5 步骤 6 已勾选；`.superpowers/sdd/progress.md` 同步为 complete、review clean。没有修改生产代码、测试或 `DEFERRED_WORK.md`，没有运行全量测试、联网、merge 或 push；批准的 `DW-05-001` 保持不变。
