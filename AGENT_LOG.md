@@ -474,3 +474,8 @@
 - **GREEN 与兼容性：** `SubprocessGitRunner` 改为显式 `Popen`；仅构造阶段 `OSError` 映射为 `GitProcessNotStartedError`，communicate/启动后异常或缺失 returncode 映射为 `GitProcessUncertainError`。正常 scanner 只读命令仍使用同一 argv/cwd、捕获 bytes stdout/stderr、保留真实 returncode，既有非零退出处理未变。`WorktreeManager` 只有捕获专用未启动异常时才删除本次 marker；普通 `OSError`、启动后和未知异常均保留 Git 已完成副作用及 `.active`，后续 writer 固定被阻塞。三个目标转为 `3 passed`。
 - **新鲜验证：** `Python 3.11.9`；workspace `42 passed, 3 skipped in 10.31s`；`ruff check src tests` 全通过；mypy 检查 23 个源文件无问题；全量 pytest `372 passed, 4 skipped in 12.23s`；`git diff --check` 通过。三个 Task 5 skip 仍为本机 symlink 权限，第四个为既有 Task 4 同类 skip。
 - **范围、延期与状态：** 文档同步为“不主动删除仍存在的 target/branch 等现场、不回滚 Git 已完成副作用并保留 `.active`”；`DW-05-001` 的 OS 身份/ACL/broker 边界未改变。未新增依赖、迁移或 Task 6 实现，未联网、推送、合并或接触凭据。R3 实现者验证完成，但 Task 5 仍待独立规约复审，不能提前进入代码质量审查或宣称完成。
+
+### 2026-07-16 — DOC-005-R4
+
+- **最终规约审查：** Task 5 实现结论为 PASS；唯一 Minor 是 `DEFERRED_WORK.md` 把 worktree 与 Harness 私有状态目录的包含关系写反。
+- **文档纠正：** 仅将该句纠正为“worktree 放在 Harness 私有状态目录中、项目目录外”，与 `SPEC.md:250` 和 `PLAN.md` Task 5 一致；未改写既有历史，待独立复审。

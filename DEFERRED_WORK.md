@@ -36,7 +36,7 @@
 
 ### DW-05-001：Harness 私有状态的独立 OS 隔离
 
-- **原始要求与边界：** Task 5 需要把 worktree 放在 Harness 状态目录外并拒绝路径逃逸。独立架构复核进一步确认：Python 3.11 在 Windows/Linux 通过外部 Git CLI 工作时，无法仅靠用户态 `Path.resolve`/检查在所有竞态窗口中绝对阻止同 UID 恶意原生进程交换父目录。
+- **原始要求与边界：** Task 5 需要把 worktree 放在 Harness 私有状态目录中、项目目录外，并拒绝路径逃逸。独立架构复核进一步确认：Python 3.11 在 Windows/Linux 通过外部 Git CLI 工作时，无法仅靠用户态 `Path.resolve`/检查在所有竞态窗口中绝对阻止同 UID 恶意原生进程交换父目录。
 - **延期决定：** 2026-07-16 经用户批准，把“抵御同 UID 主动篡改”明确排除在首版威胁模型外；不是把当前实现描述为已提供该保证。
 - **已完成部分：** `state_root` 定义为宿主私有，不进入 LLM 或普通 Agent 工具；预置 symlink/junction 仍被拒绝；create/release 对目标 Git 根与 worktree 注册做后验验证；任何已启动副作用或后验不确定均不主动删除仍存在的 target/branch 等现场、不回滚 Git 已完成的副作用，并保留 `.active` 阻塞后续写任务、等待人工处理。
 - **未完成部分与影响：** 尚未用专用服务账户、ACL 或 broker 把 state_root 与同一登录账户下的其他原生进程隔离。攻击者可制造拒绝服务或不确定状态，但普通 Agent 工具仍不能访问 state_root，Harness 不会自动递归删除不确定路径。
