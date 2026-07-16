@@ -1,8 +1,9 @@
 {
+  "type": "module",
   "scripts": {
-    "test": "vitest run",
-    "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "test": "node --test tests/math.test.ts",
+    "lint": "node --check src/math.ts && node --check tests/math.test.ts",
+    "typecheck": "node --check src/math.ts",
+    "build": "node --check src/math.ts"
   }
 }

@@ -567,3 +567,23 @@
 - **Sentinel 与状态语义：** 活动 filter 在 marker、branch、target 任何副作用前拒绝；真实 sentinel 证明 scanner/worktree create/materialize/release 不执行 fsmonitor、GPG、post-checkout、clean、smudge 或 process。release 在当前 index 或工作树发现 filter 时保留 target 与 `.active`；既有未启动、启动后不确定、后验失败和宿主中断的资源/现场语义全部回归。
 - **关闭与当前状态：** `.superpowers/sdd/task-1-review.md` 与 `task-2-rereview.md` 均为 CLEAN，据此把 MVP Task 1/2 与 `MVP-ISSUE-001/005` 登记为关闭。MVP Task 3 仅标记“实现完成，待独立复审”，`MVP-ISSUE-002` 未关闭。
 - **验证、范围与延期：** 实现阶段 git-safety 为 `8 passed`，workspace 为 `98 passed, 4 skipped`，Ruff 与 mypy 均退出 0；提交前最终门禁与提交哈希记录在 Task 3 报告。未修改 detector 信任指纹、fixture、Agent、依赖或迁移，未联网、merge、push 或接触凭据；未新增延期，现有 `DW-05-001` 与 `DW-MVP-005` 边界不变。
+
+### 2026-07-16 — IMPL-MVP-004-VERIFICATION-TRUST
+
+- **任务、技能与基线：** 执行 MVP Task 4“绑定全部验证配置并修复离线 fixture”；完整读取 `AGENTS.md`、Task 4 简报、`MVP_ISSUES.md`、detector/models/fixture/tests，以及 `using-superpowers`、`test-driven-development`、`verification-before-completion` 和测试反模式说明。固定使用 `E:\Coding Agent Harness\.venv\Scripts\python.exe` 与 Node `v24.15.0`，Windows npm 启动器为 `E:\nodejs\npm.cmd`；基线为 `e50f343`，工作分支为隔离 worktree `codex/workspaces`。
+- **旧行为探针与 TDD RED：** 将 Python/Node fixture 复制到系统临时目录，忽略 cache/node_modules，清除 `PYTHONPATH/NODE_PATH` 并限制 PATH；旧 Python test 因 `ModuleNotFoundError: sample` 返回 2，旧 Node test/lint/typecheck/build 因缺少 vitest/eslint/tsc 均返回 1。随后 detector focused 得到 `14 failed, 13 passed, 1 skipped`，证明 package/pyproject 推导命令无 trust、raw 变化不失效、旧 harness 摘要不是 v1 manifest、无命令状态错误、模型不拒绝不一致组合，以及 Windows 返回不可由 `shell=False` 启动的 `npm`。
+- **最小 GREEN：** 每个存在的 `.harness.yml`、`package.json`、`pyproject.toml` 只做一次有界读取，raw bytes 分别 SHA256，缺失源显式为 `null`；绑定规范化 commands、env allowlist、timeout，以 canonical JSON 和 `coding-agent-harness\0verification-trust\0v1\0` 领域分隔生成 64 位摘要。只要存在任一命令即要求 trust；无命令才允许 false/None，模型后置校验拒绝其他组合。Windows 推导 `npm.cmd`，其他平台推导 `npm`。focused 转为 `27 passed, 1 skipped`。
+- **离线 fixture 与性能门禁：** Python 改为 `src/sample/__init__.py` 并配置 pytest `pythonpath=["src"]`；Node 声明 ESM，仅使用 `node:test`、`node:assert/strict` 和 `node --check`。独立副本中 Node 四命令均返回 0，且没有 `NODE_PATH` 或 `node_modules`。10,000 文件 CI 测试只断言功能并记录耗时，不再硬断言 wall clock；本机独立基准 call 为 `0.88s`，满足小于 5 秒目标。
+- **验证、台账与范围：** 实现阶段 workspace 为 `109 passed, 4 skipped`，全量为 `499 passed, 6 skipped`；Ruff、mypy、pip check 与 `git diff --check` 均退出 0。Task 3 独立双审已 CLEAN，据此关闭 `MVP-ISSUE-002`；Task 1 独立文档双审确认状态一致，据此关闭 `MVP-ISSUE-007`；`MVP-ISSUE-003/004/006` 只标记“实现完成，待复审”。未新增延期，未联网、安装依赖、接触凭据、实现 MVP-2、merge 或 push；整分支双审与主控新鲜验证前不得合并回 `p1`。
+
+### 2026-07-16 — IMPL-MVP-004-R1-CONFIG-NOFOLLOW
+
+- **审查输入与技能：** 整分支规约符合性审查提出 1 Important、1 Minor；完整读取 `AGENTS.md`、审查报告、Task 4 brief/report/review、批准的 MVP 设计/计划，并使用 `systematic-debugging`、`test-driven-development`、`verification-before-completion`。根因是 Detector 三入口先 `Path.exists()`，默认 opener 又先打开后补验，导致静态 symlink 目标已被 follow/open。
+- **TDD RED：** `.harness.yml`、`package.json`、`pyproject.toml` 三入口消费者级契约得到 `3 failed, 6 skipped`，三项均精确失败于 follow-target `exists`，记录型 opener 零调用；Windows 可注入 reparse 契约单独得到 `3 failed, 3 passed`；默认 opener 的 pre-open reparse 契约得到 `1 failed`。POSIX 真实根外普通文件/FIFO symlink 用例在当前 Windows 按平台跳过，并以 2 秒子进程 timeout 防止旧实现阻塞 CI。
+- **最小 GREEN：** Detector 不再使用 `exists()`，而是在固定直属配置路径上先 `lstat`，以 mode 与 `FILE_ATTRIBUTE_REPARSE_POINT` 分类缺失、symlink/reparse、非普通文件和可读普通文件。默认 opener 在 POSIX 使用 `os.open(O_NOFOLLOW|O_CLOEXEC)`；Windows/通用路径先拒绝静态 symlink/reparse，再打开，并保留 reader 的 `fstat/lstat/samestat` 打开后复验。同 UID 主动竞争仍按 `DW-05-001` 记录，没有扩大威胁模型。
+- **阶段证据与状态：** detector focused 为 `34 passed, 7 skipped`；定向 Ruff 全通过，mypy 检查 26 个源文件无问题。根 `PLAN.md` 与 Task 5 报告顶部已统一为“当前 1 Important、1 Minor 正在返工”，同时保留历史 2 Critical、2 Important、3 Minor；新增 `MVP-ISSUE-008/009`，且 003/004/006 不提前关闭。完整门禁、amend 哈希和最终状态仍待本轮后续记录；不得据此进入代码质量审查或合并。
+- **提交前新鲜门禁：** detector `34 passed, 7 skipped in 2.43s`；workspace `116 passed, 10 skipped in 38.35s`；全量 pytest `506 passed, 12 skipped in 45.01s`；Ruff `All checks passed!`；mypy `Success: no issues found in 26 source files`；pip check `No broken requirements found.`；`git diff --check` 退出 0。12 个 skip 均为平台能力门禁，其中新增 6 个仅在 POSIX 运行的真实根外普通文件/FIFO symlink 组合；Windows 仍由不依赖 symlink 权限的可注入零调用契约覆盖。验证后只 amend Task 4 单一提交，不进入代码质量审查或合并。
+
+### 2026-07-16 — DOC-MVP-004-R1-SPEC-MINOR
+
+- **复审 Minor 修复：** 使用 `receiving-code-review` 与 `verification-before-completion` 核对返工后规约复审、`PLAN.md` 和 `MVP_ISSUES.md`；仅纠正 Task 5 报告“当前问题”段残留的旧阶段结论，明确当前仍等待整分支规约复审，并把先前规约 PASS 与质量审查/返工保留为历史证据。未修改生产代码、测试或 `MVP-ISSUE-003/004/006`。

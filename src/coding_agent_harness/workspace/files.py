@@ -36,9 +36,31 @@ class BoundedFileReadError(BoundedFileError):
     """文件无法打开、验证或读取。"""
 
 
+def is_symlink_or_reparse(file_stat: os.stat_result) -> bool:
+    """不跟随目标判断路径是否为符号链接或 Windows reparse point。"""
+
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    file_attributes = getattr(file_stat, "st_file_attributes", 0)
+    return stat.S_ISLNK(file_stat.st_mode) or bool(file_attributes & reparse_flag)
+
+
 class DefaultBinaryFileOpener:
     @contextmanager
     def __call__(self, path: Path) -> Iterator[BinaryIO]:
+        path_stat = path.lstat()
+        if is_symlink_or_reparse(path_stat) or not stat.S_ISREG(path_stat.st_mode):
+            raise UnsafeBoundedFileError("文件路径不是普通文件")
+
+        if os.name == "posix":
+            no_follow = getattr(os, "O_NOFOLLOW", None)
+            if no_follow is None:
+                raise UnsafeBoundedFileError("平台不支持安全打开文件")
+            flags = os.O_RDONLY | no_follow | getattr(os, "O_CLOEXEC", 0)
+            descriptor = os.open(path, flags)
+            with os.fdopen(descriptor, "rb") as stream:
+                yield stream
+            return
+
         with path.open("rb") as stream:
             yield stream
 

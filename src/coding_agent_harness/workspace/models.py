@@ -1,10 +1,10 @@
 """Task 5 的严格运行期模型。"""
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class WorkspaceModel(BaseModel):
@@ -40,6 +40,22 @@ class ProjectProfile(WorkspaceModel):
     env_allowlist: tuple[str, ...] = Field(default_factory=tuple)
     requires_trust: bool = False
     trust_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_trust_state(self) -> Self:
+        has_commands = any(
+            command is not None
+            for command in (
+                self.commands.test,
+                self.commands.lint,
+                self.commands.typecheck,
+                self.commands.build,
+            )
+        )
+        has_fingerprint = self.trust_fingerprint is not None
+        if self.requires_trust != has_commands or has_fingerprint != has_commands:
+            raise ValueError("验证命令与信任状态不一致")
+        return self
 
 
 class Workspace(WorkspaceModel):

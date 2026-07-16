@@ -162,7 +162,7 @@ class TaskOrchestrator:
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
 | 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 完成（首次合并 `8f2ae34`；WAL/路径门闩纠偏复审通过；补充合并 `873f1d4`） |
-| 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 安全返工中（整分支冷审查发现 2 Critical、2 Important、3 Minor；见 `MVP_ISSUES.md`） |
+| 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 整分支规约返工中（当前审查发现 1 Important、1 Minor；历史 2 Critical、2 Important、3 Minor 保留在 `MVP_ISSUES.md`） |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
 | 8 | 记忆筛选、存储与上下文 | 3、4 | 可与 7 并行 | `codex/memory` | 待执行 |
@@ -883,7 +883,7 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 
 **目标：** 安全接入本地 Git 项目，识别 Python/Node.js 验证命令，并隔离任务修改。
 
-**状态：** 安全返工中。此前阶段审查结论已被整分支冷审查推翻；`MVP-ISSUE-001/005` 已由 MVP Task 2 的 CLEAN 复审关闭，其余问题详见 `MVP_ISSUES.md`。Task 5 不得合并，必须先完成 MVP-1 安全修复与新的双重评审（2026-07-16；`DW-05-001` 仍只覆盖同 UID 主动篡改，不覆盖静态路径别名或 Git 隐式执行）。
+**状态：** 整分支规约符合性审查发现 1 Important、1 Minor，当前正在返工并禁止合并；原冷审查的 2 Critical、2 Important、3 Minor 仅为历史快照。`MVP-ISSUE-001/002/005/007` 已由对应 CLEAN 复审关闭；`MVP-ISSUE-003/004/006` 仍为“实现完成，待复审”，不得提前关闭。完成本轮返工后仍须重新进行整分支规约符合性审查，只有通过后才能进入代码质量审查（2026-07-16；`DW-05-001` 仍只覆盖同 UID 主动篡改）。
 
 **MVP Task 2 状态：** 已关闭。提交 `26c1222` 的修复后独立规约符合性审查与代码质量审查均为 CLEAN，证据见 `.superpowers/sdd/task-2-rereview.md`；据此关闭 `MVP-ISSUE-001/005`。
 
@@ -892,17 +892,23 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 - 修复 GREEN：统一保守的 Win32 组件验证只折叠可证明等价的扩展 drive/UNC；focused 集为 `186 passed, 3 skipped`，governance/storage/workspace 回归为 `407 passed, 6 skipped`。正常 Unicode、合法中间点和根位置 `/` 保持可用；独立复审 CLEAN 后 `MVP-ISSUE-001/005` 已关闭。
 - 延期审计：本 Task 未新增延期，也未改变 `DW-05-001`；`MVP-ISSUE-006` 仍由后续指定 Task 调整 CI wall-clock 门禁，本 Task 仅避免路径身份检查造成性能回退。
 
-**MVP Task 3 状态：** 实现完成，待独立规约符合性审查与代码质量审查；`MVP-ISSUE-002` 在两项复审均 CLEAN 前不得关闭。
+**MVP Task 3 状态：** 已关闭。提交 `e50f343` 的独立规约符合性审查为 PASS/CLEAN、代码质量与安全性审查为 APPROVED/CLEAN，证据见 `.superpowers/sdd/task-3-review.md`；据此关闭 `MVP-ISSUE-002`。
 
 - RED：Git 2.31.1 最小探针证明 `core.fsmonitor=false` 会执行名为 `false` 的外部 hook，而空值不会；真实 scanner sentinel 证明旧边界执行 fsmonitor/GPG；创建前 filter、scanner status 前 clean filter 与 release 重审回归均先得到预期失败。
 - GREEN：新增绝对 Git 与最小受控环境、空 hooks/global config/global attributes、`core.fsmonitor=`、`log --no-show-signature`、提交/current filter gate、`worktree add --no-checkout` 和安全 materialize。创建 filter 拒绝发生在 marker/branch/target 前；release 对当前 index 与工作树重审，异常时保留现场。
-- 实现验证：`tests/workspace/test_git_safety.py -v` 为 `8 passed`；workspace 回归为 `98 passed, 4 skipped`；Ruff、mypy 均退出 0。最终提交哈希与复审结论分别记录在 Task 3 报告和后续复审记录中。
+- 实现验证：`tests/workspace/test_git_safety.py -v` 为 `8 passed`；独立复审 focused 为 `23 passed`、workspace 为 `98 passed, 4 skipped`，Critical/Important/Minor 均为 0。
+
+**MVP Task 4 状态：** 实现完成，待独立规约符合性审查与代码质量审查；`MVP-ISSUE-003/004/006` 在两项审查均无 Critical/Important 前不得关闭。
+
+- RED：detector focused 为 `14 failed, 13 passed, 1 skipped`，覆盖推导命令无 trust、package/pyproject raw 变化不失效、旧 harness 指纹不符合 v1 manifest、无命令状态错误、模型不一致组合和独立 fixture 真实失败。
+- GREEN：三源 raw SHA256、缺失显式 `null`、有效 commands/env allowlist/timeout 与领域分隔组成 `verification-trust/v1`；重复检测稳定、源增删失效，模型拒绝 trust 不一致。Python fixture 改为 src package，Node 24 四命令仅用内置能力并在独立副本运行；focused 为 `27 passed, 1 skipped`。
+- 验证：workspace 为 `109 passed, 4 skipped`，全量为 `499 passed, 6 skipped`；Ruff、mypy、pip check 与差异检查均通过。10,000 文件 CI 用例只验证功能并记录耗时，本机独立基准为 `0.88s`。未新增或改变延期项。
 
 **文件：**
 
 - 新建：`src/coding_agent_harness/workspace/models.py`、`files.py`、`detector.py`、`processes.py`、`scanner.py`、`worktrees.py`
 - 新建：`tests/workspace/test_detector.py`、`test_processes.py`、`test_scanner.py`、`test_worktrees.py`
-- 新建：`tests/fixtures/python_project/pyproject.toml`、`tests/fixtures/python_project/src/sample.py`、`tests/fixtures/python_project/tests/test_sample.py`
+- 新建：`tests/fixtures/python_project/pyproject.toml`、`tests/fixtures/python_project/src/sample/__init__.py`、`tests/fixtures/python_project/tests/test_sample.py`
 - 新建：`tests/fixtures/node_project/package.json`、`tests/fixtures/node_project/src/math.ts`、`tests/fixtures/node_project/tests/math.test.ts`
 
 **接口：**
@@ -918,9 +924,10 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 def test_detects_python_and_node_commands(tmp_git_repo) -> None:
     (tmp_git_repo / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
     (tmp_git_repo / "package.json").write_text('{"scripts":{"test":"vitest run","build":"vite build"}}', encoding="utf-8")
-    profile = ProjectDetector().detect(tmp_git_repo)
-    assert profile.commands.test == ("python", "-m", "pytest")
-    assert profile.commands.build == ("npm", "run", "build")
+profile = ProjectDetector().detect(tmp_git_repo)
+assert profile.commands.test == ("python", "-m", "pytest")
+npm = "npm.cmd" if os.name == "nt" else "npm"
+assert profile.commands.build == (npm, "run", "build")
 
 
 def test_scanner_rejects_more_than_10000_tracked_files(fake_git) -> None:
