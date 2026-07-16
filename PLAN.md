@@ -878,7 +878,7 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 
 **目标：** 安全接入本地 Git 项目，识别 Python/Node.js 验证命令，并隔离任务修改。
 
-**状态：** 最终规约审查已 PASS；首轮代码质量审查的 5 个 Important 已提交为 `ef31b8b`。质量复审的 1 个 Important 与 2 个 Minor 已完成窄 R2 纠偏，核心提交为 `f9f0b72`；新鲜全量门禁通过，待独立质量复审（2026-07-16；登记延期 `DW-05-001`）。
+**状态：** 最终规约审查已 PASS；首轮代码质量审查的 5 个 Important 已提交为 `ef31b8b`，质量复审窄 R2 提交为 `f9f0b72`。最新独立质量复审的唯一 Important（宿主中断清理）已按 TDD 提交为 `cf2a84a`；新鲜全量门禁通过，待独立质量复审（2026-07-16；登记延期 `DW-05-001`）。
 
 **文件：**
 
@@ -919,7 +919,7 @@ def test_scanner_rejects_more_than_10000_tracked_files(fake_git) -> None:
 
 - [x] **步骤 3：实现只读扫描与命令识别**
 
-仅通过参数数组调用 `git -C <root> ls-files -z`、`git log -n 20` 和 `git status --porcelain=v1 -z`；status 按 NUL bytes 解析普通及 rename/copy 双路径，并以 `os.fsdecode` 保留跨平台真实路径。`processes.py` 的 Git runner 默认超时 300 秒且以 `math.isfinite` 拒绝非有限值，stdout/stderr 各限 64 MiB；跨 Windows/Linux 使用两个 PIPE reader 线程固定 64 KiB chunk 并发读取，每流只保留 `limit+1`、超限立即 best-effort kill，之后仍 drain 到 EOF 并 join/wait/关闭 pipe，超时、超限或任意启动后/cleanup 异常均进入不确定状态，不使用无界临时磁盘。忽略依赖/构建目录；README/AGENTS/配置读取均受大小限制。自定义 `.harness.yml` schema 只允许 `test`、`lint`、`typecheck`、`build` 的 argv 数组、timeout 与 env allowlist，首次执行进入信任审批。运行期安全序列使用 tuple 深不可变表示，JSON 仍序列化为数组，信任指纹关联命令不能在模型内部被原地修改。
+仅通过参数数组调用 `git -C <root> ls-files -z`、`git log -n 20` 和 `git status --porcelain=v1 -z`；status 按 NUL bytes 解析普通及 rename/copy 双路径，并以 `os.fsdecode` 保留跨平台真实路径。`processes.py` 的 Git runner 默认超时 300 秒且以 `math.isfinite` 拒绝非有限值，stdout/stderr 各限 64 MiB；跨 Windows/Linux 使用两个 PIPE reader 线程固定 64 KiB chunk 并发读取，每流只保留 `limit+1`、超限立即 best-effort kill，之后仍 drain 到 EOF 并 join/wait/关闭 pipe。超时、超限和普通启动后/cleanup 异常进入不确定状态；`KeyboardInterrupt`、`SystemExit` 等宿主级 `BaseException` 也必须先完成 best-effort kill/wait/join/close，再原样传播且不得被 cleanup 异常覆盖。不使用无界临时磁盘。忽略依赖/构建目录；README/AGENTS/配置读取均受大小限制。自定义 `.harness.yml` schema 只允许 `test`、`lint`、`typecheck`、`build` 的 argv 数组、timeout 与 env allowlist，首次执行进入信任审批。运行期安全序列使用 tuple 深不可变表示，JSON 仍序列化为数组，信任指纹关联命令不能在模型内部被原地修改。
 
 - [x] **步骤 4：实现 worktree 隔离**
 
@@ -931,7 +931,7 @@ def test_scanner_rejects_more_than_10000_tracked_files(fake_git) -> None:
 
 预期：识别、限制、脏主工作区保护、worktree 创建/释放和 Windows 空格路径测试通过；10,000 文件合成扫描基准低于 5 秒（CI 慢机只记录，不作硬失败；本机验收硬目标 5 秒）。
 
-- [ ] **步骤 6：评审与提交（最终规约审查 PASS；质量复审 1 Important、2 Minor 的窄 R2 已提交为 `f9f0b72` 且全量门禁通过，待独立质量复审）**
+- [ ] **步骤 6：评审与提交（最终规约审查 PASS；宿主中断清理的最新唯一 Important 已提交为 `cf2a84a` 且全量门禁通过，待独立质量复审）**
 
 规约符合性审查确认 Python/Node 默认识别、自定义命令信任、10,000 文件边界和主工作区保护；代码质量审查确认 Git 参数数组、临时目录清理与跨平台路径测试。
 

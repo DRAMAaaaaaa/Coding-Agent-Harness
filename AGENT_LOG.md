@@ -498,3 +498,11 @@
 - **Minor 文档纠偏：** 报告顶部与实现摘要改为当前事实，初始结果明确标为历史快照；延期审计准确记录既有 `DW-05-001`，不再声称台账为空。`PLAN.md` 文件清单加入 `processes.py`/`test_processes.py`，进程治理描述与最终实现一致。
 - **新鲜验证：** 固定使用 `E:\Coding Agent Harness\.venv\Scripts\python.exe`（Python 3.11.9）并设置 `PYTHONPATH=src`。processes focused `10 passed in 0.24s`；workspace `60 passed, 3 skipped in 22.55s`；10,000 文件单测 `1 passed`、call `0.73s`；Ruff `All checks passed!`；mypy `Success: no issues found in 24 source files`；全量 pytest `390 passed, 4 skipped in 24.54s`；`git diff --check` 退出 0。三个 workspace skip 与全量第四个 skip 均为既有 Windows symlink 权限，未新增 skip。
 - **环境与范围：** 一次误用系统 Python 3.9 因缺少 pytest 在收集前失败，已明确排除为工具环境误调用，不计产品 RED 或门禁证据；随后所有有效命令均使用固定 Python 3.11。未联网、安装依赖、推送、修改迁移、实现 Task 6 或接触凭据；`DW-05-001` 范围不变。当前仅待独立质量复审，不提前标记 Task 5 最终完成。
+
+### 2026-07-16 — IMPL-005-R7-HOST-INTERRUPT
+
+- **复审结论与技能：** 最新独立质量复审只提出 1 个 Important：`SubprocessGitRunner.run()` 仅捕获 `Exception`，启动后的 `KeyboardInterrupt/SystemExit` 可绕过回收。使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 与 `verification-before-completion` 验证继承与控制流，核心提交为 `cf2a84a`（`fix: 清理后传播 Git 进程宿主中断`）。
+- **TDD RED：** 参数化 `KeyboardInterrupt("host interrupt")` 与 `SystemExit(23)`，让第一次 `wait()` 抛出宿主中断，并让 cleanup 的 stdout `close()` 再抛 `SystemExit`。旧实现虽原样传播初始中断，但两项均失败于 `process.killed == False`，证明没有进入 kill/wait/join/close，而不是替身或异常类型错误。
+- **最小 GREEN：** 仅将启动后受管生命周期边界改为捕获 `BaseException` 以执行 `_cleanup_started_process`；清理的 kill/wait/join/close 各自隔离 `BaseException` 并继续后续回收。若原异常属于普通 `Exception`，仍映射为 `GitProcessUncertainError`；否则用裸 `raise` 原样传播原对象，cleanup 的二次中断不能覆盖它。测试断言原对象身份、kill、第二次 wait、双 PIPE 关闭和两个 reader 线程均已终止。
+- **新鲜验证：** 固定 Python 3.11.9 与 `PYTHONPATH=src`；中断目标 `2 passed in 0.17s`；processes `12 passed in 0.20s`；workspace `62 passed, 3 skipped in 21.60s`；10,000 文件 call `0.64s`；Ruff 全通过；mypy 检查 24 个源文件无问题；全量 pytest `392 passed, 4 skipped in 23.86s`；`git diff --check` 退出 0。未新增 skip。
+- **范围与门禁：** 未扩大 Task 5、未修改迁移或实现 Task 6，未联网、安装、push、merge 或接触凭据；`DW-05-001` 不变。当前等待新的独立质量复审，不提前标记 Task 5 完成。
