@@ -18,6 +18,7 @@ from coding_agent_harness.workspace.worktrees import (
     WorktreeManager,
     WorktreeReleaseError,
     WorktreeStateError,
+    WorktreeUncertainError,
 )
 
 
@@ -171,10 +172,21 @@ def test_rejects_existing_branch_or_target_without_overwriting(
 class FailingAddRunner:
     def __init__(self) -> None:
         self._delegate = SubprocessGitRunner()
+        self.sentinel: Path | None = None
 
     def run(self, argv: Sequence[str]) -> CommandResult:
         if len(argv) > 3 and argv[3:5] == ["worktree", "add"]:
-            Path(argv[-2]).mkdir(parents=True)
+            root = argv[2]
+            branch = argv[-3]
+            base = argv[-1]
+            created = self._delegate.run(
+                ["git", "-C", root, "branch", branch, base]
+            )
+            assert created.returncode == 0
+            target = Path(argv[-2])
+            target.mkdir(parents=True)
+            self.sentinel = target / "partial-sentinel.txt"
+            self.sentinel.write_text("manual recovery\n", encoding="utf-8")
             return CommandResult(returncode=1, stdout=b"", stderr=b"simulated failure")
         return self._delegate.run(argv)
 
@@ -182,12 +194,64 @@ class FailingAddRunner:
 class RaisingAddRunner:
     def __init__(self) -> None:
         self._delegate = SubprocessGitRunner()
+        self.calls: list[list[str]] = []
 
     def run(self, argv: Sequence[str]) -> CommandResult:
+        self.calls.append(list(argv))
         if len(argv) > 3 and argv[3:5] == ["worktree", "add"]:
-            Path(argv[-2]).mkdir(parents=True)
             raise OSError("simulated process start failure")
         return self._delegate.run(argv)
+
+
+class MissingRegistrationAfterAddRunner:
+    def __init__(self) -> None:
+        self._delegate = SubprocessGitRunner()
+
+    def run(self, argv: Sequence[str]) -> CommandResult:
+        result = self._delegate.run(argv)
+        if len(argv) > 5 and argv[3:6] == ["worktree", "list", "--porcelain"]:
+            return CommandResult(returncode=0, stdout=b"", stderr=b"")
+        return result
+
+
+class FalseSuccessRemoveRunner:
+    def __init__(self) -> None:
+        self._delegate = SubprocessGitRunner()
+
+    def run(self, argv: Sequence[str]) -> CommandResult:
+        if len(argv) > 4 and argv[3:5] == ["worktree", "remove"]:
+            return CommandResult(returncode=0, stdout=b"", stderr=b"")
+        return self._delegate.run(argv)
+
+
+class StaleRegistrationAfterRemoveRunner:
+    def __init__(self) -> None:
+        self._delegate = SubprocessGitRunner()
+        self._stale_registration: bytes | None = None
+
+    def run(self, argv: Sequence[str]) -> CommandResult:
+        if len(argv) > 4 and argv[3:5] == ["worktree", "remove"]:
+            target = Path(argv[-1])
+            branch = git(target, "branch", "--show-current").stdout.decode().strip()
+            commit = head(target)
+            result = self._delegate.run(argv)
+            if result.returncode == 0:
+                self._stale_registration = (
+                    f"worktree {target}\nHEAD {commit}\nbranch refs/heads/{branch}\n\n"
+                ).encode()
+            return result
+        result = self._delegate.run(argv)
+        if (
+            self._stale_registration is not None
+            and len(argv) > 5
+            and argv[3:6] == ["worktree", "list", "--porcelain"]
+        ):
+            return CommandResult(
+                returncode=0,
+                stdout=result.stdout + self._stale_registration,
+                stderr=b"",
+            )
+        return result
 
 
 class SwappingFailingAddRunner:
@@ -210,7 +274,7 @@ class SwappingFailingAddRunner:
         return self._delegate.run(argv)
 
 
-def test_cleans_only_new_target_after_git_add_failure(
+def test_nonzero_git_add_preserves_partial_state_for_manual_recovery(
     git_repository_factory: Callable[[str, Mapping[str, str]], Path],
     tmp_path: Path,
 ) -> None:
@@ -220,14 +284,24 @@ def test_cleans_only_new_target_after_git_add_failure(
     task_id = uuid4()
     target = state_root / "worktrees" / str(workspace.id) / str(task_id)
 
-    with pytest.raises(WorktreeCreationError, match="^创建任务工作树失败$"):
-        WorktreeManager(workspace, state_root, runner=FailingAddRunner()).create(
+    runner = FailingAddRunner()
+    manager = WorktreeManager(workspace, state_root, runner=runner)
+    with pytest.raises(
+        WorktreeUncertainError,
+        match="^创建任务工作树结果不确定，需人工处理$",
+    ):
+        manager.create(
             task_id,
             head(root),
         )
 
-    assert not target.exists()
-    assert not (target.parent / ".active").exists()
+    assert runner.sentinel is not None
+    assert runner.sentinel.read_text(encoding="utf-8") == "manual recovery\n"
+    branch = f"harness/task-{task_id.hex[:8]}"
+    assert git(root, "show-ref", "--verify", f"refs/heads/{branch}").returncode == 0
+    assert (target.parent / ".active").read_text(encoding="ascii") == str(task_id)
+    with pytest.raises(WorkspaceBusyError, match="^Workspace 已有写任务$"):
+        WorktreeManager(workspace, state_root).create(uuid4(), head(root))
 
 
 def test_cleans_active_marker_when_git_add_cannot_start(
@@ -240,14 +314,21 @@ def test_cleans_active_marker_when_git_add_cannot_start(
     task_id = uuid4()
     target = state_root / "worktrees" / str(workspace.id) / str(task_id)
 
+    runner = RaisingAddRunner()
     with pytest.raises(WorktreeCreationError, match="^创建任务工作树失败$"):
-        WorktreeManager(workspace, state_root, runner=RaisingAddRunner()).create(
+        WorktreeManager(workspace, state_root, runner=runner).create(
             task_id,
             head(root),
         )
 
     assert not target.exists()
     assert not (target.parent / ".active").exists()
+    assert not any(call[3:5] == ["branch", "-d"] for call in runner.calls)
+
+    next_task = uuid4()
+    manager = WorktreeManager(workspace, state_root)
+    manager.create(next_task, head(root))
+    manager.release(next_task)
 
 
 def test_release_refuses_dirty_task_worktree(
@@ -326,7 +407,107 @@ def test_failed_create_never_removes_external_target_after_path_swap(
     runner = SwappingFailingAddRunner(state_root, outside)
     manager = WorktreeManager(workspace_for(root), state_root, runner=runner)
 
-    with pytest.raises(WorktreeCreationError, match="^创建任务工作树失败$"):
+    with pytest.raises(WorktreeUncertainError):
         manager.create(uuid4(), head(root))
 
     assert runner.sentinel.read_text(encoding="utf-8") == "must remain\n"
+
+
+def test_successful_add_with_missing_registration_is_uncertain_and_blocks_next_writer(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("missing-registration", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    state_root = tmp_path / "state"
+    task_id = uuid4()
+    manager = WorktreeManager(
+        workspace,
+        state_root,
+        runner=MissingRegistrationAfterAddRunner(),
+    )
+
+    with pytest.raises(
+        WorktreeUncertainError,
+        match="^创建任务工作树后验验证失败，需人工处理$",
+    ):
+        manager.create(task_id, head(root))
+
+    target = state_root / "worktrees" / str(workspace.id) / str(task_id)
+    assert target.is_dir()
+    assert (target.parent / ".active").read_text(encoding="ascii") == str(task_id)
+    with pytest.raises(WorkspaceBusyError, match="^Workspace 已有写任务$"):
+        WorktreeManager(workspace, state_root).create(uuid4(), head(root))
+
+
+def test_release_false_success_preserves_marker_for_manual_recovery(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("remove-false-success", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    state_root = tmp_path / "state"
+    task_id = uuid4()
+    manager = WorktreeManager(workspace, state_root, runner=FalseSuccessRemoveRunner())
+    info = manager.create(task_id, head(root))
+
+    with pytest.raises(
+        WorktreeUncertainError,
+        match="^释放任务工作树后验验证失败，需人工处理$",
+    ):
+        manager.release(task_id)
+
+    assert info.path.is_dir()
+    assert (info.path.parent / ".active").read_text(encoding="ascii") == str(task_id)
+
+
+def test_release_stale_registration_preserves_marker_after_target_disappears(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("remove-stale-registration", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    state_root = tmp_path / "state"
+    task_id = uuid4()
+    manager = WorktreeManager(
+        workspace,
+        state_root,
+        runner=StaleRegistrationAfterRemoveRunner(),
+    )
+    info = manager.create(task_id, head(root))
+
+    with pytest.raises(
+        WorktreeUncertainError,
+        match="^释放任务工作树后验验证失败，需人工处理$",
+    ):
+        manager.release(task_id)
+
+    assert not info.path.exists()
+    assert (info.path.parent / ".active").read_text(encoding="ascii") == str(task_id)
+
+
+def test_release_path_identity_change_is_uncertain_and_preserves_original_marker(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("release-path-swap", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    state_root = tmp_path / "state"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    task_id = uuid4()
+    manager = WorktreeManager(workspace, state_root)
+    manager.create(task_id, head(root))
+    worktrees = state_root / "worktrees"
+    backup = state_root / "worktrees-safe"
+    worktrees.rename(backup)
+    create_directory_link(worktrees, outside)
+
+    with pytest.raises(
+        WorktreeUncertainError,
+        match="^任务工作树路径身份变化，需人工处理$",
+    ):
+        manager.release(task_id)
+
+    original_marker = backup / str(workspace.id) / ".active"
+    assert original_marker.read_text(encoding="ascii") == str(task_id)

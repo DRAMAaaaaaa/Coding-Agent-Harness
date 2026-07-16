@@ -28,10 +28,21 @@
 
 ## 当前记录
 
-当前没有已批准的延期项。
+当前有 1 个经用户批准的首版威胁边界外加固项。
 
 | 编号 | 来源 Task | 状态 | 优先级 | 内容 | 用户影响 | 安全/验收影响 | 临时替代 | 恢复条件 | 证据 |
 |---|---:|---|---|---|---|---|---|---|---|
+| DW-05-001 | 5 | DEFERRED | P1 | 使用独立 OS 身份、ACL 或 broker 隔离 Harness 私有 `state_root`，抵御同 UID 原生进程主动篡改 | 同一账户下的恶意本机进程仍可篡改私有状态并迫使任务人工恢复；普通项目编辑不受影响 | 不降低首版 LLM/普通工具路径围栏；明确不提供同 UID 恶意进程防护保证 | `state_root` 不进入 LLM/普通工具；create/release 后验验证；不确定时保留现场和 `.active`、禁止递归清理 | 选定跨 Windows/Linux 的服务身份/ACL/broker 方案，并提供安装、升级、恢复与对抗性集成测试 | R1 复审架构结论、Task 5 R2 测试、`.superpowers/sdd/task-5-report.md` |
+
+### DW-05-001：Harness 私有状态的独立 OS 隔离
+
+- **原始要求与边界：** Task 5 需要把 worktree 放在 Harness 状态目录外并拒绝路径逃逸。独立架构复核进一步确认：Python 3.11 在 Windows/Linux 通过外部 Git CLI 工作时，无法仅靠用户态 `Path.resolve`/检查在所有竞态窗口中绝对阻止同 UID 恶意原生进程交换父目录。
+- **延期决定：** 2026-07-16 经用户批准，把“抵御同 UID 主动篡改”明确排除在首版威胁模型外；不是把当前实现描述为已提供该保证。
+- **已完成部分：** `state_root` 定义为宿主私有，不进入 LLM 或普通 Agent 工具；预置 symlink/junction 仍被拒绝；create/release 对目标 Git 根与 worktree 注册做后验验证；任何已启动副作用或后验不确定均保留 target、branch 和 `.active`，阻塞后续写任务并等待人工处理。
+- **未完成部分与影响：** 尚未用专用服务账户、ACL 或 broker 把 state_root 与同一登录账户下的其他原生进程隔离。攻击者可制造拒绝服务或不确定状态，但普通 Agent 工具仍不能访问 state_root，Harness 不会自动递归删除不确定路径。
+- **临时替代：** 本地单用户部署将 state_root 置于宿主私有目录，要求同一 OS 账户不主动篡改；一旦检测身份或 Git 注册不一致，停止自动处理并由用户检查 Git worktree/branch/marker。
+- **恢复条件与依赖：** 选择 Windows/Linux 均可部署的隔离方案；定义安装权限、容器挂载、备份恢复和升级语义；增加同 UID 对抗进程、ACL 拒绝、broker 崩溃恢复及 WebUI 人工接管 E2E。完成后更新 SPEC 威胁模型并把本条标为 `RESOLVED`。
+- **证据：** R1 规约复审与架构分析、Task 5 R2 RED/GREEN、`PLAN.md`、`AGENT_LOG.md` 和 `.superpowers/sdd/task-5-report.md`；R2 提交哈希在完成提交后回填。
 
 ## 记录要求
 

@@ -247,6 +247,8 @@ flowchart LR
 
 威胁包括凭据误提交/泄漏、仓库 prompt injection、路径/符号链接逃逸、恶意验证配置、Shell 注入、审批重放、用户并发修改、日志泄漏和副作用重复执行。对策包括钥匙串/认证加密、统一脱敏、规范化路径、类型化动作、策略引擎、版本化审批、原子 patch、worktree、幂等键和不确定副作用人工接管。
 
+Harness `state_root` 是宿主进程私有状态边界，不进入 LLM 上下文、普通 Agent 工具 schema 或普通 read/patch/delete/shell 的能力范围。首版信任运行 Harness 的同一 OS 账户不会用原生进程主动替换、移动或篡改该私有目录；“用户并发修改”只指用户对项目或任务 worktree 的正常编辑，不包含同 UID 恶意进程攻击。首版不宣称能够跨平台抵御同 UID 原生进程对父目录的竞争交换；检测到路径身份、Git worktree 注册或副作用结果不一致时保留 target、branch 和活动标记并进入人工接管，禁止自动递归清理不确定路径。
+
 ### 9.3 可用性
 
 - 桌面优先，键盘可操作，焦点清晰，不仅依靠颜色表达状态。
@@ -328,6 +330,7 @@ make demo
 - Provider 协议变化：adapter 和契约测试隔离；模型名是运行配置，不固化架构。
 - Prompt injection 与配置投毒：不可信数据边界、策略、首次命令信任和变化失效。
 - Windows/Docker/worktree 差异：Windows 与 Linux 集成测试。
+- 宿主私有状态被同 UID 原生进程主动篡改：首版明确排除在威胁边界外；`state_root` 不暴露给 LLM/普通工具，create/release 后验不一致时 fail-safe 保留现场并人工接管。独立 OS 身份、ACL 或 broker 隔离登记为 `DW-05-001`，不得把它描述成当前保证。
 - 无效修正和成本：反馈预算、无进展检测、上下文选择和调用可见性。
 - 文档幻觉：只基于实际 diff/验证生成，最终人工审查。
 - Render 免费限制：只用于可重建的临时 Mock 演示。

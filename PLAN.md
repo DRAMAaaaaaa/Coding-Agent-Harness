@@ -18,6 +18,7 @@
 - 同一失败指纹最多修正 3 轮；单任务最多 8 个验证—修正循环；连续 2 轮失败数未减少且类别未变化时进入 `WAITING_USER`；命令默认超时 300 秒。
 - Mock LLM 核心测试不得访问网络或真实 LLM；测试和日志不得包含真实凭据。
 - 一个 Workspace 同时最多一个写任务，全局默认最多 3 个并发任务；正式支持最多 10,000 个 Git 跟踪文件。
+- Harness `state_root` 是宿主私有边界，不进入 LLM 或普通 Agent 工具能力；首版信任同一 OS 账户不主动篡改该目录。路径身份或 Git 注册后验不一致时保留 target/branch/活动标记并人工接管，禁止递归清理不确定路径；同 UID 主动篡改的独立 OS 身份/ACL/broker 加固登记为 `DW-05-001`。
 - 文档和 Git 提交说明尽量使用中文；代码标识符、命令、标准文件名和第三方名称保留英文。
 - 每个 Task 使用独立 `codex/` 前缀分支和 worktree；完成后在本文件勾选状态并记录提交哈希与评审结论。
 - 每个 Task 固定执行顺序：失败测试 → 确认失败原因 → 最小实现 → 通过目标测试 → 重构 → 完整相关测试 → 规约符合性审查 → 代码质量审查 → 中文提交。
@@ -877,7 +878,7 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 
 **目标：** 安全接入本地 Git 项目，识别 Python/Node.js 验证命令，并隔离任务修改。
 
-**状态：** 首轮规约审查 FAIL 的 1 个 Critical 与 1 个 Important 已完成 TDD 纠偏及实现者新鲜验证，待独立规约复审和代码质量审查（2026-07-16；原实现提交 `9159e01`，纠偏提交 `970cda8`；Workspace 归属纠偏已获用户批准；当前无延期）。
+**状态：** R1 规约复审仍 FAIL；用户批准 fail-safe 私有状态边界后，R2 已完成 TDD 实现与新鲜验证，待独立规约复审（2026-07-16；原实现 `9159e01`，R1 `970cda8`；登记延期 `DW-05-001`）。
 
 **文件：**
 
@@ -922,7 +923,7 @@ def test_scanner_rejects_more_than_10000_tracked_files(fake_git) -> None:
 
 - [x] **步骤 4：实现 worktree 隔离**
 
-分支名固定为 `harness/task-<uuid前8位>`；worktree 放在 Harness 状态目录而不是项目目录内；创建前拒绝非 Git、基准提交不存在和同 Workspace 已有写任务。不得清理或覆盖主工作区脏改动。
+分支名固定为 `harness/task-<uuid前8位>`；worktree 放在不暴露给 LLM/普通工具的 Harness 私有状态目录，而不是项目目录内；创建前拒绝非 Git、基准提交不存在和同 Workspace 已有写任务。Git add 已启动或 create/release 后验不一致时保留 target、branch 和 `.active` 进入人工接管，不递归清理；只有 subprocess 明确未启动的 `OSError` 可安全删除本次 marker。不得清理或覆盖主工作区脏改动。
 
 - [x] **步骤 5：转绿、性能与双平台边界检查**
 
@@ -954,6 +955,8 @@ git commit -m "功能：实现项目识别和任务工作树（工作区子智�
 
 - 产出：`ToolContext`、`ToolResult`、`ToolRegistry.dispatch(action, context)` 和工具 `read_file`、`search`、`apply_patch`、`delete_path`、`shell`、`git_status`、`git_diff`、`checkpoint`。`delete_path` 是实际注册工具，执行前必须消费 Task 4 的精确一次性审批；Git push/merge 只通过受治理 Shell 或后续显式能力提供，不把虚构的 `git` 工具写入测试。
 - 消费：Task 4 `PolicyEngine/PathGuard/Redactor`，Task 5 worktree。
+
+Harness `state_root` 永久不属于 worktree，也不进入普通 `read_file`、`search`、`apply_patch`、`delete_path`、`shell` 或 Git 工具的可访问范围；审批不能提升该能力。Task 6 聚焦测试和后续 Task 13 集成/E2E 必须验证访问 `state_root` 固定返回 `DENY/PATH_ESCAPE`，不能仅依赖 state_root 未出现在提示词中。
 
 - [ ] **步骤 1：写策略先于执行和原子 patch 冲突测试**
 

@@ -455,3 +455,12 @@
 - **Important RED—GREEN：** detector/scanner 各增加增长与句柄重定向用例；RED 共 `4 failed`，均证明旧构造器没有可注入的低层 opener 边界。新增共享 `BoundedFileReader`，从同一句柄取得 `fstat`、与路径 `lstat` 比对普通文件身份，身份不符在读取前拒绝；有效句柄只执行一次 `read(limit + 1)`。GREEN `4 passed`，增长场景分别记录唯一读取尺寸 17 和 9，重定向场景读取次数为 0。
 - **新鲜验证：** `Python 3.11.9`；workspace 为 `35 passed, 3 skipped in 6.80s`，10,000 文件扫描 `0.39s`；`ruff check src tests` 全通过；`mypy src` 检查 23 个源文件无问题；全量 pytest 为 `365 passed, 4 skipped in 9.67s`；`git diff --check` 通过。三个 Task 5 skip 均为本机 Windows 无 symlink 权限，junction 回归未跳过；全量第四个是既有 Task 4 同类 skip。
 - **范围与延期：** 未改迁移、Task 4 契约、依赖或 Task 6；未联网、安装、推送、合并、操作主 worktree或接触凭据。两项审查发现均已覆盖，Task 5 仍无延期，等待独立规约复审后再进入代码质量审查。
+
+### 2026-07-16 09:32 +08:00 — IMPL-005-R2
+
+- **架构结论与用户授权：** R1 规约复审仍 FAIL。独立分析确认在 Python 3.11、Windows/Linux 和外部 Git CLI 组合下，无法仅靠同一进程的路径检查跨平台绝对阻止同 UID 恶意原生进程在检查后交换父目录。用户批准首版采用“宿主私有 `state_root` + 后验验证 + 不确定即保留现场人工接管”的 fail-safe 边界，并把独立 OS 身份/ACL/broker 加固登记为 `DW-05-001`。
+- **TDD RED：** 首轮因缺少 `WorktreeUncertainError` 得到收集错误；仅添加错误类型后，5 个状态机目标全部失败：add 非零仍抛普通创建错误并清理现场、未启动 OSError 仍调用 `branch -d`、add 返回 0 不检查注册、remove 假成功与残留注册仍删除 marker。另一个 release 路径身份交换用例稳定 RED 为泄漏 `WorktreeStateError`。
+- **GREEN 状态机：** Git add 返回非零后不删除 target/branch/marker，抛固定 `WorktreeUncertainError`，后续 create 被 `.active` 阻塞；只有 runner 抛 `OSError`（定义为 subprocess 未启动）才只删除本次 marker，不递归 target、不处理 branch，并允许下一任务继续。add 返回 0 后验证目标仍在私有状态根、目标自身 Git 根、worktree 注册的 path/HEAD/branch；remove 返回 0 后验证目标消失且注册移除。任何身份、注册或结果不一致均保留现场和 marker、进入人工处理；生产代码完全移除 `shutil.rmtree` 与自动 branch 删除。
+- **文档与延期：** `SPEC.md` 9.2/14 明确 state_root 不进入 LLM/普通工具，首版信任同一 OS 账户不主动篡改；正常用户并发仅指项目/worktree 编辑，不宣称抵御同 UID 恶意进程。`PLAN.md` 冻结 Task 6/13 必须验证普通工具访问 state_root 固定 `DENY/PATH_ESCAPE`。`DEFERRED_WORK.md` 新增 P1 `DW-05-001`，记录用户影响、临时替代和恢复门禁。
+- **新鲜验证：** `Python 3.11.9`；workspace `39 passed, 3 skipped in 9.93s`；10,000 文件小于 5 秒硬断言通过且未进入 0.43 秒以上的前十慢项；Ruff 全通过；mypy 检查 23 个源文件无问题；全量 pytest `369 passed, 4 skipped in 12.09s`；`git diff --check` 通过。三个 Task 5 skip 均为本机 symlink 权限，junction 与路径交换测试有效运行；第四个为既有 Task 4 同类 skip。
+- **范围与残余风险：** 未新增依赖、迁移或 Task 6 代码，未联网、推送、合并或接触凭据。残余风险被准确限定为同 UID 原生进程可制造拒绝服务/人工恢复状态，当前没有提供独立身份隔离保证；R2 实现与验证完成，等待独立规约复审。

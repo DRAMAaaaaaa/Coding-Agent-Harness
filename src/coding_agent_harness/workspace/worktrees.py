@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import shutil
 from uuid import UUID
 
 from coding_agent_harness.governance.paths import PathEscapeError, PathGuard
@@ -42,6 +41,10 @@ class WorktreeCreationError(WorktreeError):
 
 class WorktreeReleaseError(WorktreeError):
     """工作树无法安全释放。"""
+
+
+class WorktreeUncertainError(WorktreeError):
+    """Git 副作用结果无法安全确认，需要人工接管。"""
 
 
 class WorktreeManager:
@@ -107,11 +110,16 @@ class WorktreeManager:
                 ]
             )
         except OSError:
-            self._cleanup_failed_create(target, branch)
+            try:
+                self._remove_active_marker()
+            except WorktreeStateError:
+                raise WorktreeUncertainError(
+                    "创建任务工作树结果不确定，需人工处理"
+                ) from None
             raise WorktreeCreationError("创建任务工作树失败") from None
         if result.returncode != 0:
-            self._cleanup_failed_create(target, branch)
-            raise WorktreeCreationError("创建任务工作树失败")
+            raise WorktreeUncertainError("创建任务工作树结果不确定，需人工处理")
+        self._validate_created_worktree(target, branch, resolved_base)
         return WorktreeInfo(
             workspace_id=self._workspace.id,
             task_id=task_id,
@@ -121,10 +129,16 @@ class WorktreeManager:
         )
 
     def release(self, task_id: UUID) -> None:
-        marker_task = self._read_active_marker()
+        try:
+            marker_task = self._read_active_marker()
+        except WorktreeStateError:
+            raise WorktreeUncertainError("任务工作树路径身份变化，需人工处理") from None
         if marker_task != str(task_id):
             raise WorktreeReleaseError("任务工作树不存在")
-        target = self._resolve_state_path(self._workspace_state / str(task_id))
+        try:
+            target = self._resolve_state_path(self._workspace_state / str(task_id))
+        except WorktreeStateError:
+            raise WorktreeUncertainError("任务工作树路径身份变化，需人工处理") from None
         status = self._runner.run(
             ["git", "-C", str(target), "status", "--porcelain=v1"]
         )
@@ -137,7 +151,13 @@ class WorktreeManager:
         )
         if removed.returncode != 0:
             raise WorktreeReleaseError("释放任务工作树失败")
-        self._remove_active_marker()
+        self._validate_released_worktree(target)
+        try:
+            self._remove_active_marker()
+        except WorktreeStateError:
+            raise WorktreeUncertainError(
+                "释放任务工作树后验验证失败，需人工处理"
+            ) from None
 
     def _validate_git_root(self) -> None:
         result = self._runner.run(
@@ -208,20 +228,90 @@ class WorktreeManager:
         finally:
             os.close(descriptor)
 
-    def _cleanup_failed_create(self, target: Path, branch: str) -> None:
+    def _validate_created_worktree(
+        self,
+        target: Path,
+        branch: str,
+        base_commit: str,
+    ) -> None:
         try:
             safe_target = self._resolve_state_path(target)
-        except WorktreeStateError:
-            safe_target = None
-        if safe_target is not None and safe_target.is_dir() and not safe_target.is_symlink():
-            shutil.rmtree(safe_target)
-        self._runner.run(
-            ["git", "-C", str(self._git_root), "branch", "-d", branch]
-        )
+            if safe_target != target or not safe_target.is_dir():
+                raise WorktreeUncertainError(
+                    "创建任务工作树后验验证失败，需人工处理"
+                )
+            root_result = self._runner.run(
+                ["git", "-C", str(safe_target), "rev-parse", "--show-toplevel"]
+            )
+            if root_result.returncode != 0:
+                raise WorktreeUncertainError(
+                    "创建任务工作树后验验证失败，需人工处理"
+                )
+            reported_root = Path(root_result.stdout.decode("utf-8").strip()).resolve(
+                strict=True
+            )
+            registration = self._registration_for(safe_target)
+        except (OSError, RuntimeError, UnicodeDecodeError, WorktreeStateError):
+            raise WorktreeUncertainError(
+                "创建任务工作树后验验证失败，需人工处理"
+            ) from None
+        if (
+            reported_root != safe_target
+            or registration is None
+            or registration[0] != base_commit
+            or registration[1] != f"refs/heads/{branch}"
+        ):
+            raise WorktreeUncertainError(
+                "创建任务工作树后验验证失败，需人工处理"
+            )
+
+    def _validate_released_worktree(self, target: Path) -> None:
         try:
-            self._remove_active_marker()
-        except WorktreeStateError:
-            pass
+            safe_target = self._resolve_state_path(target)
+            if safe_target != target or safe_target.exists():
+                raise WorktreeUncertainError(
+                    "释放任务工作树后验验证失败，需人工处理"
+                )
+            registration = self._registration_for(target)
+        except (OSError, RuntimeError, UnicodeDecodeError, WorktreeStateError):
+            raise WorktreeUncertainError(
+                "释放任务工作树后验验证失败，需人工处理"
+            ) from None
+        if registration is not None:
+            raise WorktreeUncertainError(
+                "释放任务工作树后验验证失败，需人工处理"
+            )
+
+    def _registration_for(self, target: Path) -> tuple[str, str] | None:
+        result = self._runner.run(
+            [
+                "git",
+                "-C",
+                str(self._git_root),
+                "worktree",
+                "list",
+                "--porcelain",
+            ]
+        )
+        if result.returncode != 0:
+            raise WorktreeUncertainError("Git worktree 注册表不可读取")
+        output = result.stdout.decode("utf-8")
+        for block in output.split("\n\n"):
+            fields: dict[str, str] = {}
+            for line in block.splitlines():
+                key, separator, value = line.partition(" ")
+                if separator:
+                    fields[key] = value
+            registered_path = fields.get("worktree")
+            if registered_path is None:
+                continue
+            try:
+                resolved_path = Path(registered_path).resolve(strict=False)
+            except (OSError, RuntimeError):
+                raise WorktreeUncertainError("Git worktree 注册表无效") from None
+            if resolved_path == target:
+                return fields.get("HEAD", ""), fields.get("branch", "")
+        return None
 
     def _read_active_marker(self) -> str | None:
         marker = self._resolve_state_path(self._active_marker)
