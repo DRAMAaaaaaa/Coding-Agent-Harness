@@ -532,3 +532,10 @@
 - **计划结构：** 新计划把交付分为 MVP-0—MVP-4，并拆成 10 个可独立 TDD、评审和提交的 Task；MVP-1 先关闭 Task 5 全部安全阻塞项，随后实现工具/反馈/Agent、API/WebUI 和交付门禁。
 - **范围控制：** 计划不包含长期记忆、真实模型联网、依赖安装、工具网络、Git 远程操作或外部 filter 执行；所有非首版能力要求在 Task 1 登记到 `DEFERRED_WORK.md`。
 - **实现状态：** 本次只写计划，不修改生产代码、不运行实现测试、不 merge/push。
+
+### 2026-07-16 — DOC-MVP-001
+
+- **任务与技能：** 执行 MVP-0 Task 1，使用 `executing-plans`、`using-git-worktrees` 和 `verification-before-completion`；完整读取仓库 `AGENTS.md`、任务简报、批准的最小可用产品设计与实施计划，并确认在隔离分支 `codex/workspaces` 中工作。
+- **执行顺序：** 根 `PLAN.md` 明确由精简计划的 MVP-1—MVP-4 取代原 Task 5—14 横向顺序，原条目只保留为完整产品路线；`MVP_ISSUES.md` 将状态一致性问题标为“已修，待复审”，不提前关闭。
+- **延期登记：** `DEFERRED_WORK.md` 新增 `DW-MVP-001`—`DW-MVP-006`，分别登记长期记忆、多任务/多 Agent、真实 DeepSeek/Qwen 联网验收、依赖安装/工具网络/Git 远端操作、外部 checkout filter 正式执行和高级 UI；每项均记录用户影响、MVP 替代和恢复条件。既有 `DW-05-001` 保持不变。
+- **验证与范围：** 本任务只修改 `DEFERRED_WORK.md`、`PLAN.md`、`AGENT_LOG.md` 和 `MVP_ISSUES.md`，不修改生产代码或测试，不联网、不安装依赖、不 merge/push、不接触凭据。按任务简报执行占位符扫描与 `git diff --check`，证据记录在忽略的 `.superpowers/sdd/task-1-report.md`；追踪变更以 `docs: 冻结最小可用产品执行顺序` 提交，随后等待独立规约符合性审查和代码质量审查。

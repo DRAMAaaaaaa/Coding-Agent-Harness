@@ -10,7 +10,7 @@
 | MVP-ISSUE-004 | Important | Python/Node fixture 只断言 argv，不能证明建议验证命令在独立目录中可运行 | 阻塞 | MVP-1 修复 Python fixture；Node 改为离线自包含验证，并增加真实子进程测试 |
 | MVP-ISSUE-005 | Minor | scanner 对不存在候选在宿主路径解析前返回，可能探测或保留工作区外 Windows 路径 | 待修 | MVP-1 在任何 `exists/stat` 前完成宿主语义解析和 containment |
 | MVP-ISSUE-006 | Minor | 10,000 文件性能测试在 CI 中硬断言 5 秒，与计划的“慢机只记录”冲突 | 待修 | MVP-1 将硬门禁限定为本机基准，CI 只验证功能并记录耗时 |
-| MVP-ISSUE-007 | Minor | `PLAN.md` 总表、Task 5 小节和过程报告的状态曾互相矛盾 | 待修 | MVP-0 恢复为安全返工中；每次提交同步唯一状态来源 |
+| MVP-ISSUE-007 | Minor | `PLAN.md` 总表、Task 5 小节和过程报告的状态曾互相矛盾 | 已修，待复审 | MVP-0 以精简计划的 MVP-1—MVP-4 作为唯一首版执行顺序；原 Task 5—14 仅保留为完整产品路线 |
 
 ## 已确认的根因边界
 
@@ -18,6 +18,12 @@
 - 固定 argv 和 `shell=False` 不能证明 Git 不执行外部程序。Git 会合并多层配置，并在表面只读或 worktree 命令中调用 fsmonitor、GPG、hooks 和 filter。
 - 旧 Git 可能把 `core.fsmonitor=false` 当成名为 `false` 的 hook 路径；安全禁用值必须为空。
 - `npm run test` 外层 argv 不变不代表脚本语义不变；信任指纹必须绑定原始配置摘要和最终有效命令。
+
+## MVP-0 执行顺序冻结
+
+- 首版唯一执行顺序来自 `docs/superpowers/plans/2026-07-16-minimal-viable-harness.md`：MVP-1 安全项目接入、MVP-2 最小工具/反馈/Agent、MVP-3 API/WebUI、MVP-4 演示与交付。
+- 根 `PLAN.md` 的原 Task 5—14 保留为完整产品路线和历史接口依据，不再作为首版横向执行顺序。
+- `DW-MVP-001`—`DW-MVP-006` 只登记批准设计明确排除的非首版能力；`MVP-ISSUE-001`—`006` 仍必须由 MVP-1 关闭，不能通过延期规避。
 
 ## 关闭规则
 
