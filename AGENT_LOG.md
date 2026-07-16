@@ -512,3 +512,16 @@
 - **独立最终复核：** 最终规约审查为 PASS，最终代码质量审查为 APPROVED；生产代码与测试的 Critical、Important、Minor 均为 0。复核确认核心 `cf2a84a` 在普通启动后/cleanup `Exception` 与宿主级 `BaseException` 之间保持正确分类，参数化 `KeyboardInterrupt/SystemExit` 覆盖清理后原样传播。
 - **复核证据：** `tests/workspace/test_processes.py` 为 `12 passed`，`git diff --check` 退出 0。唯一 ignored 文档 Minor 是 `.superpowers/sdd/task-5-report.md` 顶部仍笼统声称所有启动后/cleanup 异常均为不确定状态，且历史导航只写 R1—R6；现已改为普通 `Exception` 映射不确定、宿主级 `BaseException` 清理后原样传播，并更新为 R1—R7。
 - **完成与范围：** `PLAN.md` Task 5 步骤 6 已勾选；`.superpowers/sdd/progress.md` 同步为 complete、review clean。没有修改生产代码、测试或 `DEFERRED_WORK.md`，没有运行全量测试、联网、merge 或 push；批准的 `DW-05-001` 保持不变。
+
+### 2026-07-16 — REVIEW-005-WHOLE-BRANCH
+
+- **结论撤回：** 新的整分支冷审查对 `6b2f21e..61d4560` 给出 Spec compliant=No、Quality approved=No、Ready to merge=No；此前阶段性 PASS/APPROVED 不能作为合并依据。
+- **阻塞问题：** 发现 Windows 扩展路径别名可绕过 state/Git 根重叠检查，以及 Git 的 fsmonitor、hooks、签名程序和 checkout filter 可在扫描、worktree add/remove 中隐式执行外部代码；另有配置信任指纹缺失和 fixture 不可运行等问题。完整台账写入 `MVP_ISSUES.md`。
+- **根因调查：** 三个只读调查智能体分别复现路径身份、Git 隐式执行和信任/fixture 问题。确认 `core.fsmonitor=false` 在旧 Git 中可能执行名为 `false` 的程序，安全值必须为空；`git log` 必须显式 `--no-show-signature`；worktree materialize 前必须审计并拒绝首版不支持的外部 filter。
+- **用户决策：** 用户要求重新规划并只保留必要功能，批准“现有实现上的纵向 MVP”方案。首版以 Scripted Mock 跑通完整 Harness，保留 Python/Node 和 DeepSeek/Qwen 接口，不要求真实模型联网验收。
+
+### 2026-07-16 — DESIGN-MVP-001
+
+- **技能：** 使用 `brainstorming` 重新确认目标、范围、替代方案、架构、安全边界和验收标准；设计获得用户逐段批准。
+- **书面设计：** 新增 `docs/superpowers/specs/2026-07-16-minimal-viable-harness-design.md`，把后续交付压缩为 MVP-0—MVP-4 五个纵向实施单元。
+- **过程状态：** Task 5 恢复为安全返工中；本次只修改设计、问题台账和过程文档，不修改生产代码，不 merge/push，不声称安全问题已修复。

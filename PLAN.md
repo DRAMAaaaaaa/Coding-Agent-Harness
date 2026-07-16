@@ -157,7 +157,7 @@ class TaskOrchestrator:
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
 | 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 完成（首次合并 `8f2ae34`；WAL/路径门闩纠偏复审通过；补充合并 `873f1d4`） |
-| 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 待执行 |
+| 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 安全返工中（整分支冷审查发现 2 Critical、2 Important、3 Minor；见 `MVP_ISSUES.md`） |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
 | 8 | 记忆筛选、存储与上下文 | 3、4 | 可与 7 并行 | `codex/memory` | 待执行 |
@@ -878,7 +878,7 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 
 **目标：** 安全接入本地 Git 项目，识别 Python/Node.js 验证命令，并隔离任务修改。
 
-**状态：** 完成。最终规约审查 PASS、最终代码质量审查 APPROVED，Critical/Important/Minor 均为 0（2026-07-16）。最新核心提交为 `cf2a84a`，对应证据提交为 `facb5e4`；批准的延期 `DW-05-001` 保持登记。
+**状态：** 安全返工中。此前阶段审查结论已被整分支冷审查推翻；当前存在 2 个 Critical、2 个 Important 和 3 个 Minor，详见 `MVP_ISSUES.md`。Task 5 不得合并，必须先完成 MVP-1 安全修复与新的双重评审（2026-07-16；`DW-05-001` 仍只覆盖同 UID 主动篡改，不覆盖静态路径别名或 Git 隐式执行）。
 
 **文件：**
 
@@ -931,7 +931,7 @@ def test_scanner_rejects_more_than_10000_tracked_files(fake_git) -> None:
 
 预期：识别、限制、脏主工作区保护、worktree 创建/释放和 Windows 空格路径测试通过；10,000 文件合成扫描基准低于 5 秒（CI 慢机只记录，不作硬失败；本机验收硬目标 5 秒）。
 
-- [x] **步骤 6：评审与提交（最终规约审查 PASS、最终代码质量审查 APPROVED；Critical/Important/Minor 均为 0；最新核心 `cf2a84a`、证据 `facb5e4`）**
+- [ ] **步骤 6：评审与提交（整分支冷审查未通过；进入 MVP-1 安全返工，禁止合并）**
 
 规约符合性审查确认 Python/Node 默认识别、自定义命令信任、10,000 文件边界和主工作区保护；代码质量审查确认 Git 参数数组、临时目录清理与跨平台路径测试。
 
