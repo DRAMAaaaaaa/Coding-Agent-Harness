@@ -598,7 +598,12 @@
 
 ### 2026-07-22 — IMPL-MVP-1-FINAL-SCANNER-NOFOLLOW
 
-- **任务、技能与边界：** 最终整分支规约门禁发现 scanner tracked path no-follow Important 后，完整阅读 `AGENTS.md`、`.superpowers/sdd/mvp1-final-spec-gate.md`、scanner 实现/测试和最新质量返工报告，并使用 `systematic-debugging`、`test-driven-development`、`verification-before-completion`。基线父提交为 `9d92e05`，技术质量修复已作为唯一提交 `5c2b60b` 提交；本轮只修复 `MVP-ISSUE-014` 与对应过程状态，不实现 MVP-2、不联网、不安装依赖、不 merge/push。
+- **任务、技能与边界：** 最终整分支规约门禁发现 scanner tracked path no-follow Important 后，完整阅读 `AGENTS.md`、`.superpowers/sdd/mvp1-final-spec-gate.md`、scanner 实现/测试和最新质量返工报告，并使用 `systematic-debugging`、`test-driven-development`、`verification-before-completion`。基线父提交为 `9d92e05`；`5c2b60b` 是 amend 前历史哈希，当前稳定技术提交 `af11fea` 已包含 `MVP-ISSUE-010`—`014` 的技术修复。本轮只修复 `MVP-ISSUE-014` 与对应过程状态，不实现 MVP-2、不联网、不安装依赖、不 merge/push。
 - **根因与 TDD RED：** 根因是 `_validate_tracked_path()` 在 no-follow 分类前调用 `candidate.exists()`，会 follow tracked symlink/reparse 的外部或 UNC 目标。消费者级 Windows reparse 注入契约在旧实现得到 `1 failed, 1 skipped`，精确失败于 `scanner.py:220` 的 `exists`，记录为 `[('exists', linked-to-unc.txt)]`；真实 symlink 用例因当前账户无创建 symlink 权限跳过。该平台限制不阻塞 Windows reparse 注入契约。
 - **最小 GREEN 与回归：** candidate 在任何 `exists`、follow-target `stat` 或 `resolve` 前先 `lstat`；缺失路径保持返回，symlink/reparse 固定映射为 `RepositoryScanError`，普通对象才继续 containment。GREEN 目标为 `1 passed, 1 skipped` 且记录的 follow-target `exists/stat/resolve` 调用为空；scanner 全文件为 `20 passed, 3 skipped`。真实临时父仓加入受控子仓 gitlink 后 scanner 返回 `('.gitmodules', 'README.md', 'nested')`，普通文件、缺失 tracked 路径与 gitlink 语义保持。
-- **当前状态与台账：** `PLAN.md`、本日志、`MVP_ISSUES.md` 与 Task 5 报告均记录 `5c2b60b` 技术修复已提交、最终整分支规约门禁发现 scanner no-follow Important 正在返工；历史审查数量明确为快照。新增 `MVP-ISSUE-014`；`MVP-ISSUE-003/004/006/008`—`013` 均未提前关闭。scanner focused 为 `20 passed, 3 skipped`，governance/storage/workspace 为 `467 passed, 14 skipped`，全量 pytest 为 `537 passed, 14 skipped`；Ruff、mypy、pip check 与差异检查通过。最终 `--amend`、amend 后 HEAD/单提交检查及独立规约/质量门禁仍待完成。
+- **当前状态与台账：** `PLAN.md`、本日志、`MVP_ISSUES.md` 与 Task 5 报告均将 `5c2b60b` 标为 amend 前历史哈希，并记录当前稳定技术提交 `af11fea` 已包含 `MVP-ISSUE-010`—`014` 的技术修复；历史审查数量明确为快照。`MVP-ISSUE-003/004/006/008`—`014` 均未提前关闭。scanner focused 为 `20 passed, 3 skipped`，governance/storage/workspace 为 `467 passed, 14 skipped`，全量 pytest 为 `537 passed, 14 skipped`；Ruff、mypy、pip check 与差异检查通过。技术修复已提交，当前等待最终整分支规约/质量门禁。
+
+### 2026-07-23 — DOC-MVP-1-FINAL-GATE-SYNC
+
+- **文档同步：** 完整复核 `AGENTS.md` 与 `.superpowers/sdd/mvp1-final-spec-rereview.md` 后，仅同步 `PLAN.md`、`MVP_ISSUES.md`、本日志及忽略的 Task 5 过程报告。`5c2b60b` 明确标为 amend 前历史哈希；当前稳定技术提交 `af11fea` 已包含 `MVP-ISSUE-010`—`014` 的技术修复；当前状态统一为“技术修复已提交，等待最终整分支规约/质量门禁”。
+- **门禁与范围：** `MVP-ISSUE-003/004/006/008`—`014` 全部保持待复审，未提前关闭。未修改生产代码、测试或设计，未联网、安装依赖、merge、push 或接触凭据；关键词一致性检查与 `git diff --check` 均通过。忽略的 `.superpowers/sdd/mvp1-final-docs-report.md` 仅作过程证据，不进入提交。
