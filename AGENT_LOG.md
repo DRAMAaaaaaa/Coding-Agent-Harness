@@ -614,3 +614,9 @@
 - **根因、TDD 与最小修复：** 真实本地 `mklink /J` 父 junction 的消费者级 RED 为 `1 failed, 23 deselected`：旧实现先对 `dir/file.txt` 执行 leaf `lstat`，再以会 follow 的父目录解析得到“路径越界”。GREEN 从已解析 root 按 `PurePosixPath.parts` 无缓存逐级执行 no-follow `lstat`；每个既有非叶组件只允许普通、非 symlink/reparse 目录，父缺失维持既有返回，且只在安全父下检查 leaf。没有引入布尔 containment 缓存；同 UID 主动竞争继续由 `DW-05-001` 覆盖。
 - **当前证据与状态：** scanner 全文件为 `27 passed, 3 skipped in 10.77s`，覆盖多级父、真实 junction、Windows reparse 属性、父非目录、父/leaf 缺失、普通嵌套文件、真实 gitlink、POSIX 反斜杠和 10,000/10,001。`MVP-ISSUE-015` 技术修复已提交为 `c376216`；`PLAN.md`、本日志、`MVP_ISSUES.md` 及 Task 5 报告当前统一等待最终规约与质量双门禁，`MVP-ISSUE-003/004/006/008`—`015` 均未提前关闭。
 - **新鲜验证：** governance/storage/workspace 为 `474 passed, 14 skipped in 94.07s`；全量 pytest 为 `544 passed, 14 skipped in 96.23s`；Ruff、mypy（26 个源文件）和 `pip check` 均通过。差异检查已通过；状态保持等待最终规约与质量双门禁，不据此提前关闭任何问题。
+
+### 2026-07-23 — DOC-MVP-1-CLOSURE
+
+- **关闭事实：** 完整复核 `.superpowers/sdd/mvp1-post-parent-spec-clean.md` 与 `.superpowers/sdd/mvp1-post-parent-quality-clean.md`；最终受审范围为 `6b2f21e..9d01b77`，规约与质量门禁均为 CLEAN，Critical / Important / Minor 均为 `0 / 0 / 0`，质量报告确认 Ready to merge：Yes。
+- **验证证据：** 最终报告记录 scanner `27 passed, 3 skipped`、governance/storage/workspace `474 passed, 14 skipped`、全量 pytest `544 passed, 14 skipped`；Ruff、mypy、pip check 与 diff check 均通过。
+- **状态与范围：** 据此关闭 MVP-1、兼容保留的原 Task 5 项目接入阶段、MVP Task 2/3/4，以及 `MVP-ISSUE-003/004/006/008`—`015`；允许本地合并，但尚未合并。仅更新过程文档；未联网、安装依赖、merge 或 push。
