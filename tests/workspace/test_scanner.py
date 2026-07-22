@@ -3,8 +3,10 @@ from contextlib import contextmanager
 from io import BufferedReader
 from pathlib import Path
 import os
+import stat
 import subprocess
 from time import perf_counter
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,10 +33,21 @@ class RecordingGitRunner:
     def run(self, request: ProcessRequest) -> CommandResult:
         self.requests.append(request)
         argv = list(request.argv)
-        command_start = argv.index("-C") + 2
-        command = argv[command_start:]
-        self.calls.append(command)
+        if "-C" in argv:
+            command = argv[argv.index("-C") + 2 :]
+        else:
+            command = argv[1:]
         operation = command[0]
+        if operation == "config":
+            return CommandResult(returncode=0, stdout=b"", stderr=b"")
+        self.calls.append(command)
+        if operation == "rev-parse":
+            assert request.cwd is not None
+            return CommandResult(
+                returncode=0,
+                stdout=str(request.cwd).encode("utf-8") + b"\n",
+                stderr=b"",
+            )
         if operation == "ls-files":
             stdout = "\0".join(self.tracked_files)
             if self.tracked_files:
@@ -88,8 +101,60 @@ class ControlledFileOpener:
             yield RecordingBinaryFile(raw, self.read_sizes)
 
 
+class RedirectedTopLevelGit:
+    def __init__(self, reported_root: Path) -> None:
+        self.reported_root = reported_root
+        self.calls: list[list[str]] = []
+
+    def run(
+        self,
+        root: str | Path,
+        args: Sequence[str],
+        stdin: bytes = b"",
+    ) -> CommandResult:
+        del root, stdin
+        command = list(args)
+        self.calls.append(command)
+        if command == ["rev-parse", "--show-toplevel"]:
+            return CommandResult(0, str(self.reported_root).encode("utf-8") + b"\n", b"")
+        raise AssertionError(f"unexpected command after toplevel check: {command}")
+
+    def assert_current_filter_free(self, root: Path, tracked: bytes) -> None:
+        del root, tracked
+        raise AssertionError("toplevel 不匹配时不得审计 filter")
+
+
 def mark_git_root(root: Path) -> None:
-    (root / ".git").write_text("gitdir: synthetic\n", encoding="utf-8")
+    git_dir = root / ".git"
+    git_dir.mkdir()
+    (git_dir / "config").write_bytes(b"")
+
+
+def test_scanner_rejects_untrusted_gitfile_before_git_command(tmp_path: Path) -> None:
+    (tmp_path / ".git").write_text(
+        "gitdir: \\\\untrusted.invalid\\share\\repository\n",
+        encoding="utf-8",
+    )
+    runner = RecordingGitRunner([])
+
+    with pytest.raises(RepositoryScanError, match="^所选目录不是 Git 根目录$"):
+        WorkspaceScanner(runner).scan(tmp_path)
+
+    assert runner.calls == []
+
+
+def test_scanner_validates_effective_toplevel_before_repository_commands(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    outside = tmp_path.parent / "outside-worktree"
+    outside.mkdir(exist_ok=True)
+    safe_git = RedirectedTopLevelGit(outside)
+
+    with pytest.raises(RepositoryScanError, match="^所选目录不是 Git 根目录$"):
+        WorkspaceScanner(safe_git=safe_git).scan(tmp_path)
+
+    assert safe_git.calls == [["rev-parse", "--show-toplevel"]]
 
 
 def test_scans_real_git_repository_and_preserves_dirty_main_workspace(
@@ -184,6 +249,7 @@ def test_invokes_only_safe_read_only_git_commands(tmp_path: Path) -> None:
     WorkspaceScanner(runner).scan(tmp_path)
 
     assert runner.calls == [
+        ["rev-parse", "--show-toplevel"],
         ["ls-files", "-z"],
         ["check-attr", "--cached", "-z", "--stdin", "filter"],
         ["check-attr", "-z", "--stdin", "filter"],
@@ -191,7 +257,28 @@ def test_invokes_only_safe_read_only_git_commands(tmp_path: Path) -> None:
         ["status", "--porcelain=v1", "-z"],
     ]
     assert all(Path(request.argv[0]).is_absolute() for request in runner.requests)
-    assert all("core.fsmonitor=" in request.argv for request in runner.requests)
+    audit_requests = [request for request in runner.requests if "-C" not in request.argv]
+    protected_requests = [request for request in runner.requests if "-C" in request.argv]
+    assert len(audit_requests) == len(protected_requests) == len(runner.calls)
+    assert all(
+        list(request.argv[1:])
+        == [
+            "config",
+            "--file",
+            str(tmp_path / ".git" / "config"),
+            "--no-includes",
+            "-z",
+            "--list",
+        ]
+        for request in audit_requests
+    )
+    assert all(request.cwd != tmp_path for request in audit_requests)
+    assert all("core.fsmonitor=" in request.argv for request in protected_requests)
+    assert all(
+        "-C" not in runner.requests[index].argv
+        and "-C" in runner.requests[index + 1].argv
+        for index in range(0, len(runner.requests), 2)
+    )
 
 
 def test_repository_map_sequences_are_deeply_immutable_and_json_stays_arrays(
@@ -347,8 +434,113 @@ def test_rejects_tracked_symlink_escape(
         capture_output=True,
     )
 
-    with pytest.raises(RepositoryScanError, match="^跟踪文件路径越界$"):
+    with pytest.raises(RepositoryScanError, match="^跟踪文件不可读取$"):
         WorkspaceScanner().scan(root)
+
+
+def test_rejects_tracked_symlink_before_follow_target_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    mark_git_root(root)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside\n", encoding="utf-8")
+    candidate = root / "linked-to-outside.txt"
+    try:
+        candidate.symlink_to(outside)
+    except OSError as error:
+        pytest.skip(f"当前系统无法创建符号链接：{type(error).__name__}")
+
+    probes: list[tuple[str, Path]] = []
+    original_exists = Path.exists
+    original_stat = Path.stat
+    original_resolve = Path.resolve
+
+    def fail_exists(self: Path) -> bool:
+        if self == candidate:
+            probes.append(("exists", self))
+            raise AssertionError("follow-target exists reached")
+        return original_exists(self)
+
+    def fail_stat(
+        self: Path,
+        *,
+        follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        if self == candidate and follow_symlinks:
+            probes.append(("stat", self))
+            raise AssertionError("follow-target stat reached")
+        return original_stat(self, follow_symlinks=follow_symlinks)
+
+    def fail_resolve(self: Path, strict: bool = False) -> Path:
+        if self == candidate:
+            probes.append(("resolve", self))
+            raise AssertionError("follow-target resolve reached")
+        return original_resolve(self, strict=strict)
+
+    monkeypatch.setattr(Path, "exists", fail_exists)
+    monkeypatch.setattr(Path, "stat", fail_stat)
+    monkeypatch.setattr(Path, "resolve", fail_resolve)
+
+    with pytest.raises(RepositoryScanError, match="^跟踪文件不可读取$"):
+        WorkspaceScanner(RecordingGitRunner([candidate.name])).scan(root)
+
+    assert probes == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows reparse 契约")
+def test_rejects_tracked_reparse_before_follow_target_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mark_git_root(tmp_path)
+    candidate = tmp_path / "linked-to-unc.txt"
+    probes: list[tuple[str, Path]] = []
+    original_exists = Path.exists
+    original_stat = Path.stat
+    original_resolve = Path.resolve
+
+    def reparse_lstat(self: Path) -> os.stat_result | SimpleNamespace:
+        if self == candidate:
+            return SimpleNamespace(
+                st_mode=stat.S_IFREG,
+                st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+            )
+        return original_stat(self, follow_symlinks=False)
+
+    def fail_exists(self: Path) -> bool:
+        if self == candidate:
+            probes.append(("exists", self))
+            raise AssertionError("follow-target exists reached")
+        return original_exists(self)
+
+    def fail_stat(
+        self: Path,
+        *,
+        follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        if self == candidate and follow_symlinks:
+            probes.append(("stat", self))
+            raise AssertionError("follow-target stat reached")
+        return original_stat(self, follow_symlinks=follow_symlinks)
+
+    def fail_resolve(self: Path, strict: bool = False) -> Path:
+        if self == candidate:
+            probes.append(("resolve", self))
+            raise AssertionError("follow-target resolve reached")
+        return original_resolve(self, strict=strict)
+
+    monkeypatch.setattr(Path, "lstat", reparse_lstat)
+    monkeypatch.setattr(Path, "exists", fail_exists)
+    monkeypatch.setattr(Path, "stat", fail_stat)
+    monkeypatch.setattr(Path, "resolve", fail_resolve)
+
+    with pytest.raises(RepositoryScanError, match="^跟踪文件不可读取$"):
+        WorkspaceScanner(RecordingGitRunner([candidate.name])).scan(tmp_path)
+
+    assert probes == []
 
 
 def test_document_growth_after_open_reads_only_limit_plus_one(

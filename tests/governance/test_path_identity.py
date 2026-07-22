@@ -178,3 +178,69 @@ def test_path_identity_fails_closed_when_resolution_cannot_be_confirmed(
 
     with pytest.raises(UnsafePathNamespaceError, match="^无法确认路径身份$"):
         path_key(tmp_path / "blocked")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows anchor 语义")
+@pytest.mark.parametrize("operation", ["same_path", "is_within"])
+def test_different_windows_anchors_never_probe_filesystem_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    local = tmp_path / "workspace"
+    candidate = Path(r"\\untrusted.invalid\share\payload")
+    calls: list[str] = []
+    relevant = {str(local), str(candidate)}
+    original_resolve = Path.resolve
+    original_samefile = Path.samefile
+    original_stat = Path.stat
+
+    def record_resolve(self: Path, strict: bool = False) -> Path:
+        if str(self) in relevant:
+            calls.append(f"resolve:{self}")
+            return self
+        return original_resolve(self, strict=strict)
+
+    def record_samefile(self: Path, other: object) -> bool:
+        if str(self) in relevant or str(other) in relevant:
+            calls.append(f"samefile:{self}:{other}")
+            return False
+        return original_samefile(self, other)
+
+    def record_stat(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        if str(self) in relevant:
+            calls.append(f"stat:{self}")
+            raise AssertionError("不同 anchor 不得探测文件系统")
+        return original_stat(self, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "resolve", record_resolve)
+    monkeypatch.setattr(Path, "samefile", record_samefile)
+    monkeypatch.setattr(Path, "stat", record_stat)
+
+    if operation == "same_path":
+        assert same_path(candidate, local) is False
+    else:
+        assert is_within(candidate, local) is False
+    assert calls == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows drive-relative 语义")
+@pytest.mark.parametrize("candidate", [r"Z:payload", r"\payload"])
+def test_ambiguous_windows_paths_fail_closed_without_identity_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: str,
+) -> None:
+    local = tmp_path / "workspace"
+    calls: list[str] = []
+
+    def reject_resolve(self: Path, strict: bool = False) -> Path:
+        del strict
+        calls.append(f"resolve:{self}")
+        raise AssertionError("不明确的 Windows 路径不得探测文件系统")
+
+    monkeypatch.setattr(Path, "resolve", reject_resolve)
+
+    with pytest.raises(UnsafePathNamespaceError, match="^无法确认路径身份$"):
+        same_path(Path(candidate), local)
+    assert calls == []

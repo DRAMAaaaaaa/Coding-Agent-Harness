@@ -123,3 +123,69 @@ def test_resolve_rejects_unproven_extended_drive_component(
 
     with pytest.raises(PathEscapeError, match="^路径超出工作区$"):
         PathGuard(root).resolve(candidate)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows anchor 语义")
+def test_guard_rejects_different_unc_anchor_without_identity_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    guard = PathGuard(root)
+    calls: list[str] = []
+    candidate = Path(r"\\untrusted.invalid\share\payload")
+    relevant = {str(root), str(root.resolve()), str(candidate)}
+    original_resolve = Path.resolve
+    original_samefile = Path.samefile
+    original_stat = Path.stat
+
+    def record_resolve(self: Path, strict: bool = False) -> Path:
+        if str(self) in relevant:
+            calls.append(f"resolve:{self}")
+            return self
+        return original_resolve(self, strict=strict)
+
+    def record_samefile(self: Path, other: object) -> bool:
+        if str(self) in relevant or str(other) in relevant:
+            calls.append(f"samefile:{self}:{other}")
+            return False
+        return original_samefile(self, other)
+
+    def record_stat(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        if str(self) in relevant:
+            calls.append(f"stat:{self}")
+            raise AssertionError("不同 anchor 不得探测文件系统")
+        return original_stat(self, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "resolve", record_resolve)
+    monkeypatch.setattr(Path, "samefile", record_samefile)
+    monkeypatch.setattr(Path, "stat", record_stat)
+
+    with pytest.raises(PathEscapeError, match="^路径超出工作区$"):
+        guard.resolve(r"\\untrusted.invalid\share\payload")
+    assert calls == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows drive-relative 语义")
+@pytest.mark.parametrize("candidate", [r"Z:payload", r"\payload"])
+def test_guard_rejects_ambiguous_windows_path_without_identity_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: str,
+) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    guard = PathGuard(root)
+    calls: list[str] = []
+
+    def reject_resolve(self: Path, strict: bool = False) -> Path:
+        del strict
+        calls.append(f"resolve:{self}")
+        raise AssertionError("drive-relative 或 rooted-relative 路径不得探测文件系统")
+
+    monkeypatch.setattr(Path, "resolve", reject_resolve)
+
+    with pytest.raises(PathEscapeError, match="^路径超出工作区$"):
+        guard.resolve(candidate)
+    assert calls == []

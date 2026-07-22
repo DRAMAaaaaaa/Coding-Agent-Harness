@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Any
 
@@ -791,6 +792,78 @@ def test_slash_paths_are_not_global_command_options(
 
     assert result.decision is PolicyDecision.DENY
     assert result.reason_code == "PATH_ESCAPE"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows anchor 语义")
+def test_policy_denies_different_unc_anchor_without_identity_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    policy = PolicyEngine(PathGuard(root), Redactor())
+    calls: list[str] = []
+    candidate = Path(r"\\untrusted.invalid\share\payload")
+    relevant = {str(root), str(root.resolve()), str(candidate)}
+    original_resolve = Path.resolve
+    original_samefile = Path.samefile
+    original_stat = Path.stat
+
+    def record_resolve(self: Path, strict: bool = False) -> Path:
+        if str(self) in relevant:
+            calls.append(f"resolve:{self}")
+            return self
+        return original_resolve(self, strict=strict)
+
+    def record_samefile(self: Path, other: object) -> bool:
+        if str(self) in relevant or str(other) in relevant:
+            calls.append(f"samefile:{self}:{other}")
+            return False
+        return original_samefile(self, other)
+
+    def record_stat(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        if str(self) in relevant:
+            calls.append(f"stat:{self}")
+            raise AssertionError("不同 anchor 不得探测文件系统")
+        return original_stat(self, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "resolve", record_resolve)
+    monkeypatch.setattr(Path, "samefile", record_samefile)
+    monkeypatch.setattr(Path, "stat", record_stat)
+
+    result = policy.evaluate(
+        _action("read_file", {"path": r"\\untrusted.invalid\share\payload"}),
+        _context(root),
+    )
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "PATH_ESCAPE"
+    assert calls == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows drive-relative 语义")
+def test_policy_denies_drive_relative_path_without_identity_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    policy = PolicyEngine(PathGuard(root), Redactor())
+    calls: list[str] = []
+
+    def reject_resolve(self: Path, strict: bool = False) -> Path:
+        del strict
+        calls.append(f"resolve:{self}")
+        raise AssertionError("drive-relative 路径不得探测文件系统")
+
+    monkeypatch.setattr(Path, "resolve", reject_resolve)
+
+    result = policy.evaluate(
+        _action("read_file", {"path": r"Z:payload"}),
+        _context(root),
+    )
+    assert result.decision is PolicyDecision.DENY
+    assert result.reason_code == "PATH_ESCAPE"
+    assert calls == []
 
 
 def test_cmd_slash_options_remain_valid_only_in_cmd_prefix(

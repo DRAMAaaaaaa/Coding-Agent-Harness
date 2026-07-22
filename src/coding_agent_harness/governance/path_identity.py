@@ -1,5 +1,5 @@
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 
 class UnsafePathNamespaceError(ValueError):
@@ -93,7 +93,33 @@ def path_key(path: Path) -> tuple[str, ...]:
     return tuple(Path(normalized).parts)
 
 
+def windows_anchors_differ(left: Path, right: Path) -> bool:
+    """纯词法判断两个绝对 Windows 路径是否明显位于不同 anchor。"""
+
+    if os.name != "nt":
+        return False
+
+    def anchor_for(path: Path) -> str | None:
+        raw = collapse_windows_extended_path(str(path))
+        pure = PureWindowsPath(raw)
+        if not pure.is_absolute():
+            if pure.drive or pure.root:
+                raise UnsafePathNamespaceError("无法确认路径身份")
+            return None
+        return pure.anchor.replace("/", "\\").rstrip("\\").casefold()
+
+    left_anchor = anchor_for(left)
+    right_anchor = anchor_for(right)
+    return (
+        left_anchor is not None
+        and right_anchor is not None
+        and left_anchor != right_anchor
+    )
+
+
 def same_path(left: Path, right: Path) -> bool:
+    if windows_anchors_differ(left, right):
+        return False
     if path_key(left) == path_key(right):
         return True
     try:
@@ -105,6 +131,8 @@ def same_path(left: Path, right: Path) -> bool:
 
 
 def is_within(candidate: Path, root: Path) -> bool:
+    if windows_anchors_differ(candidate, root):
+        return False
     candidate_parts = path_key(candidate)
     root_parts = path_key(root)
     if candidate_parts[: len(root_parts)] == root_parts:
@@ -120,4 +148,39 @@ def is_within(candidate: Path, root: Path) -> bool:
 
 
 def paths_overlap(left: Path, right: Path) -> bool:
+    if windows_anchors_differ(left, right):
+        raise UnsafePathNamespaceError("无法确认路径身份")
     return is_within(left, right) or is_within(right, left)
+
+
+def trusted_paths_overlap(left: Path, right: Path) -> bool:
+    """对显式受信配置路径补充物理身份检查。
+
+    与普通 containment 不同，本入口允许探测两个配置路径，以防 mapped drive
+    或 UNC 别名隐藏真实重叠；任何身份错误都保持 fail closed。
+    """
+
+    def trusted_same_path(first: Path, second: Path) -> bool:
+        if path_key(first) == path_key(second):
+            return True
+        try:
+            return first.samefile(second)
+        except FileNotFoundError:
+            return False
+        except OSError:
+            raise UnsafePathNamespaceError("无法确认路径身份") from None
+
+    def trusted_is_within(candidate: Path, root: Path) -> bool:
+        candidate_parts = path_key(candidate)
+        root_parts = path_key(root)
+        if candidate_parts[: len(root_parts)] == root_parts:
+            return True
+        current = candidate
+        while True:
+            if trusted_same_path(current, root):
+                return True
+            if current.parent == current:
+                return False
+            current = current.parent
+
+    return trusted_is_within(left, right) or trusted_is_within(right, left)

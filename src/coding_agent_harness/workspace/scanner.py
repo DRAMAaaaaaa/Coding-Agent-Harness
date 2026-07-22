@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
+import stat
 import tempfile
 
 from coding_agent_harness.governance.path_identity import (
     UnsafePathNamespaceError,
     is_within,
+    same_path,
 )
 
 from coding_agent_harness.workspace.models import RepositoryDocument, RepositoryMap
@@ -18,6 +20,7 @@ from coding_agent_harness.workspace.files import (
     BoundedFileReader,
     BoundedFileTooLargeError,
     UnsafeBoundedFileError,
+    is_symlink_or_reparse,
 )
 from coding_agent_harness.workspace.git import SafeGit
 from coding_agent_harness.workspace.processes import CommandResult, ProcessRunner
@@ -89,6 +92,16 @@ class WorkspaceScanner:
     def scan(self, root: str | Path) -> RepositoryMap:
         project_root = self._resolve_root(root)
         self._validate_git_root_marker(project_root)
+        top_level = self._run_git(project_root, ["rev-parse", "--show-toplevel"])
+        try:
+            reported_root = Path(self._decode(top_level.stdout).strip())
+            if not reported_root.is_absolute() or not same_path(
+                reported_root,
+                project_root,
+            ):
+                raise RepositoryScanError("所选目录不是 Git 根目录")
+        except UnsafePathNamespaceError:
+            raise RepositoryScanError("所选目录不是 Git 根目录") from None
         tracked_result = self._run_git(project_root, ["ls-files", "-z"])
         tracked_files = self._parse_tracked_files(tracked_result.stdout)
         if len(tracked_files) > _MAX_TRACKED_FILES:
@@ -139,7 +152,11 @@ class WorkspaceScanner:
     @staticmethod
     def _validate_git_root_marker(root: Path) -> None:
         marker = root / ".git"
-        if marker.is_symlink() or not (marker.is_file() or marker.is_dir()):
+        try:
+            marker_stat = marker.lstat()
+        except OSError:
+            raise RepositoryScanError("所选目录不是 Git 根目录") from None
+        if is_symlink_or_reparse(marker_stat) or not stat.S_ISDIR(marker_stat.st_mode):
             raise RepositoryScanError("所选目录不是 Git 根目录")
 
     def _run_git(self, root: Path, args: list[str]) -> CommandResult:
@@ -190,6 +207,14 @@ class WorkspaceScanner:
             ):
                 raise RepositoryScanError("跟踪文件路径越界")
         candidate = root.joinpath(*portable_path.parts)
+        try:
+            candidate_stat = candidate.lstat()
+        except FileNotFoundError:
+            return
+        except OSError:
+            raise RepositoryScanError("跟踪文件不可读取") from None
+        if is_symlink_or_reparse(candidate_stat):
+            raise RepositoryScanError("跟踪文件不可读取")
         parent = candidate.parent
         try:
             contained = parent_containment.get(parent)
@@ -200,8 +225,6 @@ class WorkspaceScanner:
             raise RepositoryScanError("跟踪文件不可读取") from None
         if not contained:
             raise RepositoryScanError("跟踪文件路径越界")
-        if not candidate.exists() and not candidate.is_symlink():
-            return
         try:
             resolved = candidate.resolve(strict=True)
         except (OSError, RuntimeError):

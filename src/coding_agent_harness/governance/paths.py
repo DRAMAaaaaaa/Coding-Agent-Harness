@@ -6,6 +6,7 @@ from coding_agent_harness.governance.path_identity import (
     collapse_windows_extended_path,
     is_within,
     path_key,
+    windows_anchors_differ,
 )
 
 
@@ -44,6 +45,11 @@ class PathGuard:
             except UnsafePathNamespaceError:
                 raise PathEscapeError("路径超出工作区") from None
         path = Path(raw_candidate)
+        try:
+            if windows_anchors_differ(path, self._root):
+                raise PathEscapeError("路径超出工作区")
+        except UnsafePathNamespaceError:
+            raise PathEscapeError("路径超出工作区") from None
         if not path.is_absolute():
             path = self._root / path
         try:

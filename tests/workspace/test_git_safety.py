@@ -6,7 +6,11 @@ from uuid import uuid4
 
 import pytest
 
-from coding_agent_harness.workspace.git import SafeGit, UnsupportedGitFilterError
+from coding_agent_harness.workspace.git import (
+    GitSafetyError,
+    SafeGit,
+    UnsupportedGitFilterError,
+)
 from coding_agent_harness.workspace.detector import ProjectDetector
 from coding_agent_harness.workspace.models import Workspace
 from coding_agent_harness.workspace.processes import CommandResult, ProcessRequest
@@ -77,7 +81,322 @@ class RecordingDelegateRunner:
 
 def _request_command(request: ProcessRequest) -> list[str]:
     argv = list(request.argv)
+    if "-C" not in argv:
+        return argv[1:]
     return argv[argv.index("-C") + 2 :]
+
+
+@pytest.mark.parametrize(
+    ("key", "value_kind"),
+    [
+        ("core.worktree", "directory"),
+        ("core.excludesFile", "ignore"),
+        ("include.path", "config"),
+        ("includeIf.gitdir:**.path", "config"),
+    ],
+)
+def test_repository_local_path_configuration_is_rejected_before_status(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+    key: str,
+    value_kind: str,
+) -> None:
+    root = git_repository_factory(
+        f"local-config-{value_kind}",
+        {"README.md": "safe\n"},
+    )
+    outside = tmp_path / f"outside-{value_kind}"
+    if value_kind == "directory":
+        outside.mkdir()
+    elif value_kind == "ignore":
+        outside.write_text("secret.txt\n", encoding="utf-8")
+        (root / "secret.txt").write_text("not tracked\n", encoding="utf-8")
+    else:
+        ignore = tmp_path / "included.ignore"
+        ignore.write_text("secret.txt\n", encoding="utf-8")
+        outside.write_text(
+            f"[core]\n\texcludesFile = {ignore.as_posix()}\n",
+            encoding="utf-8",
+        )
+        (root / "secret.txt").write_text("not tracked\n", encoding="utf-8")
+    _git(root, "config", key, outside.as_posix())
+    runner = RecordingDelegateRunner()
+    safe_git = SafeGit(tmp_path / f"state-{value_kind}", runner=runner)
+
+    with pytest.raises(GitSafetyError, match="Git 仓库本地配置不安全"):
+        safe_git.run(root, ["status", "--porcelain=v1", "-z"])
+
+    commands = [_request_command(request) for request in runner.requests]
+    assert commands == [
+        [
+            "config",
+            "--file",
+            str(root / ".git" / "config"),
+            "--no-includes",
+            "-z",
+            "--list",
+        ]
+    ]
+
+
+def test_worktree_config_extension_is_rejected_by_exact_file_audit(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("worktree-config-extension", {"README.md": "safe\n"})
+    _git(root, "config", "extensions.worktreeConfig", "true")
+    runner = RecordingDelegateRunner()
+    safe_git = SafeGit(tmp_path / "state-worktree-config-extension", runner=runner)
+
+    with pytest.raises(GitSafetyError, match="Git 仓库本地配置不安全"):
+        safe_git.run(root, ["status", "--porcelain=v1"])
+
+    assert [_request_command(request) for request in runner.requests] == [
+        [
+            "config",
+            "--file",
+            str(root / ".git" / "config"),
+            "--no-includes",
+            "-z",
+            "--list",
+        ]
+    ]
+
+
+def test_core_excludes_file_negative_and_positive_controls_use_real_git(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("excludes-control", {"README.md": "safe\n"})
+    secret = root / "secret.txt"
+    secret.write_text("not tracked\n", encoding="utf-8")
+    outside_ignore = tmp_path / "outside.ignore"
+    outside_ignore.write_text("secret.txt\n", encoding="utf-8")
+    _git(root, "config", "core.excludesFile", outside_ignore.as_posix())
+    assert _git(root, "status", "--porcelain=v1", "-z") == b""
+
+    safe_git = SafeGit(tmp_path / "state-excludes-control")
+    with pytest.raises(GitSafetyError, match="Git 仓库本地配置不安全"):
+        safe_git.run(root, ["status", "--porcelain=v1", "-z"])
+
+    _git(root, "config", "--unset", "core.excludesFile")
+    result = safe_git.run(root, ["status", "--porcelain=v1", "-z"])
+    assert b"?? secret.txt\0" in result.stdout
+
+
+def test_core_worktree_negative_and_positive_controls_use_real_git(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("worktree-control", {"README.md": "safe\n"})
+    outside = tmp_path / "outside-worktree"
+    outside.mkdir()
+    _git(root, "config", "core.worktree", outside.as_posix())
+    redirected = _git(root, "rev-parse", "--show-toplevel")
+    assert Path(redirected.decode("utf-8").strip()).resolve() == outside.resolve()
+
+    safe_git = SafeGit(tmp_path / "state-worktree-control")
+    with pytest.raises(GitSafetyError, match="Git 仓库本地配置不安全"):
+        safe_git.run(root, ["rev-parse", "--show-toplevel"])
+
+    _git(root, "config", "--unset", "core.worktree")
+    result = safe_git.run(root, ["rev-parse", "--show-toplevel"])
+    assert Path(result.stdout.decode("utf-8").strip()).resolve() == root.resolve()
+
+
+@pytest.mark.parametrize("key", ["include.path", "includeIf.gitdir:**.path"])
+def test_include_negative_and_positive_controls_use_real_git(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+    key: str,
+) -> None:
+    root = git_repository_factory(f"include-control-{key[:7]}", {"README.md": "safe\n"})
+    secret = root / "secret.txt"
+    secret.write_text("not tracked\n", encoding="utf-8")
+    outside_ignore = tmp_path / f"{key[:7]}.ignore"
+    outside_ignore.write_text("secret.txt\n", encoding="utf-8")
+    outside_config = tmp_path / f"{key[:7]}.config"
+    outside_config.write_text(
+        f"[core]\n\texcludesFile = {outside_ignore.as_posix()}\n",
+        encoding="utf-8",
+    )
+    _git(root, "config", key, outside_config.as_posix())
+    assert _git(root, "status", "--porcelain=v1", "-z") == b""
+
+    safe_git = SafeGit(tmp_path / f"state-{key[:7]}")
+    with pytest.raises(GitSafetyError, match="Git 仓库本地配置不安全"):
+        safe_git.run(root, ["status", "--porcelain=v1", "-z"])
+
+    _git(root, "config", "--unset", key)
+    result = safe_git.run(root, ["status", "--porcelain=v1", "-z"])
+    assert b"?? secret.txt\0" in result.stdout
+
+
+@pytest.mark.parametrize("component", ["git-safety", "hooks"])
+@pytest.mark.skipif(sys.platform != "win32", reason="仅 Windows junction 语义")
+def test_safe_git_rejects_static_junction_without_external_write(
+    tmp_path: Path,
+    component: str,
+) -> None:
+    state_root = tmp_path / f"state-{component}"
+    safety_root = state_root / "git-safety"
+    outside = tmp_path / f"outside-{component}"
+    outside.mkdir()
+    if component == "git-safety":
+        state_root.mkdir()
+        junction = safety_root
+    else:
+        safety_root.mkdir(parents=True)
+        junction = safety_root / "hooks"
+    created = subprocess.run(
+        ["cmd", "/d", "/c", "mklink", "/J", str(junction), str(outside)],
+        check=False,
+        capture_output=True,
+    )
+    if created.returncode != 0:
+        pytest.skip("当前系统无法创建 junction")
+
+    with pytest.raises(GitSafetyError, match="Git 安全状态目录无效"):
+        SafeGit(state_root)
+
+    assert list(outside.iterdir()) == []
+
+
+def test_safe_git_rejects_untrusted_gitfile_before_runner(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "untrusted-linked"
+    root.mkdir()
+    (root / ".git").write_text(
+        "gitdir: \\\\untrusted.invalid\\share\\repository\n",
+        encoding="utf-8",
+    )
+    runner = RecordingProcessRunner()
+    safe_git = SafeGit(
+        tmp_path / "state-untrusted-linked",
+        git_executable=Path(sys.executable),
+        runner=runner,
+    )
+
+    with pytest.raises(GitSafetyError, match="Git 工作目录无效"):
+        safe_git.run(root, ["status", "--porcelain=v1"])
+
+    assert runner.requests == []
+
+
+def test_safe_git_rejects_symlink_local_config_before_runner(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("linked-local-config", {"README.md": "safe\n"})
+    local_config = root / ".git" / "config"
+    outside_config = tmp_path / "outside-local.config"
+    outside_config.write_text("[core]\n\tbare = false\n", encoding="utf-8")
+    local_config.unlink()
+    try:
+        local_config.symlink_to(outside_config)
+    except OSError as error:
+        pytest.skip(f"当前系统无法创建文件符号链接：{type(error).__name__}")
+    runner = RecordingProcessRunner()
+    safe_git = SafeGit(
+        tmp_path / "state-linked-local-config",
+        git_executable=Path(sys.executable),
+        runner=runner,
+    )
+
+    with pytest.raises(GitSafetyError, match="Git 仓库本地配置不安全"):
+        safe_git.run(root, ["status", "--porcelain=v1"])
+
+    assert runner.requests == []
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="仅 Windows junction 语义")
+def test_safe_git_rejects_reparse_worktree_config_before_runner(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("reparse-worktree-config", {"README.md": "safe\n"})
+    _git(root, "config", "extensions.worktreeConfig", "true")
+    outside = tmp_path / "outside-worktree-config"
+    outside.mkdir()
+    worktree_config = root / ".git" / "config.worktree"
+    created = subprocess.run(
+        ["cmd", "/d", "/c", "mklink", "/J", str(worktree_config), str(outside)],
+        check=False,
+        capture_output=True,
+    )
+    if created.returncode != 0:
+        pytest.skip("当前系统无法创建 junction")
+    runner = RecordingProcessRunner()
+    safe_git = SafeGit(
+        tmp_path / "state-reparse-worktree-config",
+        git_executable=Path(sys.executable),
+        runner=runner,
+    )
+
+    with pytest.raises(GitSafetyError, match="Git 仓库本地配置不安全"):
+        safe_git.run(root, ["status", "--porcelain=v1"])
+
+    assert runner.requests == []
+
+
+def test_safe_git_rejects_primary_commondir_redirect_before_runner(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("primary-commondir", {"README.md": "safe\n"})
+    outside = git_repository_factory("outside-common", {"OUTSIDE.md": "outside\n"})
+    outside_git_dir = outside / ".git"
+    (root / ".git" / "commondir").write_text(
+        str(outside_git_dir),
+        encoding="utf-8",
+    )
+    redirected = _git(root, "rev-parse", "--git-common-dir")
+    assert Path(redirected.decode("utf-8").strip()).resolve() == outside_git_dir.resolve()
+    runner = RecordingProcessRunner()
+    safe_git = SafeGit(
+        tmp_path / "state-primary-commondir",
+        git_executable=Path(sys.executable),
+        runner=runner,
+    )
+
+    with pytest.raises(GitSafetyError, match="Git 工作目录无效"):
+        safe_git.run(root, ["rev-parse", "--git-common-dir"])
+
+    assert runner.requests == []
+
+
+def test_trusted_linked_worktree_revalidates_commondir_before_runner(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("linked-commondir", {"README.md": "safe\n"})
+    outside = git_repository_factory("linked-outside-common", {"OUTSIDE.md": "outside\n"})
+    target = tmp_path / "linked-commondir-target"
+    _git(root, "worktree", "add", "--no-checkout", str(target), "HEAD")
+    marker = (target / ".git").read_text(encoding="utf-8").strip()
+    git_dir = Path(marker.removeprefix("gitdir: "))
+    safe_git = SafeGit(tmp_path / "state-linked-commondir")
+    safe_git.trust_linked_worktree(target, root)
+    (git_dir / "commondir").write_text(str(outside / ".git"), encoding="utf-8")
+
+    with pytest.raises(GitSafetyError, match="Git 工作目录无效"):
+        safe_git.run(target, ["rev-parse", "--git-common-dir"])
+
+
+def test_safe_git_accepts_explicitly_trusted_linked_worktree(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("trusted-linked", {"README.md": "safe\n"})
+    target = tmp_path / "trusted-target"
+    _git(root, "worktree", "add", "--no-checkout", str(target), "HEAD")
+    safe_git = SafeGit(tmp_path / "state-trusted-linked")
+
+    safe_git.trust_linked_worktree(target, root)
+    result = safe_git.run(target, ["rev-parse", "--show-toplevel"])
+
+    assert Path(result.stdout.decode("utf-8").strip()).resolve() == target.resolve()
 
 
 def test_safe_git_uses_absolute_executable_empty_fsmonitor_and_clean_environment(
@@ -110,10 +429,22 @@ def test_safe_git_uses_absolute_executable_empty_fsmonitor_and_clean_environment
         git_executable=git_executable,
         runner=runner,
     )
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "config").write_bytes(b"")
 
     safe_git.run(tmp_path, ["status", "--porcelain=v1"])
 
-    request = runner.requests[0]
+    assert _request_command(runner.requests[0]) == [
+        "config",
+        "--file",
+        str(git_dir / "config"),
+        "--no-includes",
+        "-z",
+        "--list",
+    ]
+    assert runner.requests[0].cwd == tmp_path / "state" / "git-safety"
+    request = runner.requests[-1]
     assert Path(request.argv[0]).is_absolute()
     assert Path(request.argv[0]) == git_executable
     assert "core.fsmonitor=" in request.argv
@@ -142,7 +473,8 @@ def test_scanner_does_not_execute_fsmonitor_or_gpg(
     _git(root, "config", "log.showSignature", "true")
     _git(root, "config", "gpg.program", gpg.as_posix())
 
-    WorkspaceScanner().scan(root)
+    with pytest.raises(GitSafetyError, match="Git 仓库本地配置不安全"):
+        WorkspaceScanner().scan(root)
 
     assert not fsmonitor_marker.exists()
     assert not gpg_marker.exists()

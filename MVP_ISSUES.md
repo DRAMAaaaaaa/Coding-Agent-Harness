@@ -11,8 +11,13 @@
 | MVP-ISSUE-005 | Minor | scanner 对不存在候选在宿主路径解析前返回，可能探测或保留工作区外 Windows 路径 | 关闭 | MVP Task 2 已在任何 `exists/stat` 前完成宿主语义解析和 containment；提交 `26c1222` 的独立规约与质量复审均为 CLEAN，见 `.superpowers/sdd/task-2-rereview.md` |
 | MVP-ISSUE-006 | Minor | 10,000 文件性能测试在 CI 中硬断言 5 秒，与计划的“慢机只记录”冲突 | 实现完成，待复审 | MVP Task 4 已让 CI 只验证功能并记录耗时，本机独立基准仍验收小于 5 秒；双重评审前不得关闭 |
 | MVP-ISSUE-007 | Minor | `PLAN.md` 总表、Task 5 小节和过程报告的状态曾互相矛盾 | 关闭 | MVP Task 1 的独立规约与文档质量审查均确认执行顺序和状态一致，见 `.superpowers/sdd/task-1-review.md` |
-| MVP-ISSUE-008 | Important | Detector 在拒绝三类符号链接/reparse 配置前先执行 follow-target `exists`，底层 opener 也在无 no-follow 保护下打开目标 | 返工中 | 三入口必须先以 `lstat`/reparse 属性分类且记录型 opener 零调用；默认 opener 必须在打开前拒绝静态链接，并在打开后复验句柄身份 |
-| MVP-ISSUE-009 | Minor | `PLAN.md` 总表与 Task 5 报告把历史 2 Critical、2 Important、3 Minor 误写成当前状态 | 返工中 | 当前状态统一为整分支规约审查 1 Important、1 Minor 正在返工；历史数量继续保留，不提前关闭 003/004/006 |
+| MVP-ISSUE-008 | Important | Detector 在拒绝三类符号链接/reparse 配置前先执行 follow-target `exists`，底层 opener 也在无 no-follow 保护下打开目标 | 技术修复已提交，待最终门禁 | 三入口已先以 `lstat`/reparse 属性分类，记录型 opener 为零调用；默认 opener 在打开前拒绝静态链接并在打开后复验句柄身份。技术修复已纳入 `5c2b60b`，不得在最终规约与质量门禁前关闭 |
+| MVP-ISSUE-009 | Minor | `PLAN.md` 总表与 Task 5 报告把历史 2 Critical、2 Important、3 Minor 误写成当前状态 | 技术修复已提交，待最终门禁 | 当前状态已统一为 `5c2b60b` 技术修复已提交、正在执行最终整分支门禁；历史数量明确保留为快照，不提前关闭 003/004/006 |
+| MVP-ISSUE-010 | Critical | 不同 Windows drive/UNC anchor 及含 drive/root 但非 absolute 的路径在固定拒绝前仍进入 `resolve`/`samefile`，普通工具与 worktree 注册消费可触发未批准探测 | 技术修复已提交，待最终门禁 | 普通 containment 已在相对拼接前使用纯词法 anchor/不明确路径门禁并保持零探测；显式受信的 Worktree 配置路径改用独立物理身份补证入口。技术修复已纳入 `5c2b60b`，不得提前关闭 |
+| MVP-ISSUE-011 | Critical | SafeGit 一般命令与原 `--local` 审计仍依赖 repository discovery，可由 path/include、primary/linked `commondir` 或 `worktreeConfig` 重定向并读取仓外元数据 | 技术修复已提交，待最终门禁 | primary 已拒绝 `commondir`，linked 每命令复验严格 `../..`；已拒绝 `extensions.worktreeConfig`/`config.worktree`，并对已验证 common config 使用无 `-C` 的 `--file ... --no-includes` 审计。技术修复已纳入 `5c2b60b`，不得提前关闭 |
+| MVP-ISSUE-012 | Important | `git-safety`/`hooks` 静态 junction/reparse 可让 SafeGit 构造阶段在 `state_root` 外创建文件 | 技术修复已提交，待最终门禁 | safety 目录与空文件已在创建前后使用 no-follow reparse 分类、containment 和句柄/路径身份复验；同 UID 主动竞态仍仅由 `DW-05-001` 排除。技术修复已纳入 `5c2b60b`，不得提前关闭 |
+| MVP-ISSUE-013 | Important | create 最终 `same_path` 身份异常泄漏 `UnsafePathNamespaceError`，没有统一进入不确定副作用契约 | 技术修复已提交，待最终门禁 | 最终条件已纳入同一异常映射边界并完整回归 `.active` 保留；技术修复已纳入 `5c2b60b`，不得提前关闭 |
+| MVP-ISSUE-014 | Important | scanner 对 tracked symlink/reparse 在 no-follow 分类前调用 `exists()`，可在拒绝前 follow 外部或 UNC 目标 | 返工中 | candidate 已先 `lstat` 并拒绝 symlink/reparse；消费者级记录型测试证明 follow-target `exists/stat/resolve` 均为零。RED 记录旧 `exists` 调用，实施验证已通过，仍待最终独立规约与质量门禁 |
 
 ## 已确认的根因边界
 
@@ -20,6 +25,8 @@
 - 固定 argv 和 `shell=False` 不能证明 Git 不执行外部程序。Git 会合并多层配置，并在表面只读或 worktree 命令中调用 fsmonitor、GPG、hooks 和 filter。
 - 旧 Git 可能把 `core.fsmonitor=false` 当成名为 `false` 的 hook 路径；安全禁用值必须为空。
 - `npm run test` 外层 argv 不变不代表脚本语义不变；信任指纹必须绑定原始配置摘要和最终有效命令。
+- 不受信路径 containment 与宿主显式受信配置的物理重叠补证不是同一信任入口；前者跨 anchor 必须零探测拒绝，后者才允许为 mapped-drive 别名作 fail-closed 身份检查。
+- Git 2.31.1 的 `config --local --no-includes -z --list` 虽输出 `key\nvalue\0` 且不展开 include，但仍先做 repository discovery，不能作为审计根；最终 gate 在无仓库安全 cwd 对 no-follow 验证的精确 common config 使用 `config --file <path> --no-includes -z --list`，并在此之前拒绝所有能启用第二本地配置或改变 common dir 的元数据。
 
 ## MVP Task 1/2 关闭证据
 
@@ -48,6 +55,12 @@
 - 新整分支规约审查发现 1 Important、1 Minor：Detector 对 `.harness.yml`、`package.json`、`pyproject.toml` 在拒绝 symlink/reparse 前先调用会跟随目标的 `exists`，且根计划总表与 Task 5 报告仍把历史问题数量写成当前状态。
 - 三入口消费者级 RED 为 `3 failed, 6 skipped`，均精确失败于 follow-target `exists`；可注入记录型 opener 为零调用。Windows reparse 契约另取得 `3 failed, 3 passed` 的 RED，默认 opener 的 pre-open reparse 契约取得 `1 failed`。
 - 当前实现改为先 `lstat` 并检查 `FILE_ATTRIBUTE_REPARSE_POINT`，缺失、链接/reparse 和非普通文件确定性分类；POSIX 默认 opener 使用 `O_NOFOLLOW|O_CLOEXEC`，Windows/通用路径在打开前拒绝静态链接，打开后仍由 `fstat/lstat/samestat` 复验。最终门禁与提交证据补录后仍须重新进行整分支规约符合性审查；`MVP-ISSUE-003/004/006/008/009` 均不得在该审查前关闭。
+
+## MVP-1 最终质量返工证据（`5c2b60b` 前的历史快照）
+
+- 最终质量审查新增 `MVP-ISSUE-010`—`013`，对应 2 Critical + 2 Important；这些问题与既有 003/004/006 的待复审状态并行存在，均不得提前关闭。其技术修复后已作为 `5c2b60b` 提交，本节的数量仅描述该历史审查。
+- Git 2.31.1 真实探针确认 no-includes audit 不展开 include；四组纠正性 RED 聚焦为 `17 failed`，覆盖跨 anchor 零探测、local config 真实外部读取/重定向、两层 junction 零外写、trusted linked gitfile 和最终 create 身份异常。
+- 质量复审追加 RED 为不明确 Windows 路径 `6 failed, 246 deselected`，以及 primary/linked `commondir` 与 `config.worktree` `3 failed, 21 deselected`；对应 GREEN 分别为 `6 passed` 与 `3 passed`。最终 focused 为 `292 passed, 6 skipped`；governance/storage/workspace 为 `466 passed, 13 skipped`；全量 pytest 为 `536 passed, 13 skipped`；Ruff、mypy 与 pip check 均通过。这些均是 `5c2b60b` 前的验证快照；当前最终门禁发现的 `MVP-ISSUE-014` 正在返工。
 
 ## MVP Task 1 状态一致性关闭证据
 

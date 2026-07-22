@@ -25,6 +25,7 @@ from coding_agent_harness.workspace.worktrees import (
     WorktreeStateError,
     WorktreeUncertainError,
 )
+from coding_agent_harness.governance.path_identity import UnsafePathNamespaceError
 
 
 def git(root: Path, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[bytes]:
@@ -303,6 +304,8 @@ def test_rejects_existing_branch_or_target_without_overwriting(
 
 def request_command(request: ProcessRequest) -> list[str]:
     argv = list(request.argv)
+    if "-C" not in argv:
+        return argv[1:]
     return argv[argv.index("-C") + 2 :]
 
 
@@ -384,6 +387,162 @@ class MissingRegistrationAfterAddRunner:
         if request_command(request)[:3] == ["worktree", "list", "--porcelain"]:
             return CommandResult(returncode=0, stdout=b"", stderr=b"")
         return result
+
+
+class ForeignAnchorRegistrationGit:
+    def run(
+        self,
+        root: str | Path,
+        args: Sequence[str],
+        stdin: bytes = b"",
+    ) -> CommandResult:
+        del root, stdin
+        assert list(args) == ["worktree", "list", "--porcelain"]
+        return CommandResult(
+            returncode=0,
+            stdout=(
+                b"worktree \\\\untrusted.invalid\\share\\payload\n"
+                b"HEAD deadbeef\nbranch refs/heads/foreign\n\n"
+            ),
+            stderr=b"",
+        )
+
+
+class DriveRelativeRegistrationGit:
+    def run(
+        self,
+        root: str | Path,
+        args: Sequence[str],
+        stdin: bytes = b"",
+    ) -> CommandResult:
+        del root, stdin
+        assert list(args) == ["worktree", "list", "--porcelain"]
+        return CommandResult(
+            returncode=0,
+            stdout=(
+                b"worktree Z:payload\n"
+                b"HEAD deadbeef\nbranch refs/heads/foreign\n\n"
+            ),
+            stderr=b"",
+        )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows anchor 语义")
+def test_registration_ignores_different_anchor_without_identity_probe(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = git_repository_factory("registration-anchor", {"README.md": "base\n"})
+    manager = WorktreeManager(
+        workspace_for(root),
+        tmp_path / "state",
+        safe_git=ForeignAnchorRegistrationGit(),  # type: ignore[arg-type]
+    )
+    calls: list[str] = []
+    candidate = Path(r"\\untrusted.invalid\share\payload")
+    target = tmp_path / "state" / "target"
+    relevant = {str(candidate), str(target)}
+    original_resolve = Path.resolve
+    original_samefile = Path.samefile
+    original_stat = Path.stat
+
+    def record_resolve(self: Path, strict: bool = False) -> Path:
+        if str(self) in relevant:
+            calls.append(f"resolve:{self}")
+            return self
+        return original_resolve(self, strict=strict)
+
+    def record_samefile(self: Path, other: object) -> bool:
+        if str(self) in relevant or str(other) in relevant:
+            calls.append(f"samefile:{self}:{other}")
+            return False
+        return original_samefile(self, other)
+
+    def record_stat(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        if str(self) in relevant:
+            calls.append(f"stat:{self}")
+            raise AssertionError("不同 anchor 不得探测文件系统")
+        return original_stat(self, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "resolve", record_resolve)
+    monkeypatch.setattr(Path, "samefile", record_samefile)
+    monkeypatch.setattr(Path, "stat", record_stat)
+
+    assert manager._registration_for(target) is None
+    assert calls == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows drive-relative 语义")
+def test_registration_rejects_drive_relative_path_without_identity_probe(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = git_repository_factory("registration-drive-relative", {"README.md": "base\n"})
+    manager = WorktreeManager(
+        workspace_for(root),
+        tmp_path / "state",
+        safe_git=DriveRelativeRegistrationGit(),  # type: ignore[arg-type]
+    )
+    calls: list[str] = []
+
+    def reject_resolve(self: Path, strict: bool = False) -> Path:
+        if str(self) == r"Z:payload":
+            calls.append(f"resolve:{self}")
+            raise AssertionError("drive-relative 注册不得探测文件系统")
+        return original_resolve(self, strict=strict)
+
+    original_resolve = Path.resolve
+    monkeypatch.setattr(Path, "resolve", reject_resolve)
+
+    with pytest.raises(
+        WorktreeUncertainError,
+        match="^Git worktree 注册表无效$",
+    ):
+        manager._registration_for(tmp_path / "state" / "target")
+    assert calls == []
+
+
+def test_final_created_identity_failure_is_uncertain_and_preserves_marker(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from coding_agent_harness.workspace import worktrees as worktrees_module
+
+    root = git_repository_factory("final-identity", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    state_root = tmp_path / "state"
+    task_id = uuid4()
+    base_commit = head(root)
+    branch = f"harness/task-{task_id.hex[:8]}"
+    original_same_path = worktrees_module.same_path
+    target_comparisons = 0
+
+    def fail_final_same_path(left: Path, right: Path) -> bool:
+        nonlocal target_comparisons
+        if left.name == str(task_id) and right.name == str(task_id):
+            target_comparisons += 1
+            if target_comparisons == 2:
+                raise UnsafePathNamespaceError("simulated identity failure")
+        return original_same_path(left, right)
+
+    monkeypatch.setattr(worktrees_module, "same_path", fail_final_same_path)
+    monkeypatch.setattr(
+        WorktreeManager,
+        "_registration_for",
+        lambda self, target: (base_commit, f"refs/heads/{branch}"),
+    )
+
+    with pytest.raises(
+        WorktreeUncertainError,
+        match="^创建任务工作树后验验证失败，需人工处理$",
+    ):
+        WorktreeManager(workspace, state_root).create(task_id, base_commit)
+
+    marker = state_root / "worktrees" / str(workspace.id) / ".active"
+    assert marker.read_text(encoding="ascii") == str(task_id)
 
 
 class FalseSuccessRemoveRunner:
