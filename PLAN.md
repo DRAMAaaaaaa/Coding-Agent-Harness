@@ -162,7 +162,7 @@ class TaskOrchestrator:
 | 2 | 领域模型、Provider 与动作解析 | 1 | 可与 5 的扫描只读部分并行 | `codex/core-contracts` | 完成（RED 80d6175；实现 326a4b6；修复 3d9cea0；复审通过；完成提交 63415c5） |
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
 | 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 完成（首次合并 `8f2ae34`；WAL/路径门闩纠偏复审通过；补充合并 `873f1d4`） |
-| 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 最终质量门禁 1 Important 返工中（`MVP-ISSUE-015`；`MVP-ISSUE-003/004/006/008`—`015` 均待复审） |
+| 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | `MVP-ISSUE-015` 技术修复已提交（`c376216`），等待最终规约与质量双门禁（`MVP-ISSUE-003/004/006/008`—`015` 均待复审） |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
 | 8 | 记忆筛选、存储与上下文 | 3、4 | 可与 7 并行 | `codex/memory` | 待执行 |
@@ -883,7 +883,7 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 
 **目标：** 安全接入本地 Git 项目，识别 Python/Node.js 验证命令，并隔离任务修改。
 
-**状态：** 最终质量门禁 1 Important 返工中并禁止合并。`5c2b60b` 是 amend 前历史哈希；当前稳定技术提交 `af11fea` 已包含 `MVP-ISSUE-010`—`014` 的技术修复。`MVP-ISSUE-003/004/006/008`—`015` 均待复审，不得提前关闭；`DW-05-001` 仍只覆盖同 UID 主动篡改。
+**状态：** `MVP-ISSUE-015` 技术修复已提交（`c376216`），等待最终规约与质量双门禁并禁止合并。`5c2b60b` 是 amend 前历史哈希；`af11fea` 已包含 `MVP-ISSUE-010`—`014` 的技术修复。`MVP-ISSUE-003/004/006/008`—`015` 均待复审，不得提前关闭；`DW-05-001` 仍只覆盖同 UID 主动篡改。
 
 **MVP Task 2 状态：** 已关闭。提交 `26c1222` 的修复后独立规约符合性审查与代码质量审查均为 CLEAN，证据见 `.superpowers/sdd/task-2-rereview.md`；据此关闭 `MVP-ISSUE-001/005`。
 
@@ -904,7 +904,7 @@ git commit -m "安全：实现路径围栏和版本化审批（治理子智能�
 - GREEN：三源 raw SHA256、缺失显式 `null`、有效 commands/env allowlist/timeout 与领域分隔组成 `verification-trust/v1`；重复检测稳定、源增删失效，模型拒绝 trust 不一致。Python fixture 改为 src package，Node 24 四命令仅用内置能力并在独立副本运行；focused 为 `27 passed, 1 skipped`。
 - 验证：workspace 为 `109 passed, 4 skipped`，全量为 `499 passed, 6 skipped`；Ruff、mypy、pip check 与差异检查均通过。10,000 文件 CI 用例只验证功能并记录耗时，本机独立基准为 `0.88s`。未新增或改变延期项。
 
-**MVP-1 最终整分支门禁状态：** `5c2b60b`（`fix: 收紧项目接入剩余安全边界`）是 amend 前的历史哈希；当前稳定技术提交为 `af11fea`，已包含 `MVP-ISSUE-010`—`014` 的技术修复。历史质量返工的 RED/GREEN 与完整门禁结果仅为历史快照。当前为最终质量门禁 1 Important 返工中；`MVP-ISSUE-003/004/006/008`—`015` 均不提前关闭，且没有扩大到 MVP-2。
+**MVP-1 最终整分支门禁状态：** `5c2b60b`（`fix: 收紧项目接入剩余安全边界`）是 amend 前的历史哈希；`af11fea` 已包含 `MVP-ISSUE-010`—`014` 的技术修复，`c376216` 已提交 `MVP-ISSUE-015` 技术修复。历史质量返工的 RED/GREEN 与完整门禁结果仅为历史快照。当前等待最终规约与质量双门禁；`MVP-ISSUE-003/004/006/008`—`015` 均不提前关闭，且没有扩大到 MVP-2。
 
 - RED：四组 focused 为 `17 failed`。不同 anchor 的 PathGuard、Policy、`same_path/is_within` 与 worktree 注册均记录到拒绝前 identity probe；local config 四类配置未 gate，真实 Git 读取 outside ignore/重定向 worktree；两层 junction 构造成功且 trusted linked API 缺失；最终 `same_path` 泄漏原异常。
 - 质量复审追加 RED：drive-relative `Z:payload` 与 rooted-relative `\payload` 在 PathGuard、Policy、path identity 与 worktree registration 的零探测契约为 `6 failed, 246 deselected`；primary `commondir`、`config.worktree` reparse 和 trusted linked `commondir` 改写为 `3 failed, 21 deselected`。后者证明 `config --local` 审计本身仍依赖可被仓库元数据改变的 repository discovery，旧 GREEN 证据据此作废。
