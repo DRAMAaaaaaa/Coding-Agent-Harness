@@ -620,3 +620,9 @@
 - **关闭事实：** 完整复核 `.superpowers/sdd/mvp1-post-parent-spec-clean.md` 与 `.superpowers/sdd/mvp1-post-parent-quality-clean.md`；最终受审范围为 `6b2f21e..9d01b77`，规约与质量门禁均为 CLEAN，Critical / Important / Minor 均为 `0 / 0 / 0`，质量报告确认 Ready to merge：Yes。
 - **验证证据：** 最终报告记录 scanner `27 passed, 3 skipped`、governance/storage/workspace `474 passed, 14 skipped`、全量 pytest `544 passed, 14 skipped`；Ruff、mypy、pip check 与 diff check 均通过。
 - **状态与范围：** 据此关闭 MVP-1、兼容保留的原 Task 5 项目接入阶段、MVP Task 2/3/4，以及 `MVP-ISSUE-003/004/006/008`—`015`；允许本地合并，但尚未合并。仅更新过程文档；未联网、安装依赖、merge 或 push。
+
+### 2026-07-23 — VERIFY-MVP-1-CONTROLLER
+
+- **主控新鲜门禁：** 在关闭提交 `eceac96` 后，固定 `PYTHONPATH` 指向当前 worktree 的 `src`，取得 Ruff 全通过、mypy 26 个源文件无问题、全量 pytest `544 passed, 14 skipped in 67.18s`、Web ESLint 与 TypeScript typecheck 通过、`pip check` 无损坏依赖、Python sdist/wheel 构建成功以及 `git diff --check 6b2f21e..HEAD` 通过的证据。
+- **一键入口诊断：** 当前 PowerShell 环境没有名为 `make` 的入口；仓库等价脚本 `scripts/test.ps1` 又假设 worktree 内存在 `.venv`。首次运行时 `Resolve-Path` 失败后脚本仍继续，并可能由后续命令覆盖退出码；第二次在 Python 门禁通过后因 worktree 缺少 `web/node_modules` 于 ESLint 启动前失败。主控核对主仓库与 worktree 的 `package.json`/`package-lock.json` SHA-256 完全一致后，只在被忽略目录建立本地 junction 复用已批准依赖，再次运行等价一键入口并取得全部真实门禁通过。该假阳性风险登记为 `MVP-ISSUE-016`，由 MVP-4 Task 9 修复，不回开 MVP-1。
+- **边界：** 没有修改生产代码或测试，没有联网、重新安装依赖、推送或接触凭据；当前仅待把 `codex/workspaces` 本地合并到 `p1`。
