@@ -18,6 +18,7 @@
 | MVP-ISSUE-012 | Important | `git-safety`/`hooks` 静态 junction/reparse 可让 SafeGit 构造阶段在 `state_root` 外创建文件 | 技术修复已提交，等待最终整分支规约/质量门禁 | safety 目录与空文件已在创建前后使用 no-follow reparse 分类、containment 和句柄/路径身份复验；同 UID 主动竞态仍仅由 `DW-05-001` 排除。技术修复已纳入当前稳定技术提交 `af11fea`，不得提前关闭 |
 | MVP-ISSUE-013 | Important | create 最终 `same_path` 身份异常泄漏 `UnsafePathNamespaceError`，没有统一进入不确定副作用契约 | 技术修复已提交，等待最终整分支规约/质量门禁 | 最终条件已纳入同一异常映射边界并完整回归 `.active` 保留；技术修复已纳入当前稳定技术提交 `af11fea`，不得提前关闭 |
 | MVP-ISSUE-014 | Important | scanner 对 tracked symlink/reparse 在 no-follow 分类前调用 `exists()`，可在拒绝前 follow 外部或 UNC 目标 | 技术修复已提交，等待最终整分支规约/质量门禁 | candidate 已先 `lstat` 并拒绝 symlink/reparse；消费者级记录型测试证明 follow-target `exists/stat/resolve` 均为零。RED 记录旧 `exists` 调用；技术修复已纳入当前稳定技术提交 `af11fea`，不得提前关闭 |
+| MVP-ISSUE-015 | Important | scanner 对 `dir/file` 仅先检查 leaf；若既有父目录是 symlink、junction 或 reparse，则 leaf `lstat`/`resolve` 已在拒绝前穿越父目录并访问根外对象 | 最终质量门禁 1 Important 返工中 | 必须从已解析 root 沿 `PurePosixPath.parts` 对每个既有非叶组件执行 no-follow `lstat`，只允许普通非链接/非 reparse 目录；安全父下才可检查 leaf。禁止仅用布尔 containment 缓存；同 UID 主动竞争仍属于 `DW-05-001`，本项只处理静态对象 |
 
 ## 已确认的根因边界
 

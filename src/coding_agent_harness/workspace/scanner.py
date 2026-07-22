@@ -9,7 +9,6 @@ import tempfile
 
 from coding_agent_harness.governance.path_identity import (
     UnsafePathNamespaceError,
-    is_within,
     same_path,
 )
 
@@ -110,13 +109,8 @@ class WorkspaceScanner:
         filtered_files = [
             path for path in tracked_files if not self._is_ignored(path)
         ]
-        parent_containment: dict[Path, bool] = {}
         for relative_path in filtered_files:
-            self._validate_tracked_path(
-                project_root,
-                relative_path,
-                parent_containment,
-            )
+            self._validate_tracked_path(project_root, relative_path)
 
         self._git.assert_current_filter_free(project_root, tracked_result.stdout)
 
@@ -193,7 +187,6 @@ class WorkspaceScanner:
     def _validate_tracked_path(
         root: Path,
         relative_path: str,
-        parent_containment: dict[Path, bool],
     ) -> None:
         portable_path = PurePosixPath(relative_path)
         if portable_path.is_absolute() or ".." in portable_path.parts:
@@ -206,7 +199,22 @@ class WorkspaceScanner:
                 or ".." in windows_path.parts
             ):
                 raise RepositoryScanError("跟踪文件路径越界")
-        candidate = root.joinpath(*portable_path.parts)
+        parent = root
+        for part in portable_path.parts[:-1]:
+            parent = parent / part
+            try:
+                parent_stat = parent.lstat()
+            except FileNotFoundError:
+                return
+            except OSError:
+                raise RepositoryScanError("跟踪文件不可读取") from None
+            if (
+                is_symlink_or_reparse(parent_stat)
+                or not stat.S_ISDIR(parent_stat.st_mode)
+            ):
+                raise RepositoryScanError("跟踪文件不可读取")
+
+        candidate = parent / portable_path.name
         try:
             candidate_stat = candidate.lstat()
         except FileNotFoundError:
@@ -215,26 +223,6 @@ class WorkspaceScanner:
             raise RepositoryScanError("跟踪文件不可读取") from None
         if is_symlink_or_reparse(candidate_stat):
             raise RepositoryScanError("跟踪文件不可读取")
-        parent = candidate.parent
-        try:
-            contained = parent_containment.get(parent)
-            if contained is None:
-                contained = is_within(parent, root)
-                parent_containment[parent] = contained
-        except UnsafePathNamespaceError:
-            raise RepositoryScanError("跟踪文件不可读取") from None
-        if not contained:
-            raise RepositoryScanError("跟踪文件路径越界")
-        try:
-            resolved = candidate.resolve(strict=True)
-        except (OSError, RuntimeError):
-            raise RepositoryScanError("跟踪文件不可读取") from None
-        try:
-            contained = is_within(resolved, root)
-        except UnsafePathNamespaceError:
-            raise RepositoryScanError("跟踪文件不可读取") from None
-        if not contained:
-            raise RepositoryScanError("跟踪文件路径越界")
 
     def _read_documents(
         self,

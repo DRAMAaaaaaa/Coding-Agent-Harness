@@ -607,3 +607,10 @@
 
 - **文档同步：** 完整复核 `AGENTS.md` 与 `.superpowers/sdd/mvp1-final-spec-rereview.md` 后，仅同步 `PLAN.md`、`MVP_ISSUES.md`、本日志及忽略的 Task 5 过程报告。`5c2b60b` 明确标为 amend 前历史哈希；当前稳定技术提交 `af11fea` 已包含 `MVP-ISSUE-010`—`014` 的技术修复；当前状态统一为“技术修复已提交，等待最终整分支规约/质量门禁”。
 - **门禁与范围：** `MVP-ISSUE-003/004/006/008`—`014` 全部保持待复审，未提前关闭。未修改生产代码、测试或设计，未联网、安装依赖、merge、push 或接触凭据；关键词一致性检查与 `git diff --check` 均通过。忽略的 `.superpowers/sdd/mvp1-final-docs-report.md` 仅作过程证据，不进入提交。
+
+### 2026-07-23 — IMPL-MVP-1-SCANNER-PARENT-NOFOLLOW
+
+- **任务、技能与范围：** 最终质量门禁发现父目录 reparse 的唯一 Important 后，完整阅读 `AGENTS.md`、`.superpowers/sdd/mvp1-final-quality-gate.md`、scanner 实现/测试和最新质量返工报告，并使用 `systematic-debugging`、`test-driven-development`、`verification-before-completion`。本轮只处理 `MVP-ISSUE-015`，不扩大到其他模块、MVP-2、网络、依赖安装、merge 或 push。
+- **根因、TDD 与最小修复：** 真实本地 `mklink /J` 父 junction 的消费者级 RED 为 `1 failed, 23 deselected`：旧实现先对 `dir/file.txt` 执行 leaf `lstat`，再以会 follow 的父目录解析得到“路径越界”。GREEN 从已解析 root 按 `PurePosixPath.parts` 无缓存逐级执行 no-follow `lstat`；每个既有非叶组件只允许普通、非 symlink/reparse 目录，父缺失维持既有返回，且只在安全父下检查 leaf。没有引入布尔 containment 缓存；同 UID 主动竞争继续由 `DW-05-001` 覆盖。
+- **当前证据与状态：** scanner 全文件为 `27 passed, 3 skipped in 10.77s`，覆盖多级父、真实 junction、Windows reparse 属性、父非目录、父/leaf 缺失、普通嵌套文件、真实 gitlink、POSIX 反斜杠和 10,000/10,001。当前 `PLAN.md`、本日志、`MVP_ISSUES.md` 及 Task 5 报告统一为“最终质量门禁 1 Important 返工中”；`MVP-ISSUE-003/004/006/008`—`015` 均未提前关闭。完整门禁、提交与最终审查仍待后续新鲜证据。
+- **新鲜验证：** governance/storage/workspace 为 `474 passed, 14 skipped in 94.07s`；全量 pytest 为 `544 passed, 14 skipped in 96.23s`；Ruff、mypy（26 个源文件）和 `pip check` 均通过。提交前仍需完成差异检查；状态保持“最终质量门禁 1 Important 返工中”，不据此提前关闭任何问题。

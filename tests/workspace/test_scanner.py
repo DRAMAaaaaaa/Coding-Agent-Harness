@@ -490,6 +490,203 @@ def test_rejects_tracked_symlink_before_follow_target_probe(
     assert probes == []
 
 
+def test_rejects_parent_link_before_leaf_metadata_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "file.txt").write_text("outside\n", encoding="utf-8")
+    safe_parent = root / "safe"
+    safe_parent.mkdir()
+    parent = safe_parent / "dir"
+    if os.name == "nt":
+        created = subprocess.run(
+            ["cmd", "/d", "/c", "mklink", "/J", str(parent), str(outside)],
+            check=False,
+            capture_output=True,
+        )
+        if created.returncode != 0:
+            try:
+                parent.symlink_to(outside, target_is_directory=True)
+            except OSError as error:
+                pytest.skip(
+                    f"当前系统无法创建 junction 或符号链接：{type(error).__name__}"
+                )
+    else:
+        try:
+            parent.symlink_to(outside, target_is_directory=True)
+        except OSError as error:
+            pytest.skip(f"当前系统无法创建符号链接：{type(error).__name__}")
+
+    candidate = parent / "file.txt"
+    lstat_calls: list[Path] = []
+    follow_calls: list[tuple[str, Path]] = []
+    original_lstat = Path.lstat
+    original_resolve = Path.resolve
+    original_stat = Path.stat
+
+    def record_lstat(self: Path) -> os.stat_result:
+        if self in {safe_parent, parent, candidate}:
+            lstat_calls.append(self)
+        return original_lstat(self)
+
+    def record_resolve(self: Path, strict: bool = False) -> Path:
+        if self == candidate:
+            follow_calls.append(("resolve", self))
+        return original_resolve(self, strict=strict)
+
+    def record_stat(
+        self: Path,
+        *,
+        follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        if self == candidate and follow_symlinks:
+            follow_calls.append(("stat", self))
+        return original_stat(self, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "lstat", record_lstat)
+    monkeypatch.setattr(Path, "resolve", record_resolve)
+    monkeypatch.setattr(Path, "stat", record_stat)
+
+    with pytest.raises(RepositoryScanError, match="^跟踪文件不可读取$"):
+        WorkspaceScanner._validate_tracked_path(root, "safe/dir/file.txt")
+
+    assert lstat_calls == [safe_parent, parent]
+    assert follow_calls == []
+
+
+def test_rejects_non_directory_parent_before_leaf_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = tmp_path / "not-a-directory"
+    parent.write_text("regular file\n", encoding="utf-8")
+    candidate = parent / "file.txt"
+    lstat_calls: list[Path] = []
+    original_lstat = Path.lstat
+
+    def record_lstat(self: Path) -> os.stat_result:
+        if self in {parent, candidate}:
+            lstat_calls.append(self)
+        return original_lstat(self)
+
+    monkeypatch.setattr(Path, "lstat", record_lstat)
+
+    with pytest.raises(RepositoryScanError, match="^跟踪文件不可读取$"):
+        WorkspaceScanner._validate_tracked_path(tmp_path, "not-a-directory/file.txt")
+
+    assert lstat_calls == [parent]
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "existing_parents"),
+    [
+        ("missing/file.txt", ()),
+        ("safe/missing.txt", ("safe",)),
+    ],
+)
+def test_keeps_missing_tracked_path_semantics(
+    tmp_path: Path,
+    relative_path: str,
+    existing_parents: tuple[str, ...],
+) -> None:
+    for parent in existing_parents:
+        (tmp_path / parent).mkdir()
+
+    WorkspaceScanner._validate_tracked_path(tmp_path, relative_path)
+
+
+def test_accepts_ordinary_nested_file_after_no_follow_parent_checks(
+    tmp_path: Path,
+) -> None:
+    nested = tmp_path / "one" / "two"
+    nested.mkdir(parents=True)
+    (nested / "file.txt").write_text("safe\n", encoding="utf-8")
+
+    WorkspaceScanner._validate_tracked_path(tmp_path, "one/two/file.txt")
+
+
+def test_scanner_preserves_tracked_gitlink_directory(
+    git_repository_factory: Callable[[str, dict[str, str]], Path],
+) -> None:
+    child = git_repository_factory("gitlink-child", {"child.txt": "child\n"})
+    root = git_repository_factory("gitlink-root", {"README.md": "root\n"})
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            str(child),
+            "nested",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-m", "add gitlink"],
+        check=True,
+        capture_output=True,
+    )
+
+    repository_map = WorkspaceScanner().scan(root)
+
+    assert repository_map.tracked_files == (".gitmodules", "README.md", "nested")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows reparse 契约")
+def test_rejects_reparse_parent_before_leaf_metadata_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = tmp_path / "reparse-parent"
+    candidate = parent / "file.txt"
+    probes: list[tuple[str, Path]] = []
+    original_lstat = Path.lstat
+
+    def reparse_lstat(self: Path) -> os.stat_result | SimpleNamespace:
+        if self == parent:
+            return SimpleNamespace(
+                st_mode=stat.S_IFDIR,
+                st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+            )
+        if self == candidate:
+            probes.append(("lstat", self))
+            raise AssertionError("leaf lstat reached")
+        return original_lstat(self)
+
+    def fail_resolve(self: Path, strict: bool = False) -> Path:
+        if self == candidate:
+            probes.append(("resolve", self))
+            raise AssertionError("leaf resolve reached")
+        raise AssertionError("unexpected resolve")
+
+    def fail_stat(
+        self: Path,
+        *,
+        follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        if self == candidate and follow_symlinks:
+            probes.append(("stat", self))
+            raise AssertionError("leaf stat reached")
+        raise AssertionError("unexpected stat")
+
+    monkeypatch.setattr(Path, "lstat", reparse_lstat)
+    monkeypatch.setattr(Path, "resolve", fail_resolve)
+    monkeypatch.setattr(Path, "stat", fail_stat)
+
+    with pytest.raises(RepositoryScanError, match="^跟踪文件不可读取$"):
+        WorkspaceScanner._validate_tracked_path(tmp_path, "reparse-parent/file.txt")
+
+    assert probes == []
+
+
 @pytest.mark.skipif(os.name != "nt", reason="仅 Windows reparse 契约")
 def test_rejects_tracked_reparse_before_follow_target_probe(
     tmp_path: Path,
