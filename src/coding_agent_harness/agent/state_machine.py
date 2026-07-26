@@ -101,6 +101,7 @@ _EVENT_TARGETS: Final[dict[str, TaskState]] = {
     "FINAL_SUMMARY_PROPOSED": TaskState.WAITING_FINAL_REVIEW,
     "FINAL_REVIEW_APPROVED": TaskState.COMPLETED,
     "USER_INPUT_REQUIRED": TaskState.WAITING_USER,
+    "UNCERTAIN_SIDE_EFFECT_DETECTED": TaskState.WAITING_USER,
     "USER_RESUMED": TaskState.DECIDING,
     "TASK_FAILED": TaskState.FAILED,
     "TASK_CANCELLED": TaskState.CANCELLED,
@@ -139,6 +140,7 @@ class RecoveryResult:
     state: TaskState
     reason_code: str | None
     last_sequence: int
+    execution_id: str | None = None
 
 
 class StateMachine:
@@ -184,6 +186,10 @@ def recover_task(events: Sequence[TaskEvent]) -> RecoveryResult:
             if execution_id not in pending_executions:
                 raise RecoveryError("工具执行结束事件没有对应开始事件")
             pending_executions.remove(execution_id)
+        elif event.event_type == "USER_RESUMED" and pending_executions:
+            pending_executions.clear()
+        elif event.event_type == "TASK_CANCELLED" and pending_executions:
+            pending_executions.clear()
 
         state = event.state_after
 
@@ -192,6 +198,7 @@ def recover_task(events: Sequence[TaskEvent]) -> RecoveryResult:
             TaskState.WAITING_USER,
             "UNCERTAIN_SIDE_EFFECT",
             events[-1].sequence,
+            sorted(pending_executions)[0],
         )
     return RecoveryResult(state, None, events[-1].sequence)
 

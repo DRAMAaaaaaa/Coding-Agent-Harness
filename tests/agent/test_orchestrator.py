@@ -114,7 +114,8 @@ async def test_feedback_changes_next_action_after_injected_failure(harness) -> N
     events = await EventStore(database).list_for_task(task.id)
     assert any(
         event.event_type == "FINAL_SUMMARY_RECORDED"
-        and event.payload["summary"] == "add 已修复并通过测试"
+        and event.payload["content_bytes"] > 0
+        and "summary" not in event.payload
         for event in events
     )
     assert (await orchestrator.task(task.id)).state is TaskState.WAITING_FINAL_REVIEW
@@ -367,3 +368,80 @@ async def test_complete_accepts_all_current_checks_after_last_change(tmp_path) -
         assert (await orchestrator.run_until_wait(task.id)).state is TaskState.WAITING_FINAL_REVIEW
     finally:
         await database.close()
+
+
+async def test_events_and_followup_requests_do_not_persist_or_replay_secrets(harness) -> None:
+    orchestrator, provider, task, database = harness
+    secret = "leak-me-123"
+    private_key = "-----BEGIN PRIVATE KEY-----\nleak-key\n-----END PRIVATE KEY-----"
+    await database.connection.execute(
+        "UPDATE tasks SET requirement = ? WHERE id = ?",
+        (f"fix token={secret} {private_key}", str(task.id)),
+    )
+    await database.connection.commit()
+    provider._script.clear()
+    provider._script.extend(
+        [
+            "plan token=leak-me-123",
+            '{"kind":"tool","tool":"run_verification","arguments":{"name":"test"},"idempotency_key":"secret-action"}',
+            '{"kind":"complete","summary":"Bearer leak-me-123"}',
+        ]
+    )
+    orchestrator._tools = ScriptedTools(
+        [ToolResult(ok=False, code="VERIFICATION_FAILED", output=f"token={secret}\n{private_key}")]
+    )
+
+    await orchestrator.propose_plan(task.id)
+    await orchestrator.approve_plan(task.id)
+    await orchestrator.run_until_wait(task.id)
+
+    events = await EventStore(database).list_for_task(task.id)
+    serialized = str([event.model_dump(mode="json") for event in events])
+    requests = str(provider.requests)
+    assert secret not in serialized
+    assert "leak-key" not in serialized
+    assert secret not in requests
+    assert "leak-key" not in requests
+
+
+async def test_recovery_persists_uncertain_execution_and_requires_explicit_resume(harness) -> None:
+    orchestrator, provider, task, database = harness
+    await orchestrator.propose_plan(task.id)
+    task = await orchestrator.approve_plan(task.id)
+    task = await orchestrator._emit(task, "ACTION_PROPOSED", {"action": {"tool": "apply_patch"}})
+    await orchestrator._emit(
+        task,
+        "TOOL_EXECUTION_STARTED",
+        {"execution_id": "unfinished-1", "action": {"tool": "apply_patch"}},
+    )
+    restarted = AgentOrchestrator(
+        provider=provider,
+        parser=ActionParser({"apply_patch"}),
+        tools=ScriptedTools([]),
+        event_store=EventStore(database),
+        tasks=TaskRepository(database),
+    )
+
+    waiting = await restarted.task(task.id)
+    events = await EventStore(database).list_for_task(task.id)
+    assert waiting.state is TaskState.WAITING_USER
+    assert events[-1].event_type == "UNCERTAIN_SIDE_EFFECT_DETECTED"
+    assert events[-1].payload["reason_code"] == "UNCERTAIN_SIDE_EFFECT"
+    assert events[-1].payload["execution_id"] == "unfinished-1"
+    assert len(await EventStore(database).list_for_task(task.id)) == len(events)
+    resumed = await restarted.resume_after_uncertain(task.id, "continue")
+    assert resumed.state is TaskState.DECIDING
+    assert (await restarted.task(task.id)).state is TaskState.DECIDING
+
+
+async def test_verification_event_bounds_long_sanitized_output(harness) -> None:
+    orchestrator, _, task, _ = harness
+    await orchestrator.propose_plan(task.id)
+    task = await orchestrator.approve_plan(task.id)
+    payload = {"run": {"name": "test", "ok": False, "failure_count": None, "output": "token=low-entropy-secret\n" + "x" * 70_000}}
+    await orchestrator._emit(task, "VERIFICATION_RECORDED", payload)
+    event = (await orchestrator._event_store.list_for_task(task.id))[-1]
+    encoded = str(event.payload).encode("utf-8")
+    assert len(encoded) < 65_536
+    assert "low-entropy-secret" not in str(event.payload)
+    assert "output" not in event.payload["run"]

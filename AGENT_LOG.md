@@ -701,3 +701,13 @@
 - **审查返工与根因：** 复审继续指出快照动态扫描仅限制普通文件数、单文件大小和总字节数；空目录不计入上述预算，因而可以使扫描无界。
 - **TDD RED → GREEN：** 先新增 10,001 个空目录的用例，旧行为返回验证证据，因而输出明确的断言失败；同时新增 65 层目录深度的 RED 用例。GREEN 后，对当前 worktree 扫描使用确定性的 10,000 目录、10,000 条目和 64 层深度预算；枚举错误、symlink/reparse 或任何超限均固定 fail closed。
 - **状态：** 仅 amend 同一个返工 B 提交，未触及返工 C/D、网络、依赖安装、merge 或 push。
+
+### 2026-07-27 — IMPL-MVP-2-FINAL-REWORK-C
+
+- **范围与 TDD：** 返工 C 先以真实 EventStore 和后续 LLMRequest 的序列化扫描固定秘密泄露 RED，并以重启后 started 无 finished 的恢复 RED 固定事件链要求。GREEN 后，编排器在事件/LLM 边界使用 Redactor、长度与 SHA-256 摘要，不持久化原始 LLM 回复、patch/content、完整 action、ToolResult 或验证输出；反馈以不可信诊断分隔回灌。
+- **恢复语义：** 检测到未完成执行时以乐观序号追加 UNCERTAIN_SIDE_EFFECT_DETECTED，持久化 reason_code 与 execution_id；重复恢复不重复追加。resume_after_uncertain 仅允许显式 retry/continue/cancel，绝不重放旧 execution，事件重放保持连续。
+- **验证：** agent 60 passed、storage 32 passed、governance redaction 10 passed、providers 16 passed；Ruff、mypy（6 个源文件）和差异检查通过。未触及返工 D、网络、依赖安装、merge 或 push。
+
+### 2026-07-27 — IMPL-MVP-2-FINAL-REWORK-C-REVIEW
+
+- **复审纠偏：** 验证事件改为专用安全 run 元数据；先脱敏、再计算摘要哈希，并对整个已投影 payload 施加 64 KiB 上限。70 KiB 输出与低熵秘密回归证明不保存原始 output 或其哈希。取消不确定执行后清除恢复投影，重启保持 CANCELLED。

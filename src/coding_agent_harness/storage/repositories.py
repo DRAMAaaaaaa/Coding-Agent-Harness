@@ -4,6 +4,7 @@ from uuid import UUID
 
 from coding_agent_harness.domain.actions import TaskState
 from coding_agent_harness.domain.models import Task
+from coding_agent_harness.governance.redaction import Redactor
 from coding_agent_harness.storage.database import Database
 
 
@@ -18,10 +19,17 @@ class TaskNotFoundError(LookupError):
 
 
 class TaskRepository:
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, redactor: Redactor | None = None) -> None:
         self._database = database
+        self._redactor = redactor or Redactor()
 
     async def create(self, task: Task) -> Task:
+        requirement = self._redactor.sanitize(task.requirement).value
+        if not isinstance(requirement, str):
+            raise TypeError("任务需求必须是字符串")
+        if len(requirement.encode("utf-8")) > 65_536:
+            requirement = "[REDACTED: task requirement exceeds safety limit]"
+        task = task.model_copy(update={"requirement": requirement})
         async with self._database.operation_lock:
             try:
                 await self._database.connection.execute(

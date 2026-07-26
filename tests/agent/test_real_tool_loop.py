@@ -182,7 +182,7 @@ async def test_real_registry_mock_loop_repairs_file_after_feedback(tmp_path: Pat
         events = await EventStore(database).list_for_task(task.id)
         feedback = [event for event in events if event.event_type == "FEEDBACK_RECORDED"]
         assert feedback, "\n".join(event.event_type for event in events)
-        assert feedback[0].payload["output"] == "1 failed\nAssertionError: add(1, 2) == 4\n"
+        assert feedback[0].payload["diagnostic"] == "1 failed\nAssertionError: add(1, 2) == 4\n"
         assert "1 failed" in str(provider.requests[4].messages)
         assert any(event.event_type == "READ_TOOL_COMPLETED" for event in events)
         assert any(event.event_type == "FINAL_SUMMARY_RECORDED" for event in events)
