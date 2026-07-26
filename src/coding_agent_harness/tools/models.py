@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,6 +12,21 @@ from coding_agent_harness.governance.approvals import ApprovalManager
 from coding_agent_harness.workspace.git import SafeGit
 from coding_agent_harness.workspace.models import ProjectProfile, RepositoryMap
 from coding_agent_harness.workspace.processes import ProcessRunner
+
+
+class ToolObservation(BaseModel):
+    """供事件与下一次模型请求使用的最小结构化工具观察。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    tool: str = Field(min_length=1)
+    kind: Literal["file", "output", "failure"]
+    code: str = Field(min_length=1)
+    path: str | None = None
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    content: str | None = None
+    output: str | None = None
+    diagnostic: str | None = None
 
 
 class ToolResult(BaseModel):
@@ -24,6 +40,7 @@ class ToolResult(BaseModel):
     changed_paths: tuple[str, ...] = ()
     retryable: bool = False
     verification: VerificationEvidence | None = None
+    observation: ToolObservation | None = None
 
 
 class VerificationApproval(BaseModel):

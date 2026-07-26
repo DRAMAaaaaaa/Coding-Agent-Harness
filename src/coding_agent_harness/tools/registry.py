@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -13,6 +14,7 @@ from coding_agent_harness.governance.approvals import ApprovalContext, ApprovalE
 from coding_agent_harness.tools import files, git, search, verification
 from coding_agent_harness.tools.models import (
     ToolContext,
+    ToolObservation,
     ToolResult,
     VerificationEvidence,
 )
@@ -68,6 +70,12 @@ class ToolRegistry:
         self._guard = PathGuard(context.workspace_root)
 
     async def execute(self, action: ToolAction, context: ToolContext | None = None) -> ToolResult:
+        result = await self._execute_unobserved(action, context)
+        return self._with_observation(action, result)
+
+    async def _execute_unobserved(
+        self, action: ToolAction, context: ToolContext | None = None
+    ) -> ToolResult:
         if context is not None and context != self._context:
             return ToolResult(ok=False, code="CONTEXT_MISMATCH")
         policy_action = action
@@ -139,7 +147,19 @@ class ToolRegistry:
             output = content.decode("utf-8")
         except UnicodeDecodeError:
             return ToolResult(ok=False, code="INVALID_TEXT")
-        return ToolResult(ok=True, code="OK", output=output)
+        return ToolResult(
+            ok=True,
+            code="OK",
+            output=output,
+            observation=ToolObservation(
+                tool="read_file",
+                kind="file",
+                code="OK",
+                path=request.path,
+                sha256=hashlib.sha256(content).hexdigest(),
+                content=output,
+            ),
+        )
 
     async def _delete_file(self, policy_action: ToolAction, action: ToolAction) -> ToolResult:
         try:
@@ -222,7 +242,8 @@ class ToolRegistry:
             ok=execution.code == "OK",
             code=execution.code,
             output=execution.output,
-            retryable=execution.code == "VERIFICATION_FAILED",
+            retryable=execution.code
+            in {"VERIFICATION_FAILED", "WORKTREE_CHANGED_DURING_VERIFICATION"},
             verification=execution.evidence,
         )
 
@@ -257,3 +278,28 @@ class ToolRegistry:
             return ToolResult(ok=False, code="GIT_UNAVAILABLE")
         code, output = git.diff(self._context.safe_git, self._guard.root)
         return ToolResult(ok=code == "OK", code=code, output=output)
+
+    @staticmethod
+    def _with_observation(action: ToolAction, result: ToolResult) -> ToolResult:
+        if result.observation is not None:
+            return result
+        if not result.ok:
+            diagnostic = result.output or result.code
+            if action.tool == "run_verification" and result.output:
+                diagnostic = f"UNTRUSTED_RUNNER_OUTPUT:\n{result.output}"
+            observation = ToolObservation(
+                tool=action.tool,
+                kind="failure",
+                code=result.code,
+                diagnostic=diagnostic,
+            )
+        elif action.tool in {"search", "git_status", "git_diff"}:
+            observation = ToolObservation(
+                tool=action.tool,
+                kind="output",
+                code=result.code,
+                output=result.output,
+            )
+        else:
+            return result
+        return result.model_copy(update={"observation": observation})

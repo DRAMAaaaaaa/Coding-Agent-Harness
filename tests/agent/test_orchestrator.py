@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+import json
 from uuid import uuid4
 
 import pytest
@@ -111,6 +112,8 @@ async def test_feedback_changes_next_action_after_injected_failure(harness) -> N
     ]
     assert patches[0].idempotency_key != patches[1].idempotency_key
     assert "AssertionError: add(1, 2) == 4" in str(provider.requests[3].messages)
+    assert "VERIFICATION_FAILED" in str(provider.requests[3].messages)
+    assert "UNTRUSTED_RUNNER_OUTPUT" in str(provider.requests[3].messages)
     events = await EventStore(database).list_for_task(task.id)
     assert any(
         event.event_type == "FINAL_SUMMARY_RECORDED"
@@ -445,3 +448,69 @@ async def test_verification_event_bounds_long_sanitized_output(harness) -> None:
     assert len(encoded) < 65_536
     assert "low-entropy-secret" not in str(event.payload)
     assert "output" not in event.payload["run"]
+
+
+async def test_tool_observation_redacts_and_bounds_each_field_without_losing_shape(
+    harness,
+) -> None:
+    orchestrator, _, _, _ = harness
+    payload = orchestrator._safe_payload(
+        "TOOL_EXECUTION_COMPLETED",
+        {
+            "observation": {
+                "tool": "read_file",
+                "kind": "file",
+                "code": "OK",
+                "path": "src/app.py",
+                "sha256": "a" * 64,
+                "content": "token=observation-secret\n" + "x" * 70_000,
+            }
+        },
+    )
+
+    assert "observation" in payload
+    observation = payload["observation"]
+    assert isinstance(observation, dict)
+    assert observation["sha256"] == "a" * 64
+    assert "observation-secret" not in str(observation)
+    assert "OUTPUT_LIMIT" in str(observation["content"])
+    assert len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) < 65_536
+
+
+async def test_recent_failed_tool_observation_reaches_next_request_boundary(
+    harness,
+) -> None:
+    orchestrator, _, task, _ = harness
+    await orchestrator.propose_plan(task.id)
+    task = await orchestrator.approve_plan(task.id)
+    task = await orchestrator._emit(
+        task, "ACTION_PROPOSED", {"action": {"tool": "search"}}
+    )
+    task = await orchestrator._emit(
+        task,
+        "TOOL_EXECUTION_STARTED",
+        {"execution_id": "failed-search", "action": {"tool": "search"}},
+    )
+    task = await orchestrator._emit(
+        task,
+        "TOOL_EXECUTION_FAILED",
+        {
+            "execution_id": "failed-search",
+            "result": {"ok": False, "code": "REPOSITORY_MAP_REQUIRED"},
+            "observation": {
+                "tool": "search",
+                "kind": "failure",
+                "code": "REPOSITORY_MAP_REQUIRED",
+                "diagnostic": "REPOSITORY_MAP_REQUIRED",
+            },
+        },
+    )
+    task = await orchestrator._emit(task, "TOOL_COMPLETED", {"tool": "search"})
+    task = await orchestrator._emit(
+        task, "VERIFICATION_READY", {"source": "orchestrator"}
+    )
+
+    messages = await orchestrator._messages(task)
+
+    assert "UNTRUSTED_TOOL_OBSERVATION" in str(messages)
+    assert "REPOSITORY_MAP_REQUIRED" in str(messages)

@@ -20,6 +20,10 @@ async def test_search_only_uses_tracked_text_files(tmp_path: Path) -> None:
     assert result.ok
     assert "tracked.py" in result.output
     assert "untracked.py" not in result.output
+    assert result.observation is not None
+    assert result.observation.tool == "search"
+    assert result.observation.kind == "output"
+    assert result.observation.output == result.output
 
 
 async def test_search_uses_query_protocol_when_governed(tmp_path: Path) -> None:

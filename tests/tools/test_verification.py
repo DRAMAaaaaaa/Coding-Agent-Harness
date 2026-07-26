@@ -8,12 +8,17 @@ from coding_agent_harness.governance.policy import PolicyContext, PolicyEngine
 from coding_agent_harness.governance.redaction import Redactor
 from coding_agent_harness.tools.models import (
     ToolContext,
+    ToolResult,
     VerificationApproval,
 )
 from coding_agent_harness.tools.registry import ToolRegistry
 from coding_agent_harness.workspace.detector import ProjectDetector
 from coding_agent_harness.workspace.models import ProjectProfile, RepositoryMap
-from coding_agent_harness.workspace.processes import CommandResult, ProcessRequest
+from coding_agent_harness.workspace.processes import (
+    CommandResult,
+    ProcessRequest,
+    ProcessRunner,
+)
 
 
 class FailingRunner:
@@ -34,10 +39,29 @@ class SuccessfulRunner:
         return CommandResult(returncode=0, stdout=b"1 passed\n", stderr=b"")
 
 
+class MutatingSuccessfulRunner:
+    def __init__(self, root: Path, mutation: str) -> None:
+        self._root = root
+        self._mutation = mutation
+        self.calls: list[ProcessRequest] = []
+
+    def run(self, request: ProcessRequest) -> CommandResult:
+        self.calls.append(request)
+        if self._mutation == "tracked":
+            (self._root / "src.py").write_text("VALUE = 2\n", encoding="utf-8")
+        elif self._mutation == "untracked":
+            (self._root / "external.py").write_text("external\n", encoding="utf-8")
+        else:
+            (self._root / ".harness.yml").write_text(
+                "test:\n  - python\n  - -m\n  - pytest\n", encoding="utf-8"
+            )
+        return CommandResult(returncode=0, stdout=b"1 passed\n", stderr=b"")
+
+
 def approved_context(
     tmp_path: Path,
     profile: ProjectProfile,
-    runner: FailingRunner,
+    runner: ProcessRunner,
     *,
     tracked_files: tuple[str, ...] = ("pyproject.toml",),
 ) -> ToolContext:
@@ -81,6 +105,13 @@ def verification_action(key: str = "v") -> ToolAction:
     )
 
 
+def assert_failure_observation(result: ToolResult, code: str) -> None:
+    assert result.observation is not None
+    assert result.observation.kind == "failure"
+    assert result.observation.code == code
+    assert result.observation.diagnostic
+
+
 async def test_verification_refuses_stale_profile_without_running(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         "[build-system]\nrequires=[]\nbuild-backend='x'\n", encoding="utf-8"
@@ -95,6 +126,7 @@ async def test_verification_refuses_stale_profile_without_running(tmp_path: Path
 
     assert result.code == "STALE_CONFIG"
     assert runner.calls == []
+    assert_failure_observation(result, "STALE_CONFIG")
 
 
 async def test_verification_requires_explicit_approved_fingerprint(tmp_path: Path) -> None:
@@ -118,6 +150,7 @@ async def test_verification_requires_explicit_approved_fingerprint(tmp_path: Pat
 
     assert result.code == "VERIFICATION_APPROVAL_REQUIRED"
     assert runner.calls == []
+    assert_failure_observation(result, "VERIFICATION_APPROVAL_REQUIRED")
 
 
 async def test_verification_rejects_mismatched_approved_fingerprint(tmp_path: Path) -> None:
@@ -144,6 +177,7 @@ async def test_verification_rejects_mismatched_approved_fingerprint(tmp_path: Pa
 
     assert result.code == "VERIFICATION_APPROVAL_STALE"
     assert runner.calls == []
+    assert_failure_observation(result, "VERIFICATION_APPROVAL_STALE")
 
 
 async def test_verification_routes_actual_argv_through_policy(tmp_path: Path) -> None:
@@ -167,6 +201,7 @@ async def test_verification_routes_actual_argv_through_policy(tmp_path: Path) ->
 
     assert result.code == "VERIFICATION_POLICY_BLOCKED"
     assert runner.calls == []
+    assert_failure_observation(result, "VERIFICATION_POLICY_BLOCKED")
 
 
 async def test_current_verification_snapshot_tracks_dynamic_file_state(tmp_path: Path) -> None:
@@ -198,6 +233,35 @@ async def test_current_verification_snapshot_tracks_dynamic_file_state(tmp_path:
     assert original.worktree_fingerprint != modified.worktree_fingerprint
     assert modified.worktree_fingerprint != untracked.worktree_fingerprint
     assert missing is None
+
+
+@pytest.mark.parametrize("mutation", ["tracked", "untracked", "config"])
+async def test_verification_never_signs_snapshot_changed_while_runner_executes(
+    tmp_path: Path, mutation: str
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[build-system]\nrequires=[]\nbuild-backend='x'\n", encoding="utf-8"
+    )
+    (tmp_path / "src.py").write_text("VALUE = 1\n", encoding="utf-8")
+    profile = ProjectDetector().detect(tmp_path)
+    runner = MutatingSuccessfulRunner(tmp_path, mutation)
+    registry = ToolRegistry(
+        approved_context(
+            tmp_path,
+            profile,
+            runner,
+            tracked_files=("pyproject.toml", "src.py"),
+        )
+    )
+
+    result = await registry.execute(verification_action(f"during-{mutation}"))
+
+    assert result.ok is False
+    assert result.code == "WORKTREE_CHANGED_DURING_VERIFICATION"
+    assert result.retryable is True
+    assert result.verification is None
+    assert len(runner.calls) == 1
+    assert_failure_observation(result, "WORKTREE_CHANGED_DURING_VERIFICATION")
 
 
 async def test_current_verification_snapshot_rejects_too_many_empty_directories(
@@ -270,7 +334,7 @@ async def test_verification_policy_allows_only_safe_approved_command(
         approved_context(
             tmp_path,
             profile,
-            runner,  # type: ignore[arg-type]
+            runner,
             tracked_files=("pyproject.toml", ".harness.yml"),
         )
     ).execute(verification_action("command-policy"))

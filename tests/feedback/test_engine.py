@@ -1,3 +1,5 @@
+import pytest
+
 from coding_agent_harness.domain.actions import TaskState
 from coding_agent_harness.feedback.engine import FeedbackEngine
 from coding_agent_harness.feedback.models import FailureCategory, VerificationRun
@@ -12,16 +14,42 @@ def failed_run(message: str, *, count: int = 1) -> VerificationRun:
     )
 
 
-def test_two_consecutive_non_improving_rounds_after_baseline_wait_for_user() -> None:
+@pytest.mark.parametrize("second_count", [2, 3])
+def test_second_same_or_worse_failure_round_waits_for_user(second_count: int) -> None:
     engine = FeedbackEngine()
 
     first = engine.evaluate([], failed_run("same", count=2))
-    second = engine.evaluate([first.observation], failed_run("same-2", count=2))
-    third = engine.evaluate([first.observation, second.observation], failed_run("same-3", count=2))
+    second = engine.evaluate(
+        [first.observation], failed_run("same-second", count=second_count)
+    )
+
+    assert second.next_state is TaskState.WAITING_USER
+    assert second.reason_code == "NO_PROGRESS"
+
+
+def test_lower_failure_count_resets_no_progress() -> None:
+    engine = FeedbackEngine()
+    first = engine.evaluate([], failed_run("first", count=3))
+
+    second = engine.evaluate([first.observation], failed_run("second", count=2))
 
     assert second.next_state is TaskState.CORRECTING
-    assert third.next_state is TaskState.WAITING_USER
-    assert third.reason_code == "NO_PROGRESS"
+    assert second.reason_code == "CORRECTION_REQUIRED"
+
+
+def test_changed_failure_category_resets_no_progress() -> None:
+    engine = FeedbackEngine()
+    first = engine.evaluate([], failed_run("first", count=2))
+
+    second = engine.evaluate(
+        [first.observation],
+        VerificationRun(
+            name="lint", ok=False, output="ruff: lint failure", failure_count=2
+        ),
+    )
+
+    assert second.next_state is TaskState.CORRECTING
+    assert second.reason_code == "CORRECTION_REQUIRED"
 
 
 def test_unknown_failure_counts_do_not_claim_no_progress() -> None:
@@ -45,6 +73,7 @@ def test_same_fingerprint_is_limited_to_three_verification_attempts() -> None:
     second = engine.evaluate([first.observation], failed_run("same"))
     third = engine.evaluate([first.observation, second.observation], failed_run("same"))
 
+    assert second.reason_code == "NO_PROGRESS"
     assert third.next_state is TaskState.WAITING_USER
     assert third.reason_code == "FINGERPRINT_BUDGET"
 

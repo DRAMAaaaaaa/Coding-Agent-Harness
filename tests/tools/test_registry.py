@@ -1,10 +1,14 @@
+from hashlib import sha256
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from coding_agent_harness.domain.actions import ToolAction
 from coding_agent_harness.tools.models import ToolContext
 from coding_agent_harness.tools.registry import ToolRegistry
+from coding_agent_harness.workspace.git import SafeGit
+from coding_agent_harness.workspace.processes import CommandResult
 
 
 def tool(name: str, arguments: dict[str, object]) -> ToolAction:
@@ -26,8 +30,6 @@ def registry(worktree: Path) -> ToolRegistry:
 
 
 async def test_apply_patch_is_compare_and_swap(registry: ToolRegistry, worktree: Path) -> None:
-    from hashlib import sha256
-
     target = worktree / "src" / "app.py"
     before = sha256(target.read_bytes()).hexdigest()
     result = await registry.execute(
@@ -50,6 +52,12 @@ async def test_read_file_returns_bounded_regular_file(registry: ToolRegistry) ->
     assert result.ok
     assert result.code == "OK"
     assert result.output == "VALUE = 1\n"
+    assert result.observation is not None
+    assert result.observation.tool == "read_file"
+    assert result.observation.kind == "file"
+    assert result.observation.path == "src/app.py"
+    assert result.observation.sha256 == sha256(b"VALUE = 1\n").hexdigest()
+    assert result.observation.content == "VALUE = 1\n"
 
 
 async def test_read_file_rejects_oversized_content(registry: ToolRegistry, worktree: Path) -> None:
@@ -60,3 +68,39 @@ async def test_read_file_rejects_oversized_content(registry: ToolRegistry, workt
     assert result.ok is False
     assert result.code == "FILE_TOO_LARGE"
     assert result.output == ""
+    assert result.observation is not None
+    assert result.observation.kind == "failure"
+    assert result.observation.code == "FILE_TOO_LARGE"
+    assert result.observation.diagnostic == "FILE_TOO_LARGE"
+
+
+class _ObservedGit:
+    def run(
+        self, root: str | Path, args: tuple[str, ...], stdin: bytes = b""
+    ) -> CommandResult:
+        del root, stdin
+        output = b" M src/app.py\0" if args[0] == "status" else b"diff output\n"
+        return CommandResult(returncode=0, stdout=output, stderr=b"")
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "expected"),
+    [("git_status", " M src/app.py\0"), ("git_diff", "diff output\n")],
+)
+async def test_git_read_tools_return_structured_output_observation(
+    worktree: Path, tool_name: str, expected: str
+) -> None:
+    registry = ToolRegistry(
+        ToolContext(
+            workspace_root=worktree,
+            safe_git=cast(SafeGit, _ObservedGit()),
+        )
+    )
+
+    result = await registry.execute(tool(tool_name, {}))
+
+    assert result.ok
+    assert result.observation is not None
+    assert result.observation.tool == tool_name
+    assert result.observation.kind == "output"
+    assert result.observation.output == expected

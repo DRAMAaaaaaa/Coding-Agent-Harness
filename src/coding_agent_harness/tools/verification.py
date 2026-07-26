@@ -88,7 +88,7 @@ def run_verification(
     output = (result.stdout + result.stderr).decode("utf-8", errors="replace")
     if result.returncode != 0:
         return VerificationExecution("VERIFICATION_FAILED", output)
-    code, current, snapshot = _current_context(
+    post_code, post_current, post_snapshot = _current_context(
         root,
         profile,
         repository_map,
@@ -96,8 +96,14 @@ def run_verification(
         config_version,
         state_root,
     )
-    if code != "OK" or current is None or snapshot is None:
-        return VerificationExecution(code, output)
+    if (
+        post_code != "OK"
+        or post_current is None
+        or post_snapshot is None
+        or post_current.trust_fingerprint != current.trust_fingerprint
+        or post_snapshot != snapshot
+    ):
+        return VerificationExecution("WORKTREE_CHANGED_DURING_VERIFICATION", output)
     assert config_version is not None
     assert current.trust_fingerprint is not None
     return VerificationExecution(

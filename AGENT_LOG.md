@@ -714,7 +714,15 @@
 
 ### 2026-07-27 — IMPL-MVP-2-FINAL-REWORK-D
 
-- **审批与停止语义：** 删除审批 ID 仅作为 Registry 消费传输字段，策略只接收已剥离该字段的精确删除动作；ApprovalManager 在消费事务内核对预期 task_id。反馈无改善采用基线后的连续两轮未改善，指纹与总验证预算优先。
+- **审批与停止语义：** 删除审批 ID 仅作为 Registry 消费传输字段，策略只接收已剥离该字段的精确删除动作；ApprovalManager 在消费事务内核对预期 task_id。此处曾把 brief 的“连续 2 轮”错误解释为基线后的第三次失败才停机；整阶段最终复审已按 brief 冻结示例纠正为第一条观察后，相同类别且失败数相同或恶化的第二次评估立即 `WAITING_USER/NO_PROGRESS`，指纹与总验证预算仍优先。
 - **删除审批端到端矩阵：** 将原 2 项集成测试扩展为 13 项，全部使用迁移后的真实 SQLite、`Task`/`TaskRepository`、`ApprovalManager`、`PolicyEngine`、两个独立 `ToolRegistry`、真实 JSON UUID 与磁盘文件。覆盖无审批、pending、rejected、expired、过期 scope/event/config、跨 task、替换 path/SHA、replay、双连接并发消费，以及审批消费后删除前的确定性外部改写；所有拒绝均核验文件内容和 `approvals.consumed_at`，成功/并发/消费后 CAS 分支均核验恰好一次真实删除调用。
 - **TDD 与资源清理：** 生产漏洞已在前序返工关闭，因此新增 11 个收集用例首次运行即与既有 2 项一起直接 GREEN（`13 passed`），未发现需要修改生产代码的新 RED。并发以 `asyncio.Barrier` 同步启动，不使用 sleep；消费后改写通过窄包装真实 `delete_regular_file` 确定性注入。每个数据库均由 fixture 或 async context 的 `try/finally` 在 2 秒边界内关闭，并发任务在 `finally` 取消并回收，断言失败也不遗留 aiosqlite 工作线程。
 - **聚焦验证：** 删除审批 integration、Registry、ApprovalManager、PolicyEngine 与反馈引擎合计 `243 passed`。本轮只补测试矩阵和过程证据，未修改生产实现、联网、安装依赖、merge 或 push；最终 Ruff、mypy 与差异门禁在 amend 前重新取得新鲜输出。
+
+### 2026-07-27 — IMPL-MVP-2-FINAL-CROSS-STAGE-REWORK
+
+- **审查核实与 TDD：** 完整读取 MVP-2 整阶段最终复审和 Task 6 brief，使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 与 `verification-before-completion`。新增测试首轮为 `17 failed, 34 passed, 1 skipped`：第二次相同/恶化仍错误进入 `CORRECTING`；Registry 没有结构化 observation 且 Provider 收不到 read/普通失败；tracked/untracked/config 在 runner 返回前变化仍可能签发成功证据或未返回冻结竞态码。失败均对应 3 个 Important，未出现无关 RED。
+- **真实观察闭环：** 新增严格 `ToolObservation`。Registry 从 `BoundedFileReader` 实际返回的原始 bytes 计算 read SHA-256，并为 read/search/Git 成功输出及普通工具失败生成 file/output/failure 观察。Orchestrator 在 EventStore 前统一用同一 Redactor 投影，施加 16 KiB 字段、24 KiB observation、最多 4 条/32 KiB Provider 观察预算；只回灌上一条 `LLM_RESPONSE_RECEIVED` 后的近期观察，并以 `UNTRUSTED_TOOL_OBSERVATION`/BEGIN/END 数据边界标记，超限或无效结构 fail closed。观察驱动 Mock 从真实 read observation 解析首个 CAS SHA，第二个 SHA 从自己上一条 patch 内容派生；反馈到达后才改变第二次 patch，文件秘密和原始 patch 均不落盘或进入后续请求。
+- **验证竞态与 3/8/2：** `run_verification` 保留 pre-run profile/snapshot，runner 成功后重建 post 上下文；任一 post 不可用、trust/config 变化或 worktree 指纹不等均返回可重试的 `WORKTREE_CHANGED_DURING_VERIFICATION`，evidence 固定为 `None`。真实 tracked/untracked/config 三类 runner 均不能进入最终审查，后续 CompleteAction 返回 `VERIFICATION_REQUIRED`。反馈无改善按 brief 的两次调用冻结；failure_count 下降、类别变化或未知计数继续修正，第三次同 fingerprint 和第八次总预算仍按原优先级停机。
+- **聚焦证据与范围：** agent（含真实闭环）、verification/Registry/search、feedback、C3 redaction、storage、providers 合计 `156 passed, 1 skipped`；单独三机制组合为 `51 passed, 1 skipped`，Ruff 通过，mypy 检查 39 个源文件无问题。未运行全量测试，未联网、安装依赖、merge 或 push；本提交完成后仍需独立规约符合性与代码质量复审。
+- **最终复审 observation 纠偏：** 唯一 Important 复现为 `11 failed, 8 passed`：`run_verification` 的 STALE_CONFIG、approval、policy 和三类 worktree 竞态失败均没有 failure observation，普通验证失败下一请求也只有 runner 输出而缺稳定 code。`_with_observation()` 现仅允许成功验证不生成通用观察，所有失败统一产生 `kind=failure`、稳定 code 与有界 diagnostic；验证反馈固定为 `RESULT_CODE` 加 `UNTRUSTED_RUNNER_OUTPUT` 数据段，runner 的“1 passed”不能再遮蔽 `WORKTREE_CHANGED_DURING_VERIFICATION` 或被表述为验证成功。tracked/untracked/config 真实集成均断言无 evidence、完成不放行、下一 Provider 请求含失败 observation/code/不可信 runner 标签；普通 `VERIFICATION_FAILED` code 可见，C3 脱敏与限长测试继续纳入最终聚焦。最终限定的 agent/真实闭环、verification、feedback 与 redaction 为 `99 passed`。
