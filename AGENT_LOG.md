@@ -669,3 +669,9 @@
 - **审查返工与 TDD：** 新增“验证通过 → 修改工具 → CompleteAction”反例，RED 稳定进入 `WAITING_FINAL_REVIEW`，证明历史任意 `VERIFICATION_SUCCEEDED` 会错误授权过期验证；同时新增只读 search 后完成摘要的回归，保证只读不错误失效。GREEN 改为反向读取持久化事件：最近一次 `changed_paths` 非空的 `TOOL_EXECUTION_COMPLETED` 晚于成功验证时固定拒绝摘要并进入 `WAITING_USER/VERIFICATION_REQUIRED`；无变更的读取事件不影响验证新鲜度，重启后仍由同一 EventStore 事件流得出相同结论。
 - **新鲜验证：** focused `tests/feedback tests/agent tests/providers tests/storage -q` 为 `106 passed`；全量 pytest 为 `572 passed, 14 skipped`；Ruff、mypy（39 个源文件）和 `git diff --check` 通过。仅 amend 当前同名 Task 6 提交，未联网、安装依赖、merge、push 或处理 `MVP-ISSUE-016`。
 - **状态：** 验证新鲜度返工已随本提交修正，继续等待独立规约符合性与代码质量复审，未标记任务完成。
+
+### 2026-07-26 — REVIEW-MVP-2-AGENT-LOOP-FINAL
+
+- **独立复审：** Task 6 最终提交 `b9ac938` 的规约符合性与代码质量复审通过，Critical / Important / Minor 为 `0 / 0 / 0`，Task quality 为 Approved；定向复验为 `65 passed`，Ruff 通过。原 4 个 Important、1 个 Minor及验证新鲜度回归均已关闭。
+- **主控新鲜门禁：** `scripts/test.ps1 -Mode All` 取得全量 pytest `572 passed, 14 skipped`，Ruff、mypy（39 个源文件）、Web ESLint 与 TypeScript typecheck 全部通过；`pip check` 无损坏依赖，`git diff --check 6e9c805..HEAD` 通过，工作树在写入本记录前干净。
+- **状态与范围：** MVP-2 Task 6 据此完成，下一门禁为 MVP-2 整阶段审查；未联网、安装依赖、merge、push 或处理 `MVP-ISSUE-016`。
