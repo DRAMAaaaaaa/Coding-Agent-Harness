@@ -161,6 +161,142 @@ async def test_task_accepts_normal_requirement_at_utf8_byte_limit(
     assert stored.requirement == requirement
 
 
+async def test_sqlite_task_insert_failure_removes_worktree_and_allows_retry(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    headers, workspace_id = await _trusted_workspace(
+        client,
+        tmp_path / "task-storage-retry",
+    )
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    connection = active.tasks._database.connection  # type: ignore[attr-defined]
+    await connection.execute(
+        """
+        CREATE TRIGGER fail_task_insert
+        BEFORE INSERT ON tasks
+        BEGIN
+            SELECT RAISE(FAIL, 'injected task storage failure');
+        END
+        """
+    )
+    await connection.commit()
+
+    failed = await _post(
+        client,
+        "/api/tasks",
+        json={"workspace_id": workspace_id, "requirement": "验证任务落盘补偿"},
+        headers=headers,
+        suppress_app_exception=True,
+    )
+
+    workspace_state = active.state_root / "worktrees" / workspace_id
+    assert failed.status_code == 503
+    assert failed.json()["code"] == "TASK_STORAGE_UNAVAILABLE"
+    assert failed.json()["details"] == {"retryable": True}
+    assert await _task_count(active) == 0
+    assert not (workspace_state / ".active").exists()
+    assert _task_worktree_directories(workspace_state) == ()
+
+    await connection.execute("DROP TRIGGER fail_task_insert")
+    await connection.commit()
+    retried = await client.post(
+        "/api/tasks",
+        json={"workspace_id": workspace_id, "requirement": "验证任务落盘补偿"},
+        headers=headers,
+    )
+
+    assert retried.status_code == 201
+    assert await _task_count(active) == 1
+    assert (workspace_state / ".active").read_text(encoding="ascii") == retried.json()["id"]
+
+
+async def test_task_storage_compensation_owner_change_is_uncertain_and_preserves_other_task(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers, workspace_id = await _trusted_workspace(
+        client,
+        tmp_path / "task-storage-uncertain",
+    )
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    stored = await active.workspaces.get(UUID(workspace_id))
+    assert stored is not None
+    connection = active.tasks._database.connection  # type: ignore[attr-defined]
+    await connection.execute(
+        """
+        CREATE TRIGGER fail_task_insert
+        BEFORE INSERT ON tasks
+        BEGIN
+            SELECT RAISE(FAIL, 'injected task storage failure');
+        END
+        """
+    )
+    await connection.commit()
+    from coding_agent_harness.api import dependencies as dependency_module
+
+    real_manager = dependency_module.WorktreeManager
+    other_task_id = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+    created_task_ids: list[UUID] = []
+
+    class OwnershipChangingManager:
+        def __init__(self, workspace: object, state_root: object) -> None:
+            self._delegate = real_manager(workspace, state_root)  # type: ignore[arg-type]
+            self._state_root = Path(state_root)  # type: ignore[arg-type]
+
+        def create(self, task_id: UUID, base_commit: str) -> None:
+            self._delegate.create(task_id, base_commit)
+            created_task_ids.append(task_id)
+            workspace_state = self._state_root / "worktrees" / workspace_id
+            (workspace_state / ".active").write_text(str(other_task_id), encoding="ascii")
+            other_target = workspace_state / str(other_task_id)
+            other_target.mkdir()
+            (other_target / "owner.txt").write_text("other", encoding="utf-8")
+
+        def release(self, task_id: UUID) -> None:
+            self._delegate.release(task_id)
+
+    monkeypatch.setattr(dependency_module, "WorktreeManager", OwnershipChangingManager)
+    active.task_runner = LocalTaskRunner(
+        active.tasks,
+        active.state_root,
+        step_budget=8,
+        time_budget_seconds=300,
+        worker=active.worker,
+    )
+    workspace_state = active.state_root / "worktrees" / workspace_id
+    try:
+        failed = await _post(
+            client,
+            "/api/tasks",
+            json={"workspace_id": workspace_id, "requirement": "验证补偿所有权"},
+            headers=headers,
+            suppress_app_exception=True,
+        )
+
+        assert failed.status_code == 503
+        assert failed.json()["code"] == "WORKTREE_UNCERTAIN"
+        assert await _task_count(active) == 0
+        assert created_task_ids
+        assert (workspace_state / str(created_task_ids[0])).is_dir()
+        assert (workspace_state / ".active").read_text(encoding="ascii") == str(other_task_id)
+        assert (workspace_state / str(other_task_id) / "owner.txt").read_text(
+            encoding="utf-8"
+        ) == "other"
+    finally:
+        await connection.execute("DROP TRIGGER fail_task_insert")
+        await connection.commit()
+        if created_task_ids:
+            (workspace_state / str(other_task_id) / "owner.txt").unlink(missing_ok=True)
+            (workspace_state / str(other_task_id)).rmdir()
+            (workspace_state / ".active").write_text(
+                str(created_task_ids[0]),
+                encoding="ascii",
+            )
+            real_manager(stored.workspace, active.state_root).release(created_task_ids[0])
+
+
 async def test_config_change_invalidates_trust_before_creating_task(
     client: httpx.AsyncClient, tmp_path: Path
 ) -> None:
@@ -687,3 +823,19 @@ def _relative_state_entries(root: Path) -> tuple[str, ...]:
     if not root.exists():
         return ()
     return tuple(sorted(path.relative_to(root).as_posix() for path in root.rglob("*")))
+
+
+async def _task_count(active: object) -> int:
+    row = await (
+        await active.tasks._database.connection.execute(  # type: ignore[attr-defined]
+            "SELECT COUNT(*) FROM tasks"
+        )
+    ).fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+def _task_worktree_directories(workspace_state: Path) -> tuple[Path, ...]:
+    if not workspace_state.exists():
+        return ()
+    return tuple(path for path in workspace_state.iterdir() if path.is_dir())

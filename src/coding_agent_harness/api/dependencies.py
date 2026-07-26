@@ -66,6 +66,14 @@ class RuntimeUnavailableError(RuntimeError):
     """当前 API 依赖中没有可用的 Agent 运行时。"""
 
 
+class TaskStorageUnavailableError(RuntimeError):
+    """任务未能落盘，但已确定清理本次工作树。"""
+
+
+class DefaultBranchError(ValueError):
+    """Git 默认分支无法作为 Workspace 的明确领域错误。"""
+
+
 class BranchResolver(Protocol):
     def default_branch(self, root: Path) -> str: ...
 
@@ -142,11 +150,13 @@ class LocalTaskRunner:
     async def create(self, workspace: Workspace, task_id: UUID, requirement: str) -> Task:
         prepared_requirement = self._tasks.prepare_requirement(requirement)
 
-        def create_worktree() -> None:
-            WorktreeManager(workspace, self._state_root).create(task_id, "HEAD")
+        def create_worktree() -> WorktreeManager:
+            manager = WorktreeManager(workspace, self._state_root)
+            manager.create(task_id, "HEAD")
+            return manager
 
         async def create_and_persist() -> Task:
-            await self._worker.run(create_worktree)
+            manager = await self._worker.run(create_worktree)
             task = Task(
                 id=task_id,
                 workspace_id=workspace.id,
@@ -157,7 +167,20 @@ class LocalTaskRunner:
                 created_at=datetime.now(UTC),
                 deadline_at=None,
             )
-            return await self._tasks.create_prepared(task, prepared_requirement)
+            try:
+                return await self._tasks.create_prepared(task, prepared_requirement)
+            except Exception:
+                try:
+                    await self._worker.run(manager.release, task_id)
+                except Exception:
+                    from coding_agent_harness.workspace.worktrees import (
+                        WorktreeUncertainError,
+                    )
+
+                    raise WorktreeUncertainError(
+                        "任务工作树补偿结果不确定，需要人工检查"
+                    ) from None
+                raise TaskStorageUnavailableError("任务存储暂时不可用") from None
 
         operation = asyncio.create_task(create_and_persist())
         try:
@@ -178,7 +201,7 @@ class SafeBranchResolver:
         except UnicodeDecodeError:
             branch = ""
         if result.returncode != 0 or not branch:
-            raise ValueError("Git 默认分支不可用")
+            raise DefaultBranchError("Git 默认分支不可用")
         return branch
 
 

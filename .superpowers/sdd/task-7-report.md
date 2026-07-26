@@ -80,3 +80,11 @@ GREEN 后，API 与 Repository 统一使用共享 `MAX_REQUIREMENT_BYTES` 的 UT
 实现把 Repository 的完整准备过程公开为单一无副作用路径：`prepare_requirement()` 依次执行原始字节校验、既有 Redactor 脱敏和最终字节校验，并返回不可变的 `PreparedRequirement`。`LocalTaskRunner` 在任何 worktree worker、marker 或 Task 副作用前取得该结果，持久化通过 `create_prepared()` 原样复用，不在 API 重建脱敏规则。API 只捕获明确的 `RequirementTooLargeError` 并映射为 `422 VALIDATION_ERROR`；未知异常仍为脱敏 500。
 
 GREEN 后，扩张输入为 422，task count 保持 0，workspace worktree 目录、`.active` 和 state_root 快照均无新增；正常边界仍创建任务并精确持久化。I6 聚焦为 `4 passed`，API + storage 回归为 `91 passed`，mypy 检查 47 个源文件通过。未触碰 I7/M1、QA/QB，未运行全量或构建，也未联网、安装、merge 或 push。
+
+## 整阶段最终审查 I1/I2 返工
+
+最终审查复现了两个组合缺口：真实 worktree 创建成功后，SQLite 插入失败会留下无 Task 所有者的工作树和 `.active`；项目接入端点则把 detector、scanner 和 branch resolver 抛出的未知 `RuntimeError`/`ValueError` 统一误报为 `400 INVALID_PROJECT`。首组 RED 使用真实 Git、真实 SQLite trigger 和真实 API，得到任务存储故障 `500`、六项未知端口异常全部 `400`，合计 `7 failed`。补偿不确定分支另以所有权变化探针验证：若不执行安全补偿，响应会错误成为 `TASK_STORAGE_UNAVAILABLE`，而不是 `WORKTREE_UNCERTAIN`。
+
+GREEN 后，`LocalTaskRunner` 复用创建工作树的同一 `WorktreeManager`：`create_prepared()` 失败时只释放本次 task ID；释放成功后抛出专用 `TaskStorageUnavailableError`，API 固定返回脱敏、可重试的 `503 TASK_STORAGE_UNAVAILABLE`；释放失败、所有权变化或结果不可确认时固定升级为 `503 WORKTREE_UNCERTAIN`，保留现场且不清理其他 owner。真实 SQLite 故障测试断言首次请求无 Task、无 task worktree、无 `.active`，移除故障后重试为 201，不受幽灵 owner 阻塞。
+
+项目端点新增窄化的 `ProjectPathError` 与 `DefaultBranchError`：仅路径解析/私有状态重叠、`ProjectDetectionError`、`RepositoryScanError` 和默认分支领域失败映射为 400；端口抛出的未知内置异常继续进入全局脱敏 500。核心与不确定分支为 `8 passed`，task/project 聚焦为 `43 passed`，API + worktree + storage 组合回归为 `147 passed, 1 skipped`。本轮未处理 M1 文档关闭、未运行全量或构建，也未联网、安装、merge 或 push。

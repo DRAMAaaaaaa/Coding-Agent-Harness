@@ -4,9 +4,13 @@ import subprocess
 from pathlib import Path
 
 import httpx
+import pytest
 
 from coding_agent_harness.api.app import create_app
+from coding_agent_harness.api.dependencies import DefaultBranchError
 from coding_agent_harness.config import HarnessSettings
+from coding_agent_harness.workspace.detector import ProjectDetectionError
+from coding_agent_harness.workspace.scanner import RepositoryScanError
 from tests.api.conftest import session_headers
 
 
@@ -129,3 +133,107 @@ async def test_project_rejects_private_database_parent_overlap(tmp_path: Path) -
 
     assert response.status_code == 400
     assert response.json()["code"] == "INVALID_PROJECT"
+
+
+@pytest.mark.parametrize(
+    ("port_name", "method_name", "error"),
+    [
+        ("detector", "detect", RuntimeError("detector internal token=hidden")),
+        ("detector", "detect", ValueError("detector value token=hidden")),
+        ("scanner", "scan", RuntimeError("scanner internal token=hidden")),
+        ("scanner", "scan", ValueError("scanner value token=hidden")),
+        (
+            "branch_resolver",
+            "default_branch",
+            RuntimeError("branch internal token=hidden"),
+        ),
+        (
+            "branch_resolver",
+            "default_branch",
+            ValueError("branch value token=hidden"),
+        ),
+    ],
+)
+async def test_project_unknown_port_errors_remain_internal(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+    port_name: str,
+    method_name: str,
+    error: Exception,
+) -> None:
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    setattr(active, port_name, _FailingProjectPort(method_name, error))
+
+    response = await _post_without_app_exception(
+        client,
+        "/api/projects",
+        json={"path": str(_git_repo(tmp_path / f"unknown-{port_name}-{type(error).__name__}"))},
+        headers=await session_headers(client),
+    )
+
+    assert response.status_code == 500
+    assert response.json()["code"] == "INTERNAL_ERROR"
+    assert response.json()["details"] == {}
+    assert "hidden" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("port_name", "method_name", "error"),
+    [
+        ("detector", "detect", ProjectDetectionError("unsupported")),
+        ("scanner", "scan", RepositoryScanError("unreadable")),
+        (
+            "branch_resolver",
+            "default_branch",
+            DefaultBranchError("unavailable"),
+        ),
+    ],
+)
+async def test_project_specific_domain_errors_remain_invalid_project(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+    port_name: str,
+    method_name: str,
+    error: Exception,
+) -> None:
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    setattr(active, port_name, _FailingProjectPort(method_name, error))
+
+    response = await client.post(
+        "/api/projects",
+        json={"path": str(_git_repo(tmp_path / f"known-{port_name}"))},
+        headers=await session_headers(client),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_PROJECT"
+
+
+class _FailingProjectPort:
+    def __init__(self, method_name: str, error: Exception) -> None:
+        self._method_name = method_name
+        self._error = error
+
+    def __getattr__(self, name: str) -> object:
+        if name != self._method_name:
+            raise AttributeError(name)
+
+        def fail(*_: object) -> object:
+            raise self._error
+
+        return fail
+
+
+async def _post_without_app_exception(
+    client: httpx.AsyncClient,
+    path: str,
+    *,
+    json: dict[str, object],
+    headers: dict[str, str],
+) -> httpx.Response:
+    app = client._transport.app  # type: ignore[attr-defined]
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://testserver",
+    ) as safe_client:
+        return await safe_client.post(path, json=json, headers=headers)

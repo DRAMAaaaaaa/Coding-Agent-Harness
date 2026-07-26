@@ -797,3 +797,10 @@
 - **RED → GREEN：** 真实 API/Git/SQLite 回归使用 `token=x ` 重复 8,192 次，证明原始值恰为 65,536 UTF-8 bytes、经实际 Repository Redactor 后超限；首轮稳定返回 500，而正常未扩张的 65,536-byte 需求为 201。修复后扩张输入固定为 `422 VALIDATION_ERROR`，真实 task 计数为 0，workspace worktree 目录、`.active` 和 state_root 条目均无新增；正常边界仍为 201 且持久化内容精确一致。
 - **单一准备边界：** `TaskRepository.prepare_requirement()` 是唯一的原始字节校验、真实 Redactor 脱敏和最终字节校验路径，产出 `PreparedRequirement`；`LocalTaskRunner` 在启动 worktree worker 前完成准备，随后 `create_prepared()` 只复用该结果。仅明确的 `RequirementTooLargeError` 在 API 映射为 422，既有未知 `ValueError` 继续由内部错误边界映射为脱敏 500。
 - **限定验证：** 四项 I6 聚焦为 `4 passed`；API + storage 回归为 `91 passed`，mypy 检查 47 个源文件通过。Ruff、差异检查和提交前状态在提交前重新取得；未联网、安装、运行全量/构建、merge 或 push。
+
+### 2026-07-27 — REWORK-MVP-3-TASK-7-FINAL-I1-I2
+
+- **范围与技能：** 仅处理 Task 7 整阶段最终审查 I1/I2；完整读取 Task brief、最终质量报告及 QA/QB/QC 复审，使用 `systematic-debugging`、`test-driven-development` 与 `verification-before-completion`。未处理 M1，未联网、安装、运行全量/构建、merge 或 push。
+- **RED → GREEN：** 真实 Git/SQLite/API 首组 RED 为 `7 failed`：SQLite trigger 使 Task 插入失败后原响应为 500，detector/scanner/branch 的六项未知 `RuntimeError`/`ValueError` 均被误报为 400。补偿不确定分支的变异 RED 证明，不执行所有权校验时会谎报普通存储失败。GREEN 后，存储失败只安全释放本次 task worktree；成功补偿固定为可重试的 `503 TASK_STORAGE_UNAVAILABLE`，所有权变化、清理失败或结果不确定固定为 `503 WORKTREE_UNCERTAIN` 并保留其他 owner 的 marker/目录。移除 SQLite 故障后同一 Workspace 可重试成功，不存在幽灵 owner。
+- **异常边界：** 项目路径与默认分支使用专用领域异常；只有路径解析/私有状态重叠、项目检测、仓库扫描和默认分支领域失败返回 400。依赖端口的未知内置异常由全局边界脱敏为 500，不再伪装用户输入错误。
+- **限定证据：** 核心与不确定分支 `8 passed`，task/project 聚焦 `43 passed`，API + worktree + storage 组合回归 `147 passed, 1 skipped`；静态检查和差异门禁在提交前重新取得。

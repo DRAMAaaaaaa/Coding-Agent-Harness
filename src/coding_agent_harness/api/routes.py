@@ -11,8 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from coding_agent_harness.api.dependencies import (
     ApiDependencies,
+    DefaultBranchError,
     OrchestratorPort,
     RuntimeUnavailableError,
+    TaskStorageUnavailableError,
 )
 from coding_agent_harness.api.session import SessionGuard
 from coding_agent_harness.api.sse import task_events
@@ -22,7 +24,10 @@ from coding_agent_harness.domain.limits import (
     validate_requirement_size,
 )
 from coding_agent_harness.domain.models import Task
-from coding_agent_harness.governance.path_identity import trusted_paths_overlap
+from coding_agent_harness.governance.path_identity import (
+    UnsafePathNamespaceError,
+    trusted_paths_overlap,
+)
 from coding_agent_harness.storage.workspaces import StoredWorkspace, WorkspaceStorageError
 from coding_agent_harness.workspace.detector import ProjectDetectionError
 from coding_agent_harness.workspace.scanner import RepositoryScanError
@@ -36,6 +41,10 @@ from coding_agent_harness.workspace.worktrees import (
 
 _SUMMARY_ITEM_LIMIT = 256
 _SUMMARY_TOTAL_LIMIT = 16 * 1024
+
+
+class ProjectPathError(ValueError):
+    """请求中的项目路径不满足本地 Workspace 边界。"""
 
 
 class _Request(BaseModel):
@@ -80,16 +89,11 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
         sessions.require_mutation(request)
         active = dependencies or request.app.state.dependencies
         try:
-            root = Path(body.path).resolve(strict=True)
-            if any(
-                trusted_paths_overlap(root, private_root)
-                for private_root in active.private_roots
-            ):
-                raise ValueError("项目路径与 Harness 私有状态重叠")
+            root = _resolve_project_root(body.path, active.private_roots)
             profile = await active.worker.run(active.detector.detect, root)
             repository_map = await active.worker.run(active.scanner.scan, root)
             if repository_map.root != root:
-                raise ValueError("项目路径不是 Git 根目录")
+                raise ProjectPathError("项目路径不是 Git 根目录")
             branch = await active.worker.run(active.branch_resolver.default_branch, root)
             from coding_agent_harness.workspace.models import Workspace
 
@@ -99,7 +103,12 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
             return _workspace_response(stored, repository_map)
         except WorkspaceStorageError as error:
             raise _error(409, "WORKSPACE_CONFLICT", str(error)) from None
-        except (OSError, RuntimeError, ValueError, ProjectDetectionError, RepositoryScanError):
+        except (
+            ProjectPathError,
+            ProjectDetectionError,
+            RepositoryScanError,
+            DefaultBranchError,
+        ):
             raise _error(400, "INVALID_PROJECT", "项目路径无效或不是受支持的 Git 仓库") from None
 
     @router.post("/api/projects/{workspace_id}/trust")
@@ -169,6 +178,13 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
             ) from None
         except RuntimeUnavailableError:
             raise _error(503, "RUNTIME_UNAVAILABLE", "Agent 运行时未配置") from None
+        except TaskStorageUnavailableError:
+            raise _error(
+                503,
+                "TASK_STORAGE_UNAVAILABLE",
+                "任务存储暂时不可用，请重试",
+                details={"retryable": True},
+            ) from None
         except RequirementTooLargeError:
             raise _error(422, "VALIDATION_ERROR", "请求格式无效") from None
         try:
@@ -253,6 +269,22 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
         return _task_response(task)
 
     return router
+
+
+def _resolve_project_root(path: str, private_roots: tuple[Path, ...]) -> Path:
+    try:
+        root = Path(path).resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise ProjectPathError("项目路径无法解析") from None
+    try:
+        overlaps_private_state = any(
+            trusted_paths_overlap(root, private_root) for private_root in private_roots
+        )
+    except UnsafePathNamespaceError:
+        raise ProjectPathError("项目路径命名空间无效") from None
+    if overlaps_private_state:
+        raise ProjectPathError("项目路径与 Harness 私有状态重叠")
+    return root
 
 
 async def _orchestrator_task(dependencies: ApiDependencies, method: str, task_id: UUID) -> Task:
