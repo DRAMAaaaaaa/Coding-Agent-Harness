@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+from pathlib import Path
+from uuid import UUID
+
+import httpx
+
+from coding_agent_harness.api.app import create_app
+from coding_agent_harness.config import HarnessSettings
+from tests.api.conftest import session_headers
+from tests.api.test_projects import _git_repo
+
+
+async def test_task_api_runs_to_plan_gate(client: httpx.AsyncClient, tmp_path: Path) -> None:
+    headers = await session_headers(client)
+    project = await client.post("/api/projects", json={"path": str(_git_repo(tmp_path / "repo"))}, headers=headers)
+    trusted = await client.post(
+        f"/api/projects/{project.json()['id']}/trust",
+        json={"fingerprint": project.json()["trust_fingerprint"]},
+        headers=headers,
+    )
+    task = await client.post(
+        "/api/tasks",
+        json={"workspace_id": trusted.json()["id"], "requirement": "修复 add"},
+        headers=headers,
+    )
+    assert task.status_code == 201
+    assert task.json()["state"] == "WAITING_PLAN_APPROVAL"
+    events = await client._transport.app.state.event_store.list_for_task(UUID(task.json()["id"]))  # type: ignore[attr-defined]
+    assert [event.sequence for event in events] == [1, 2, 3, 4, 5]
+    assert [event.event_type for event in events] == ["SCAN_STARTED", "PLAN_STARTED", "LLM_REQUESTED", "LLM_RESPONSE_RECEIVED", "PLAN_PROPOSED"]
+    assert events[-1].payload["content_bytes"] > 0
+    assert "content_sha256" in events[-1].payload
+    persisted = await client.get(f"/api/tasks/{task.json()['id']}")
+    assert persisted.json() == task.json()
+    rejected_final = await client.post(
+        f"/api/tasks/{task.json()['id']}/final/approve", headers=headers,
+    )
+    assert rejected_final.status_code == 409
+
+
+async def test_task_rejects_untrusted_and_host_controls(client: httpx.AsyncClient, tmp_path: Path) -> None:
+    headers = await session_headers(client)
+    project = await client.post("/api/projects", json={"path": str(_git_repo(tmp_path / "repo"))}, headers=headers)
+    untrusted = await client.post(
+        "/api/tasks",
+        json={"workspace_id": project.json()["id"], "requirement": "修复 add"},
+        headers=headers,
+    )
+    assert untrusted.status_code == 409
+    rejected = await client.post(
+        "/api/tasks",
+        json={"workspace_id": project.json()["id"], "requirement": "", "branch": "main"},
+        headers=headers,
+    )
+    assert rejected.status_code == 422
+
+
+async def test_config_change_invalidates_trust_before_creating_task(
+    client: httpx.AsyncClient, tmp_path: Path
+) -> None:
+    root = _git_repo(tmp_path / "changed")
+    headers = await session_headers(client)
+    project = await client.post("/api/projects", json={"path": str(root)}, headers=headers)
+    trusted = await client.post(
+        f"/api/projects/{project.json()['id']}/trust",
+        json={"fingerprint": project.json()["trust_fingerprint"]}, headers=headers,
+    )
+    dependencies = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    recording = _RecordingTaskRunner(dependencies.task_runner)
+    dependencies.task_runner = recording
+    assert dependencies.orchestrator_factory is not None
+    recording_factory = _RecordingOrchestratorFactory(dependencies.orchestrator_factory)
+    dependencies.orchestrator_factory = recording_factory
+    before_tasks = await (
+        await dependencies.tasks._database.connection.execute("SELECT COUNT(*) FROM tasks")  # type: ignore[attr-defined]
+    ).fetchone()
+    before_state = _relative_state_entries(dependencies.state_root)
+    (root / "pyproject.toml").write_text("[build-system]\nrequires=['changed']\n", encoding="utf-8")
+    response = await client.post(
+        "/api/tasks", json={"workspace_id": trusted.json()["id"], "requirement": "修复"}, headers=headers,
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "STALE_PROJECT_TRUST"
+    after_tasks = await (
+        await dependencies.tasks._database.connection.execute("SELECT COUNT(*) FROM tasks")  # type: ignore[attr-defined]
+    ).fetchone()
+    assert before_tasks == after_tasks == (0,)
+    assert recording.calls == 0
+    assert recording_factory.calls == 0
+    assert _relative_state_entries(dependencies.state_root) == before_state
+
+
+async def test_default_app_without_runtime_creates_no_task_or_worktree(tmp_path: Path) -> None:
+    state_root = tmp_path / "state"
+    app = create_app(settings=HarnessSettings(state_root=state_root, database_path=state_root / "harness.db"))
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as value:
+            headers = await session_headers(value)
+            project = await value.post("/api/projects", json={"path": str(_git_repo(tmp_path / "repo"))}, headers=headers)
+            trusted = await value.post(f"/api/projects/{project.json()['id']}/trust", json={"fingerprint": project.json()["trust_fingerprint"]}, headers=headers)
+            response = await value.post("/api/tasks", json={"workspace_id": trusted.json()["id"], "requirement": "x"}, headers=headers)
+        assert response.status_code == 503
+        count = await (await app.state.tasks._database.connection.execute("SELECT COUNT(*) FROM tasks")).fetchone()  # type: ignore[attr-defined]
+        assert count == (0,)
+        assert not (state_root / "worktrees").exists()
+
+
+class _RecordingTaskRunner:
+    def __init__(self, delegate: object) -> None:
+        self._delegate = delegate
+        self.calls = 0
+
+    async def create(self, workspace: object, task_id: object, requirement: str) -> object:
+        self.calls += 1
+        return await self._delegate.create(workspace, task_id, requirement)  # type: ignore[union-attr]
+
+
+class _RecordingOrchestratorFactory:
+    def __init__(self, delegate: object) -> None:
+        self._delegate = delegate
+        self.calls = 0
+
+    def __call__(self) -> object:
+        self.calls += 1
+        return self._delegate()  # type: ignore[operator]
+
+
+def _relative_state_entries(root: Path) -> tuple[str, ...]:
+    if not root.exists():
+        return ()
+    return tuple(sorted(path.relative_to(root).as_posix() for path in root.rglob("*")))

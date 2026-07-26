@@ -53,6 +53,7 @@ class Database:
         if os.name == "nt":
             raw_path = collapse_windows_extended_path(raw_path)
         database_path = Path(raw_path).resolve(strict=False)
+        database_path.parent.mkdir(parents=True, exist_ok=True)
         gate = _database_initialization_gate(
             database_path,
             asyncio.get_running_loop(),

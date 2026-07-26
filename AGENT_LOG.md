@@ -738,3 +738,29 @@
 - **本地集成：** 按用户既定选择，将 `codex/agent-loop` 以 fast-forward 从 `6e9c805` 合并到 `p1`，保留 Task 6 与四个整阶段返工的独立提交记录；未执行 pull、push 或任何网络请求。
 - **合并后验证：** 在 `p1` 重新运行 `scripts/test.ps1 -Mode All`，得到 `620 passed, 15 skipped`；Ruff、mypy、Web ESLint、TypeScript typecheck、`pip check` 与 `git diff --check 07dfa31..HEAD` 全部通过。
 - **清理事实：** Git worktree 注册与本地分支 `codex/agent-loop` 已删除，两个依赖 junction 只删除链接本身且主仓库依赖仍存在。Windows 进程仍短暂占用已清空的 `.worktrees/agent-loop` 目录，三次安全重试后仅保留空目录；不含代码或状态，不影响 Git 与产品验证。
+
+### 2026-07-27 — IMPL-MVP-3-TASK-7-REST-SSE
+
+- **范围与技能：** 在隔离 `codex/api` worktree 实现 MVP-3 Task 7；已完整阅读 `AGENTS.md`、Task brief、批准计划与规约，使用 `test-driven-development`、`systematic-debugging`、`verification-before-completion`。未联网、安装依赖、修改 001/002、merge 或 push；未实现 WebUI、记忆、凭据、host transfer 或真实 Provider。
+- **RED → GREEN：** 首轮 `tests/api tests/storage/test_workspace_repository.py` 因 `coding_agent_harness.api` 不存在稳定收集失败，证据保存在 `.superpowers/sdd/task-7-report.md`。随后以真实 SQLite、真实迁移、真实 ProjectDetector/WorkspaceScanner/WorktreeManager 与 SSE 测试转绿。调试中按堆栈定位并修复 FastAPI Query 参数位置、严格 JSON tuple 往返、UUID 显式边界解析与任务工作树构造遗漏的状态枚举；未使用 sleep 型并发。
+- **实现事实：** 新增 003 workspace 迁移和严格 `WorkspaceRepository`，持久化规范路径、profile JSON、信任指纹及信任状态；旧不完整行固定拒绝。FastAPI 工厂以依赖容器注入存储、扫描器、任务 runner 和编排器；项目接入只接受本地 Git 根且拒绝 state_root 重叠，信任必须重新检测精确 fingerprint。mutation 采用同源 Origin 与常量时间会话 token 门禁，错误统一为脱敏固定体；任务创建使用真实隔离 worktree，默认停在计划审批；SSE 按持久化序号续传。
+- **新鲜验证：** `pytest tests/api tests/storage tests/governance tests/agent -q` 为 `407 passed, 2 skipped`；Ruff、mypy（46 个源文件）和 `git diff --check` 通过。wheel/sdist 构建成功，归档检查均证实 001/002/003 各一份。待独立规约符合性和代码质量复审后才可将计划状态改为完成。
+
+### 2026-07-27 — REWORK-MVP-3-TASK-7-SPEC
+
+- **审查核实与 TDD：** 使用 `receiving-code-review`、`test-driven-development`、`systematic-debugging` 与 `verification-before-completion` 完整核实 Task 7 规约审查的 3 Critical、7 Important、1 Minor。新增真实 AgentOrchestrator/ScriptedMockProvider 计划门禁、非法最终批准、配置改变后零任务、SSE token canary、摘要和框架错误形状回归。
+- **实现收敛：** 默认服务不再伪造状态；缺失真实 runtime 时 task/编排端点固定 503，测试注入真实事件驱动 AgentOrchestrator。任务启动前复检 profile/fingerprint 并原子撤销过期信任；事件流在响应边界 Redactor 脱敏并屏蔽宿主私有字段；项目响应返回有界无源码摘要；框架 404/405/422 使用固定错误体。分支解析改为注入的 SafeGit，003 使用 path_key root_key 唯一，重复信任不刷新时间，并提供任务读取端点。
+- **新鲜验证：** API/storage 聚焦 `13 passed`；storage/governance/agent 回归 `399 passed, 2 skipped`；Ruff、mypy（46 files）、build、wheel/sdist 001/002/003 各一份和 diff check 均通过。未联网、安装、merge、push 或扩展 Task 8。
+
+### 2026-07-27 — REWORK-MVP-3-TASK-7-SPEC-ROUND2
+
+- **二轮返工：** 仓库摘要在 API 边界经 Redactor 投影并有总量上限，commit canary 不下发；默认路径选择抽成纯函数。新增独立 `test_migration_003.py`，覆盖 fresh 001→002→003、真实 v2 仅 003、v3 不重放 DDL 与未来版本拒绝；真实 API 回归补充摘要 canary、重复信任、过期信任、非法最终批准与读取状态。
+- **证据：** `tests/api tests/storage/test_workspace_repository.py tests/storage/test_migration_003.py -q` 为 `17 passed`；后续回归、静态检查、构建和归档在 amend 前重新执行。
+
+### 2026-07-27 — REWORK-MVP-3-TASK-7-SPEC-ROUND3
+
+- **测试补强：** 新增默认无 runtime 的真实 app/SQLite 零任务零 worktree 回归；真实 Agent 五事件计划序列；Windows 扩展命名空间 helper 与 SQLite alias（Windows 条件）；v2 approval 全字段快照；配置纯函数四平台路径分支和显式覆盖。未改生产代码。
+
+### 2026-07-27 — REWORK-MVP-3-TASK-7-SPEC-ROUND4
+
+- **零副作用回归：** 过期信任用例现在在修改配置前后比较真实 SQLite task 数、state_root 的递归相对条目快照，并以记录型 TaskRunner 断言 create 调用为零；因此可证明 409 `STALE_PROJECT_TRUST` 发生在任务、active marker、目标 worktree 或分支副作用之前。

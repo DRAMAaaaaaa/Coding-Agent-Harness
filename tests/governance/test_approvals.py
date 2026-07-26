@@ -739,7 +739,7 @@ async def test_fresh_database_runs_all_migrations_and_adds_task_config_version(
             await database.connection.execute("PRAGMA table_info(tasks)")
         ).fetchall()
 
-        assert version == (2,)
+        assert version == (3,)
         config_column = next(row for row in columns if row[1] == "config_version")
         assert config_column[2:5] == ("TEXT", 1, "'v1'")
     finally:
@@ -810,7 +810,7 @@ async def test_database_migrates_v1_legacy_approval_and_reopen_is_idempotent(
                 "SELECT COUNT(*) FROM approvals WHERE id = ?", (str(approval_id),)
             )
         ).fetchone()
-        assert version == (2,)
+        assert version == (3,)
         assert {
             "action_id",
             "reason_code",
@@ -908,7 +908,7 @@ async def test_two_database_instances_migrate_legacy_v1_once_without_sleep(
             journal_mode = await (
                 await database.connection.execute("PRAGMA journal_mode")
             ).fetchone()
-            assert version == (2,)
+            assert version == (3,)
             assert journal_mode is not None and journal_mode[0].casefold() == "wal"
         migrated = await (
             await first.connection.execute(

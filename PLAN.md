@@ -169,7 +169,8 @@ class TaskOrchestrator:
 | 8 | 记忆筛选、存储与上下文 | 3、4 | 可与 7 并行 | `codex/memory` | 待执行 |
 | 9 | Agent 编排循环与机制演示 | 3—8 | 无 | `codex/orchestrator` | 待执行 |
 | 10 | 凭据生命周期 | 1、4 | 可与 3 或 8 并行 | `codex/credentials` | 待执行 |
-| 11 | FastAPI REST/SSE 与交付产物 | 5、9、10 | 无 | `codex/api` | 待执行 |
+| MVP-3 Task 7 | 持久化 Workspace 与最小 REST/SSE | MVP-2 Task 6 | 独立 worktree | `codex/api` | 实现完成，待独立规约与质量复审（本分支单提交） |
+| 11 | FastAPI REST/SSE 与交付产物 | 5、9、10 | 无 | `codex/api` | 待执行（完整产品后续范围） |
 | 12 | React WebUI | 11 的接口契约 | 可在 API schema 冻结后与 11 后半段并行 | `codex/webui` | 待执行 |
 | 13 | 端到端测试与三机制演示 | 9、11、12 | 无 | `codex/e2e-demo` | 待执行 |
 | 14 | Docker、双 CI、README 与发布检查 | 13 | 无 | `codex/distribution` | 待执行 |
