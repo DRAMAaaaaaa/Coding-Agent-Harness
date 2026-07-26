@@ -764,3 +764,9 @@
 ### 2026-07-27 — REWORK-MVP-3-TASK-7-SPEC-ROUND4
 
 - **零副作用回归：** 过期信任用例现在在修改配置前后比较真实 SQLite task 数、state_root 的递归相对条目快照，并以记录型 TaskRunner 断言 create 调用为零；因此可证明 409 `STALE_PROJECT_TRUST` 发生在任务、active marker、目标 worktree 或分支副作用之前。
+
+### 2026-07-27 — REWORK-MVP-3-TASK-7-QUALITY-QA
+
+- **范围与技能：** 仅修复质量审查 C1、I1、I3；使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 与 `verification-before-completion`。未处理 QB/QC，未联网、安装、merge、push，也未运行 399 回归或构建。
+- **RED → GREEN：** 未知 `evil.example` Host 原可先取得 token 再进入 mutation 业务依赖，启动构造失败时数据库关闭次数为 0，且数据库可显式落在私有状态根外。现由冻结 `HarnessSettings` 提供可信 Host/Origin 与私有路径：所有请求在路由前校验 Host，mutation 额外校验配置 Origin 和常量时间 session，首页使用 `Cache-Control: no-store`；自建数据库打开后立即受 `try/finally` 保护；数据库必须位于 `state_root`，数据库/WAL/SHM 父目录均参与项目重叠拒绝。
+- **验证事实：** Repository、Scanner、SafeGit、runtime 四类真实 lifespan 故障注入均关闭自建数据库恰好一次，外部注入数据库保持可用；聚焦测试 `30 passed`、API `22 passed`、含 workspace repository/003/config 的规约集合 `43 passed`。静态检查与差异门禁在提交前重新取得新鲜证据。

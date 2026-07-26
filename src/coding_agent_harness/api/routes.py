@@ -61,7 +61,10 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
         active = dependencies or request.app.state.dependencies
         try:
             root = Path(body.path).resolve(strict=True)
-            if trusted_paths_overlap(root, active.state_root):
+            if any(
+                trusted_paths_overlap(root, private_root)
+                for private_root in active.private_roots
+            ):
                 raise ValueError("项目路径与 Harness 私有状态重叠")
             profile = active.detector.detect(root)
             repository_map = active.scanner.scan(root)

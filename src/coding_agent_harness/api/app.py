@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
+from starlette.middleware.base import RequestResponseEndpoint
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse
 
@@ -28,13 +29,24 @@ from coding_agent_harness.workspace.git import SafeGit
 
 def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDependencies | None = None) -> FastAPI:
     settings = settings or HarnessSettings()
-    sessions = SessionGuard()
+    if settings.trusted_hosts is None or settings.trusted_origins is None:
+        raise ValueError("可信 Host 与 Origin 未配置")
+    sessions = SessionGuard(
+        trusted_hosts=settings.trusted_hosts,
+        trusted_origins=settings.trusted_origins,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        database: Database | None = None
-        if dependencies is None:
-            database = await Database.open(settings.resolved_database_path())
+        if dependencies is not None:
+            app.state.dependencies = dependencies
+            app.state.event_store = dependencies.event_store
+            app.state.tasks = dependencies.tasks
+            yield
+            return
+
+        database = await Database.open(settings.resolved_database_path())
+        try:
             workspaces = WorkspaceRepository(database)
             tasks = TaskRepository(database)
             events = EventStore(database)
@@ -42,27 +54,41 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
                 workspaces=workspaces, tasks=tasks, event_store=events,
                 detector=ProjectDetector(), scanner=WorkspaceScanner(state_root=settings.state_root),
                 state_root=settings.state_root,
+                private_roots=settings.private_state_roots(),
                 orchestrator_factory=None,
                 task_runner=UnavailableTaskRunner(),
                 branch_resolver=SafeBranchResolver(SafeGit(settings.state_root)),
             )
-        else:
-            app.state.dependencies = dependencies
-        current: ApiDependencies = app.state.dependencies
-        app.state.event_store = current.event_store
-        app.state.tasks = current.tasks
-        try:
+            app.state.event_store = events
+            app.state.tasks = tasks
             yield
         finally:
-            if database is not None:
-                await database.close()
+            await database.close()
 
     app = FastAPI(lifespan=lifespan)
     app.include_router(create_router(None, sessions))
 
+    @app.middleware("http")
+    async def require_trusted_host(
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        if not sessions.is_trusted_host(request):
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content=_error_body("UNTRUSTED_HOST", "请求 Host 不受信任"),
+            )
+        return await call_next(request)
+
     @app.get("/")
     async def index() -> PlainTextResponse:
-        return PlainTextResponse("Coding Agent Harness", headers={"X-Harness-Session": sessions.token})
+        return PlainTextResponse(
+            "Coding Agent Harness",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Harness-Session": sessions.token,
+            },
+        )
 
     @app.exception_handler(Exception)
     async def unexpected_error(_: Request, error: Exception) -> JSONResponse:

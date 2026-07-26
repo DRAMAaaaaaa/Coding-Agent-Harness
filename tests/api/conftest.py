@@ -20,6 +20,8 @@ async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
         settings=HarnessSettings(
             state_root=tmp_path / "state",
             database_path=tmp_path / "state" / "harness.db",
+            trusted_hosts=("testserver",),
+            trusted_origins=("http://testserver",),
         )
     )
     async with app.router.lifespan_context(app):

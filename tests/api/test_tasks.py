@@ -93,7 +93,14 @@ async def test_config_change_invalidates_trust_before_creating_task(
 
 async def test_default_app_without_runtime_creates_no_task_or_worktree(tmp_path: Path) -> None:
     state_root = tmp_path / "state"
-    app = create_app(settings=HarnessSettings(state_root=state_root, database_path=state_root / "harness.db"))
+    app = create_app(
+        settings=HarnessSettings(
+            state_root=state_root,
+            database_path=state_root / "harness.db",
+            trusted_hosts=("testserver",),
+            trusted_origins=("http://testserver",),
+        )
+    )
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as value:
             headers = await session_headers(value)

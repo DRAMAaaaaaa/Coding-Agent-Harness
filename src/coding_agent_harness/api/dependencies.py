@@ -48,6 +48,7 @@ class ApiDependencies:
     detector: ProjectDetector
     scanner: WorkspaceScanner
     state_root: Path
+    private_roots: tuple[Path, ...]
     orchestrator_factory: OrchestratorFactory | None
     task_runner: TaskRunner
     branch_resolver: BranchResolver

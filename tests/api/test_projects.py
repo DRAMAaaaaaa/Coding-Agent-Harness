@@ -5,6 +5,8 @@ from pathlib import Path
 
 import httpx
 
+from coding_agent_harness.api.app import create_app
+from coding_agent_harness.config import HarnessSettings
 from tests.api.conftest import session_headers
 
 
@@ -101,3 +103,29 @@ async def test_schema_rejects_host_configuration_fields(client: httpx.AsyncClien
     )
     assert response.status_code == 422
     assert "secret" not in response.text
+
+
+async def test_project_rejects_private_database_parent_overlap(tmp_path: Path) -> None:
+    project = _git_repo(tmp_path / "project-with-private-state")
+    state_root = project / "private-state"
+    app = create_app(
+        settings=HarnessSettings(
+            state_root=state_root,
+            database_path=state_root / "database" / "harness.db",
+            trusted_hosts=("testserver",),
+            trusted_origins=("http://testserver",),
+        )
+    )
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as value:
+            response = await value.post(
+                "/api/projects",
+                json={"path": str(project)},
+                headers=await session_headers(value),
+            )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_PROJECT"
