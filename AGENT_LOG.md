@@ -726,3 +726,9 @@
 - **验证竞态与 3/8/2：** `run_verification` 保留 pre-run profile/snapshot，runner 成功后重建 post 上下文；任一 post 不可用、trust/config 变化或 worktree 指纹不等均返回可重试的 `WORKTREE_CHANGED_DURING_VERIFICATION`，evidence 固定为 `None`。真实 tracked/untracked/config 三类 runner 均不能进入最终审查，后续 CompleteAction 返回 `VERIFICATION_REQUIRED`。反馈无改善按 brief 的两次调用冻结；failure_count 下降、类别变化或未知计数继续修正，第三次同 fingerprint 和第八次总预算仍按原优先级停机。
 - **聚焦证据与范围：** agent（含真实闭环）、verification/Registry/search、feedback、C3 redaction、storage、providers 合计 `156 passed, 1 skipped`；单独三机制组合为 `51 passed, 1 skipped`，Ruff 通过，mypy 检查 39 个源文件无问题。未运行全量测试，未联网、安装依赖、merge 或 push；本提交完成后仍需独立规约符合性与代码质量复审。
 - **最终复审 observation 纠偏：** 唯一 Important 复现为 `11 failed, 8 passed`：`run_verification` 的 STALE_CONFIG、approval、policy 和三类 worktree 竞态失败均没有 failure observation，普通验证失败下一请求也只有 runner 输出而缺稳定 code。`_with_observation()` 现仅允许成功验证不生成通用观察，所有失败统一产生 `kind=failure`、稳定 code 与有界 diagnostic；验证反馈固定为 `RESULT_CODE` 加 `UNTRUSTED_RUNNER_OUTPUT` 数据段，runner 的“1 passed”不能再遮蔽 `WORKTREE_CHANGED_DURING_VERIFICATION` 或被表述为验证成功。tracked/untracked/config 真实集成均断言无 evidence、完成不放行、下一 Provider 请求含失败 observation/code/不可信 runner 标签；普通 `VERIFICATION_FAILED` code 可见，C3 脱敏与限长测试继续纳入最终聚焦。最终限定的 agent/真实闭环、verification、feedback 与 redaction 为 `99 passed`。
+
+### 2026-07-27 — REVIEW-MVP-2-FINAL-CLEAN
+
+- **整阶段最终复审：** 受审范围 `07dfa31..c75c26a`。原 3 个 Critical、5 个 Important，以及返工后发现的工具观察回灌、验证期间 worktree 竞态、brief 冻结两轮停机和验证失败 code 可见性均已关闭；最终结论为 Spec compliant、Critical / Important / Minor `0 / 0 / 0`、Ready to merge。
+- **主控新鲜门禁：** `scripts/test.ps1 -Mode All` 得到 `620 passed, 15 skipped`；Ruff、mypy（39 个源文件）、Web ESLint、TypeScript typecheck、`pip check` 与 `git diff --check 07dfa31..HEAD` 全部通过，工作树在写入本记录前干净。
+- **状态与范围：** MVP-2 Task 5/6 完成，等待按既定选择本地合并到 `p1`；未联网、安装依赖、push 或处理 `MVP-ISSUE-016`。
