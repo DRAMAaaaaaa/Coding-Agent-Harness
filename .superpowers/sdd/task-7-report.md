@@ -72,3 +72,11 @@ wheel/sdist 均包含 `001_initial.sql`、`002_governance_approvals.sql`、
 GREEN 后，API 与 Repository 统一使用共享 `MAX_REQUIREMENT_BYTES` 的 UTF-8 字节规则：超限 API 请求返回 422，真实 task 计数及 state_root 条目保持不变，持久层防御性检查直接拒绝而不改写需求。Workspace 从行恢复时分别严格规范化 root/git_root，要求两者的 path key 均匹配持久化 root_key、`same_path` 成立，并核对 profile 与独立指纹列；三类篡改均 fail closed。EventStore 新增最大 100 条的公共批次读取，SSE 按最后 sequence 循环读取固定批次；超大事件仅将 payload 替换为结构化脱敏标记，task_id、sequence、event_type、状态和时间字段全部保留。
 
 直接相关四文件回归为 `53 passed`，API + storage 回归为 `89 passed`；Ruff 与 47 个源文件的 mypy 通过。未运行全量或构建，未联网、安装、merge 或 push。
+
+## QC 独立复审返工
+
+复审指出 I6 仍存在脱敏扩张发生在 worktree 创建之后的时序缺口。真实回归以 `token=x ` 重复 8,192 次构造恰好 65,536 UTF-8 bytes 的原始需求；实际 `TaskRepository` Redactor 将其扩张到上限之外。首轮 API 返回 500，正常 65,536-byte 未扩张输入为 201，证明问题只在 Repository 规范化后的第二边界。
+
+实现把 Repository 的完整准备过程公开为单一无副作用路径：`prepare_requirement()` 依次执行原始字节校验、既有 Redactor 脱敏和最终字节校验，并返回不可变的 `PreparedRequirement`。`LocalTaskRunner` 在任何 worktree worker、marker 或 Task 副作用前取得该结果，持久化通过 `create_prepared()` 原样复用，不在 API 重建脱敏规则。API 只捕获明确的 `RequirementTooLargeError` 并映射为 `422 VALIDATION_ERROR`；未知异常仍为脱敏 500。
+
+GREEN 后，扩张输入为 422，task count 保持 0，workspace worktree 目录、`.active` 和 state_root 快照均无新增；正常边界仍创建任务并精确持久化。I6 聚焦为 `4 passed`，API + storage 回归为 `91 passed`，mypy 检查 47 个源文件通过。未触碰 I7/M1、QA/QB，未运行全量或构建，也未联网、安装、merge 或 push。

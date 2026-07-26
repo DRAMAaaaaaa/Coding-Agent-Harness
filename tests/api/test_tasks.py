@@ -103,6 +103,64 @@ async def test_task_rejects_utf8_requirement_over_limit_without_side_effects(
     assert _relative_state_entries(active.state_root) == before_state
 
 
+async def test_task_rejects_redaction_expansion_before_worktree_side_effects(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    headers, workspace_id = await _trusted_workspace(
+        client,
+        tmp_path / "redaction-expansion",
+    )
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    requirement = "token=x " * 8_192
+    assert len(requirement.encode("utf-8")) == 65_536
+    before_state = _relative_state_entries(active.state_root)
+
+    response = await _post(
+        client,
+        "/api/tasks",
+        json={"workspace_id": workspace_id, "requirement": requirement},
+        headers=headers,
+        suppress_app_exception=True,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "VALIDATION_ERROR"
+    task_count = await (
+        await active.tasks._database.connection.execute(  # type: ignore[attr-defined]
+            "SELECT COUNT(*) FROM tasks"
+        )
+    ).fetchone()
+    workspace_state = active.state_root / "worktrees" / workspace_id
+    assert task_count == (0,)
+    assert not workspace_state.exists()
+    assert not (workspace_state / ".active").exists()
+    assert _relative_state_entries(active.state_root) == before_state
+
+
+async def test_task_accepts_normal_requirement_at_utf8_byte_limit(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    headers, workspace_id = await _trusted_workspace(
+        client,
+        tmp_path / "normal-boundary",
+    )
+    requirement = "a" * 65_536
+
+    response = await client.post(
+        "/api/tasks",
+        json={"workspace_id": workspace_id, "requirement": requirement},
+        headers=headers,
+    )
+
+    assert response.status_code == 201
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    stored = await active.tasks.get(UUID(response.json()["id"]))
+    assert stored is not None
+    assert stored.requirement == requirement
+
+
 async def test_config_change_invalidates_trust_before_creating_task(
     client: httpx.AsyncClient, tmp_path: Path
 ) -> None:

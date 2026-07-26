@@ -790,3 +790,10 @@
 - **RED → GREEN：** 30,000 个 CJK 字符（90,000 UTF-8 bytes）原被 API 以 201 接受且 Repository 静默替换，首轮为 `2 failed`；持久化 `git_root` 或独立 `trust_fingerprint` 列被篡改后仍可读取，首轮为 `2 failed, 1 passed`；EventStore 缺少有界批次接口、SSE 使用无界读取且超大事件丢失信封，首轮为 `3 failed`。GREEN 后三组聚焦依次为 `2 passed`、`3 passed`、`3 passed`。
 - **实现事实：** 任务需求统一经共享 `MAX_REQUIREMENT_BYTES` 的 UTF-8 字节规则验证，API 超限固定 422 且任务表、state_root/worktree 无副作用，Repository 保留同规则的防御性拒绝而不再静默改写。Workspace 恢复分别规范化 root/git_root，要求二者路径键均等于持久化 root_key 且物理同一，并核对 profile 与独立信任指纹列。EventStore 提供上限 100 的公共批次读取；SSE 以 sequence 游标固定分批，超大事件只替换 payload 并保留完整 TaskEvent 信封。
 - **限定验证：** 四个直接相关测试文件为 `53 passed`，API + storage 回归为 `89 passed`；Ruff 和 mypy（47 个源文件）通过。最终差异检查和提交前新鲜证据另行取得。
+
+### 2026-07-27 — REWORK-MVP-3-TASK-7-QUALITY-QC-REREVIEW
+
+- **复审核实与范围：** 完整读取 QC 独立复审，使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 与 `verification-before-completion`；仅修复 I6 的脱敏扩张时点，不修改已通过的 I7/M1 或 QA/QB。
+- **RED → GREEN：** 真实 API/Git/SQLite 回归使用 `token=x ` 重复 8,192 次，证明原始值恰为 65,536 UTF-8 bytes、经实际 Repository Redactor 后超限；首轮稳定返回 500，而正常未扩张的 65,536-byte 需求为 201。修复后扩张输入固定为 `422 VALIDATION_ERROR`，真实 task 计数为 0，workspace worktree 目录、`.active` 和 state_root 条目均无新增；正常边界仍为 201 且持久化内容精确一致。
+- **单一准备边界：** `TaskRepository.prepare_requirement()` 是唯一的原始字节校验、真实 Redactor 脱敏和最终字节校验路径，产出 `PreparedRequirement`；`LocalTaskRunner` 在启动 worktree worker 前完成准备，随后 `create_prepared()` 只复用该结果。仅明确的 `RequirementTooLargeError` 在 API 映射为 422，既有未知 `ValueError` 继续由内部错误边界映射为脱敏 500。
+- **限定验证：** 四项 I6 聚焦为 `4 passed`；API + storage 回归为 `91 passed`，mypy 检查 47 个源文件通过。Ruff、差异检查和提交前状态在提交前重新取得；未联网、安装、运行全量/构建、merge 或 push。

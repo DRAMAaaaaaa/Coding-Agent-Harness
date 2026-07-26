@@ -17,8 +17,11 @@ from coding_agent_harness.api.dependencies import (
 from coding_agent_harness.api.session import SessionGuard
 from coding_agent_harness.api.sse import task_events
 from coding_agent_harness.agent.orchestrator import TaskStateError
+from coding_agent_harness.domain.limits import (
+    RequirementTooLargeError,
+    validate_requirement_size,
+)
 from coding_agent_harness.domain.models import Task
-from coding_agent_harness.domain.limits import validate_requirement_size
 from coding_agent_harness.governance.path_identity import trusted_paths_overlap
 from coding_agent_harness.storage.workspaces import StoredWorkspace, WorkspaceStorageError
 from coding_agent_harness.workspace.detector import ProjectDetectionError
@@ -166,6 +169,8 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
             ) from None
         except RuntimeUnavailableError:
             raise _error(503, "RUNTIME_UNAVAILABLE", "Agent 运行时未配置") from None
+        except RequirementTooLargeError:
+            raise _error(422, "VALIDATION_ERROR", "请求格式无效") from None
         try:
             proposed = await orchestrator.propose_plan(task.id)
         except ProviderError:

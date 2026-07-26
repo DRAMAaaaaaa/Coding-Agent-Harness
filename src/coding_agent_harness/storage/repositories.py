@@ -1,4 +1,5 @@
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
@@ -19,18 +20,40 @@ class TaskNotFoundError(LookupError):
     """更新不存在的任务时抛出的稳定异常。"""
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedRequirement:
+    """已经过 Repository 脱敏与最终字节校验的需求。"""
+
+    value: str
+
+
 class TaskRepository:
     def __init__(self, database: Database, redactor: Redactor | None = None) -> None:
         self._database = database
         self._redactor = redactor or Redactor()
 
-    async def create(self, task: Task) -> Task:
-        validate_requirement_size(task.requirement)
-        requirement = self._redactor.sanitize(task.requirement).value
-        if not isinstance(requirement, str):
-            raise TypeError("任务需求必须是字符串")
+    def prepare_requirement(self, requirement: str) -> PreparedRequirement:
         validate_requirement_size(requirement)
-        task = task.model_copy(update={"requirement": requirement})
+        prepared = self._redactor.sanitize(requirement).value
+        if not isinstance(prepared, str):
+            raise TypeError("任务需求必须是字符串")
+        validate_requirement_size(prepared)
+        return PreparedRequirement(prepared)
+
+    async def create(self, task: Task) -> Task:
+        return await self.create_prepared(
+            task,
+            self.prepare_requirement(task.requirement),
+        )
+
+    async def create_prepared(
+        self,
+        task: Task,
+        requirement: PreparedRequirement,
+    ) -> Task:
+        prepared = requirement.value
+        validate_requirement_size(prepared)
+        task = task.model_copy(update={"requirement": prepared})
         async with self._database.operation_lock:
             try:
                 await self._database.connection.execute(

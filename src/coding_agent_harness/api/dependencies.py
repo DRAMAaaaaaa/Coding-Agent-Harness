@@ -140,6 +140,8 @@ class LocalTaskRunner:
         self._worker = worker or BlockingWorker()
 
     async def create(self, workspace: Workspace, task_id: UUID, requirement: str) -> Task:
+        prepared_requirement = self._tasks.prepare_requirement(requirement)
+
         def create_worktree() -> None:
             WorktreeManager(workspace, self._state_root).create(task_id, "HEAD")
 
@@ -155,7 +157,7 @@ class LocalTaskRunner:
                 created_at=datetime.now(UTC),
                 deadline_at=None,
             )
-            return await self._tasks.create(task)
+            return await self._tasks.create_prepared(task, prepared_requirement)
 
         operation = asyncio.create_task(create_and_persist())
         try:
