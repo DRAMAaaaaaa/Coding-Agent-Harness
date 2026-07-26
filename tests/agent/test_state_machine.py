@@ -31,6 +31,7 @@ BASE_TRANSITIONS = {
         TaskState.EXECUTING,
         TaskState.WAITING_ACTION_APPROVAL,
         TaskState.VERIFYING,
+        TaskState.WAITING_FINAL_REVIEW,
         TaskState.WAITING_USER,
         TaskState.FAILED,
     },
@@ -48,6 +49,7 @@ BASE_TRANSITIONS = {
     },
     TaskState.VERIFYING: {
         TaskState.CORRECTING,
+        TaskState.DECIDING,
         TaskState.WAITING_FINAL_REVIEW,
         TaskState.WAITING_USER,
         TaskState.FAILED,
@@ -93,8 +95,11 @@ def test_legal_transitions_match_frozen_contract() -> None:
         ),
         (TaskState.WAITING_ACTION_APPROVAL, "ACTION_APPROVED", TaskState.EXECUTING),
         (TaskState.WAITING_ACTION_APPROVAL, "ACTION_REJECTED", TaskState.DECIDING),
+        (TaskState.EXECUTING, "READ_TOOL_COMPLETED", TaskState.DECIDING),
         (TaskState.EXECUTING, "TOOL_COMPLETED", TaskState.VERIFYING),
+        (TaskState.VERIFYING, "VERIFICATION_READY", TaskState.DECIDING),
         (TaskState.VERIFYING, "VERIFICATION_FAILED", TaskState.CORRECTING),
+        (TaskState.DECIDING, "FINAL_SUMMARY_PROPOSED", TaskState.WAITING_FINAL_REVIEW),
         (TaskState.CORRECTING, "CORRECTION_READY", TaskState.DECIDING),
         (
             TaskState.VERIFYING,
@@ -128,6 +133,13 @@ def test_state_machine_rejects_execution_before_plan_approval() -> None:
 def test_state_machine_rejects_unknown_event() -> None:
     with pytest.raises(IllegalTransition):
         StateMachine().transition(TaskState.CREATED, "UNKNOWN")
+
+
+def test_state_machine_records_tool_start_without_advancing_side_effect_state() -> None:
+    assert (
+        StateMachine().transition(TaskState.EXECUTING, "TOOL_EXECUTION_STARTED")
+        is TaskState.EXECUTING
+    )
 
 
 @pytest.mark.parametrize("current", sorted(TERMINAL_STATES, key=str))

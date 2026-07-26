@@ -36,6 +36,7 @@ LEGAL_TRANSITIONS: dict[TaskState, set[TaskState]] = {
         TaskState.EXECUTING,
         TaskState.WAITING_ACTION_APPROVAL,
         TaskState.VERIFYING,
+        TaskState.WAITING_FINAL_REVIEW,
         TaskState.WAITING_USER,
         TaskState.FAILED,
         TaskState.CANCELLED,
@@ -55,6 +56,7 @@ LEGAL_TRANSITIONS: dict[TaskState, set[TaskState]] = {
     },
     TaskState.VERIFYING: {
         TaskState.CORRECTING,
+        TaskState.DECIDING,
         TaskState.WAITING_FINAL_REVIEW,
         TaskState.WAITING_USER,
         TaskState.FAILED,
@@ -90,10 +92,13 @@ _EVENT_TARGETS: Final[dict[str, TaskState]] = {
     "ACTION_APPROVAL_REQUIRED": TaskState.WAITING_ACTION_APPROVAL,
     "ACTION_APPROVED": TaskState.EXECUTING,
     "ACTION_REJECTED": TaskState.DECIDING,
+    "READ_TOOL_COMPLETED": TaskState.DECIDING,
     "TOOL_COMPLETED": TaskState.VERIFYING,
+    "VERIFICATION_READY": TaskState.DECIDING,
     "VERIFICATION_FAILED": TaskState.CORRECTING,
     "CORRECTION_READY": TaskState.DECIDING,
     "VERIFICATION_PASSED": TaskState.WAITING_FINAL_REVIEW,
+    "FINAL_SUMMARY_PROPOSED": TaskState.WAITING_FINAL_REVIEW,
     "FINAL_REVIEW_APPROVED": TaskState.COMPLETED,
     "USER_INPUT_REQUIRED": TaskState.WAITING_USER,
     "USER_RESUMED": TaskState.DECIDING,
@@ -103,6 +108,22 @@ _EVENT_TARGETS: Final[dict[str, TaskState]] = {
 
 _TOOL_STARTED: Final = "TOOL_EXECUTION_STARTED"
 _TOOL_FINISHED: Final = {"TOOL_EXECUTION_COMPLETED", "TOOL_EXECUTION_FAILED"}
+_STATE_PRESERVING_EVENTS: Final = {
+    "LLM_REQUESTED",
+    "LLM_RESPONSE_RECEIVED",
+    "ACTION_PARSED",
+    "ACTION_PARSE_FAILED",
+    "GOVERNANCE_ALLOWED",
+    "GOVERNANCE_BLOCKED",
+    "TOOL_EXECUTION_STARTED",
+    "TOOL_EXECUTION_COMPLETED",
+    "TOOL_EXECUTION_FAILED",
+    "VERIFICATION_RECORDED",
+    "VERIFICATION_SUCCEEDED",
+    "FEEDBACK_RECORDED",
+    "FINAL_SUMMARY_RECORDED",
+    "OBSERVATION_RECORDED",
+}
 
 
 class IllegalTransition(RuntimeError):
@@ -122,6 +143,10 @@ class RecoveryResult:
 
 class StateMachine:
     def transition(self, current: TaskState, event_type: str) -> TaskState:
+        if event_type in _STATE_PRESERVING_EVENTS:
+            if event_type in {_TOOL_STARTED, *_TOOL_FINISHED} and current is not TaskState.EXECUTING:
+                raise IllegalTransition(f"工具执行事件只能发生在 EXECUTING：{event_type}")
+            return current
         target = _EVENT_TARGETS.get(event_type)
         if target is None:
             raise IllegalTransition(f"未知事件类型：{event_type}")

@@ -648,3 +648,24 @@
 - **独立复审：** Task 5 最终提交 `0663960` 的规约符合性与代码质量复审均通过，Critical / Important / Minor 为 `0 / 0 / 0`，Task quality 为 Approved；定向复验为 `8 passed`。此前 search 策略协议、失效验证 runner 零调用和协作 CAS 契约均已收口。
 - **主控新鲜门禁：** `scripts/test.ps1 -Mode All` 取得全量 pytest `557 passed, 14 skipped`，Ruff 检查 33 个源文件通过、mypy 无问题，Web ESLint 与 TypeScript typecheck 通过；`pip check` 无损坏依赖，`git diff --check 07dfa31..HEAD` 通过，工作树干净。
 - **状态与范围：** MVP-2 Task 5 据此完成，Task 6 尚未开始；未联网、安装依赖、merge 或 push，`MVP-ISSUE-016` 仍由 MVP-4 Task 9 处理。
+
+### 2026-07-26 — IMPL-MVP-2-AGENT-LOOP
+
+- **任务与范围：** 在隔离 worktree `codex/agent-loop` 按 `.superpowers/sdd/task-6-brief.md` 实现确定性反馈与离线 Mock Agent 主循环；未联网、未安装依赖、未处理 `MVP-ISSUE-016`、未 merge 或 push。
+- **技能与 TDD：** 使用 `test-driven-development`、`systematic-debugging`、`verification-before-completion`。先新增反馈 3/8/2 预算、失败反馈改变下一动作、事件序列/危险动作阻断和工具开始状态的测试；RED 首轮因 `feedback` 与 `orchestrator` 模块不存在而收集失败，状态机目标测试则稳定失败于未知 `TOOL_EXECUTION_STARTED`。最小实现后转绿。
+- **实现事实：** 新增固定失败分类、去临时路径/行列/耗时噪声的指纹、3 次同指纹与 8 次验证预算、两轮无进展升级；新增注入式 Provider/Parser/ToolRegistry/EventStore/TaskRepository 编排器。每个 LLM、解析、治理、工具开始/结束、验证和反馈决定均落盘为事件；未完成工具 started 由既有恢复逻辑转为 `UNCERTAIN_SIDE_EFFECT`，不自动重放；`delete_file` 在执行前确定性阻断。
+- **类型纠偏与验证：** 严格 mypy 首轮定位到 LLM 消息和事件载荷的 `JsonValue` 不变型边界；仅收紧编排器注解后 `mypy src` 通过。聚焦 `tests/feedback tests/agent tests/providers tests/storage -q` 为 `100 passed`；全量 pytest 为 `566 passed, 14 skipped`；Ruff、mypy（39 个源文件）及 `git diff --check` 均通过。
+- **状态：** 实现随本提交提交，等待独立规约符合性审查和代码质量审查；未将任务标记为完成。独立审查应特别确认最终摘要动作与后续机制演示接口仍由后续范围承接。
+
+### 2026-07-26 — IMPL-MVP-2-AGENT-LOOP-REWORK
+
+- **审查核实：** 独立审查提出的 4 个 Important 与 1 个 Minor 均成立：未知失败数被默认记为 0 会造成假 `NO_PROGRESS`；Mock 未覆盖两次 patch 与 `CompleteAction` 摘要；原断言未消费反馈证据；时间预算未使用 `time_budget_seconds`；报告计数必须使用真实全量结果。
+- **TDD RED → GREEN：** 新增未知失败数反馈、两次 patch/失败输出回灌/最终摘要、端到端两轮未知失败数和 `deadline_at=None` 时间预算测试。RED 分别表现为 `failure_count=None` 校验失败、无 `FINAL_SUMMARY_RECORDED`、第二轮反馈错误停为 `NO_PROGRESS`，以及预算耗尽后仍请求耗尽的 Mock。GREEN 后未知计数不触发无进展，可靠 `N failed|N errors` 才参与比较；成功验证先落盘成功事件，随后 `CompleteAction` 落盘摘要并进入 `WAITING_FINAL_REVIEW`；时间预算取创建时间加时长与可选 deadline 的较早值。
+- **新鲜验证：** focused `tests/feedback tests/agent tests/providers tests/storage -q` 为 `104 passed`；全量 pytest 为 `570 passed, 14 skipped`；Ruff、mypy（39 个源文件）和 `git diff --check` 均通过。仅在原 Task 6 提交上 amend，未联网、安装依赖、merge、push 或处理 `MVP-ISSUE-016`。
+- **状态：** 审查返工随本提交修正，继续等待独立规约符合性与代码质量复审，未标记任务完成。
+
+### 2026-07-27 — IMPL-MVP-2-AGENT-LOOP-VERIFICATION-FRESHNESS
+
+- **审查返工与 TDD：** 新增“验证通过 → 修改工具 → CompleteAction”反例，RED 稳定进入 `WAITING_FINAL_REVIEW`，证明历史任意 `VERIFICATION_SUCCEEDED` 会错误授权过期验证；同时新增只读 search 后完成摘要的回归，保证只读不错误失效。GREEN 改为反向读取持久化事件：最近一次 `changed_paths` 非空的 `TOOL_EXECUTION_COMPLETED` 晚于成功验证时固定拒绝摘要并进入 `WAITING_USER/VERIFICATION_REQUIRED`；无变更的读取事件不影响验证新鲜度，重启后仍由同一 EventStore 事件流得出相同结论。
+- **新鲜验证：** focused `tests/feedback tests/agent tests/providers tests/storage -q` 为 `106 passed`；全量 pytest 为 `572 passed, 14 skipped`；Ruff、mypy（39 个源文件）和 `git diff --check` 通过。仅 amend 当前同名 Task 6 提交，未联网、安装依赖、merge、push 或处理 `MVP-ISSUE-016`。
+- **状态：** 验证新鲜度返工已随本提交修正，继续等待独立规约符合性与代码质量复审，未标记任务完成。
