@@ -293,23 +293,26 @@ class ApprovalManager:
         self,
         approval_id: UUID,
         context: ApprovalContext,
+        expected_task_id: UUID | None = None,
     ) -> ApprovalRecord:
-        return await self._consume_with_mutation(approval_id, context, None)
+        return await self._consume_with_mutation(approval_id, context, None, expected_task_id)
 
     async def consume_and_apply(
         self,
         approval_id: UUID,
         context: ApprovalContext,
         apply: Callable[[aiosqlite.Connection, datetime], Awaitable[None]],
+        expected_task_id: UUID | None = None,
     ) -> ApprovalRecord:
         mutation = _require_mutation(apply, ApprovalMutationOperation.UPDATE)
-        return await self._consume_with_mutation(approval_id, context, mutation)
+        return await self._consume_with_mutation(approval_id, context, mutation, expected_task_id)
 
     async def _consume_with_mutation(
         self,
         approval_id: UUID,
         context: ApprovalContext,
         mutation: ApprovalDatabaseMutation | None,
+        expected_task_id: UUID | None,
     ) -> ApprovalRecord:
         async with self._database.operation_lock:
             try:
@@ -317,6 +320,8 @@ class ApprovalManager:
                 self._validate_context(context)
                 now = self._utc_now()
                 record = await self._load(approval_id)
+                if expected_task_id is not None and record.task_id != expected_task_id:
+                    raise ApprovalError("STALE_ACTION")
                 authority = await self._load_task_authority(record.task_id)
                 self._validate_authority(record, authority)
                 self._validate_live(record, context, now)

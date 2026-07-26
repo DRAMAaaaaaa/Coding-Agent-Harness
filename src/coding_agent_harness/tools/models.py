@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from coding_agent_harness.governance.policy import PolicyContext, PolicyEngine
+from coding_agent_harness.governance.approvals import ApprovalManager
 from coding_agent_harness.workspace.git import SafeGit
 from coding_agent_harness.workspace.models import ProjectProfile, RepositoryMap
 from coding_agent_harness.workspace.processes import ProcessRunner
@@ -47,9 +48,6 @@ class VerificationEvidence(BaseModel):
     required_checks: tuple[str, ...] = Field(min_length=1)
 
 
-ApprovalConsumer = Callable[[], Awaitable[bool]]
-
-
 @dataclass(frozen=True)
 class ToolContext:
     """注册表所需的注入式运行时依赖。"""
@@ -62,6 +60,7 @@ class ToolContext:
     policy_context: PolicyContext | None = None
     safe_git: SafeGit | None = None
     runner: ProcessRunner | None = None
-    approval_consumer: ApprovalConsumer | None = None
+    approval_manager: ApprovalManager | None = None
+    approval_task_id: UUID | None = None
     verification_config_version: str | None = None
     verification_approval: VerificationApproval | None = None

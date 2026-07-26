@@ -711,3 +711,10 @@
 ### 2026-07-27 — IMPL-MVP-2-FINAL-REWORK-C-REVIEW
 
 - **复审纠偏：** 验证事件改为专用安全 run 元数据；先脱敏、再计算摘要哈希，并对整个已投影 payload 施加 64 KiB 上限。70 KiB 输出与低熵秘密回归证明不保存原始 output 或其哈希。取消不确定执行后清除恢复投影，重启保持 CANCELLED。
+
+### 2026-07-27 — IMPL-MVP-2-FINAL-REWORK-D
+
+- **审批与停止语义：** 删除审批 ID 仅作为 Registry 消费传输字段，策略只接收已剥离该字段的精确删除动作；ApprovalManager 在消费事务内核对预期 task_id。反馈无改善采用基线后的连续两轮未改善，指纹与总验证预算优先。
+- **删除审批端到端矩阵：** 将原 2 项集成测试扩展为 13 项，全部使用迁移后的真实 SQLite、`Task`/`TaskRepository`、`ApprovalManager`、`PolicyEngine`、两个独立 `ToolRegistry`、真实 JSON UUID 与磁盘文件。覆盖无审批、pending、rejected、expired、过期 scope/event/config、跨 task、替换 path/SHA、replay、双连接并发消费，以及审批消费后删除前的确定性外部改写；所有拒绝均核验文件内容和 `approvals.consumed_at`，成功/并发/消费后 CAS 分支均核验恰好一次真实删除调用。
+- **TDD 与资源清理：** 生产漏洞已在前序返工关闭，因此新增 11 个收集用例首次运行即与既有 2 项一起直接 GREEN（`13 passed`），未发现需要修改生产代码的新 RED。并发以 `asyncio.Barrier` 同步启动，不使用 sleep；消费后改写通过窄包装真实 `delete_regular_file` 确定性注入。每个数据库均由 fixture 或 async context 的 `try/finally` 在 2 秒边界内关闭，并发任务在 `finally` 取消并回收，断言失败也不遗留 aiosqlite 工作线程。
+- **聚焦验证：** 删除审批 integration、Registry、ApprovalManager、PolicyEngine 与反馈引擎合计 `243 passed`。本轮只补测试矩阵和过程证据，未修改生产实现、联网、安装依赖、merge 或 push；最终 Ruff、mypy 与差异门禁在 amend 前重新取得新鲜输出。

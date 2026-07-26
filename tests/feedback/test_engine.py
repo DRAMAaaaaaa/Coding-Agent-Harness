@@ -12,14 +12,16 @@ def failed_run(message: str, *, count: int = 1) -> VerificationRun:
     )
 
 
-def test_two_unchanged_failure_rounds_wait_for_user() -> None:
+def test_two_consecutive_non_improving_rounds_after_baseline_wait_for_user() -> None:
     engine = FeedbackEngine()
 
     first = engine.evaluate([], failed_run("same", count=2))
-    second = engine.evaluate([first.observation], failed_run("same", count=2))
+    second = engine.evaluate([first.observation], failed_run("same-2", count=2))
+    third = engine.evaluate([first.observation, second.observation], failed_run("same-3", count=2))
 
-    assert second.next_state is TaskState.WAITING_USER
-    assert second.reason_code == "NO_PROGRESS"
+    assert second.next_state is TaskState.CORRECTING
+    assert third.next_state is TaskState.WAITING_USER
+    assert third.reason_code == "NO_PROGRESS"
 
 
 def test_unknown_failure_counts_do_not_claim_no_progress() -> None:

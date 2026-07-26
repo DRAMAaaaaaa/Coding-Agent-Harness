@@ -174,6 +174,20 @@ class PolicyResult(BaseModel):
     event_sequence: int
 
 
+def normalized_delete_scope(root: Path, path: Path, expected_sha256: str) -> str:
+    """删除审批的唯一、可重算范围绑定。"""
+    digest = expected_sha256.casefold()
+    if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise ValueError("invalid expected sha256")
+    relative = path.resolve(strict=False).relative_to(root.resolve(strict=False)).as_posix()
+    return json.dumps(
+        {"expected_sha256": digest, "path": relative, "tool": "delete_file"},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
 @dataclass(frozen=True)
 class _ParsedAction:
     argv: tuple[str, ...]
@@ -201,8 +215,23 @@ class PolicyEngine:
         if parsed.escaped:
             return self._result(PolicyDecision.DENY, "PATH_ESCAPE", "", context)
 
-        scope = self._scope(action, parsed.argv, parsed.paths)
         tool = self._executable(action.tool)
+        scope = self._scope(action, parsed.argv, parsed.paths)
+        if tool == "delete_file":
+            delete_paths = [
+                candidate
+                for key, candidate in parsed.paths.items()
+                if key.startswith("path:")
+            ]
+            expected = action.arguments.get("expected_sha256")
+            if len(delete_paths) != 1 or not isinstance(expected, str):
+                return self._result(PolicyDecision.DENY, "INVALID_ACTION", "", context)
+            try:
+                scope = normalized_delete_scope(
+                    self._path_guard.root, delete_paths[0], expected
+                )
+            except ValueError:
+                return self._result(PolicyDecision.DENY, "INVALID_ACTION", "", context)
         command = self._unwrap_command(parsed.argv)
 
         if tool in {"delete_path", "delete_file"}:

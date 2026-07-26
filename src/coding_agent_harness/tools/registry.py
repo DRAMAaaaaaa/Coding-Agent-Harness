@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from coding_agent_harness.domain.actions import ToolAction
 from coding_agent_harness.governance.paths import PathEscapeError, PathGuard
-from coding_agent_harness.governance.policy import PolicyDecision
+from coding_agent_harness.governance.policy import PolicyDecision, normalized_delete_scope
+from coding_agent_harness.governance.approvals import ApprovalContext, ApprovalError
 from coding_agent_harness.tools import files, git, search, verification
 from coding_agent_harness.tools.models import (
     ToolContext,
@@ -36,6 +38,7 @@ class _DeleteFile(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     path: str
     expected_sha256: str
+    approval_id: str | None = None
 
 
 class _Search(BaseModel):
@@ -67,16 +70,28 @@ class ToolRegistry:
     async def execute(self, action: ToolAction, context: ToolContext | None = None) -> ToolResult:
         if context is not None and context != self._context:
             return ToolResult(ok=False, code="CONTEXT_MISMATCH")
+        policy_action = action
+        if action.tool == "delete_file":
+            try:
+                request = _DeleteFile.model_validate(action.arguments)
+            except ValidationError:
+                return ToolResult(ok=False, code="INVALID_ARGUMENTS")
+            policy_action = ToolAction(
+                tool="delete_file",
+                arguments={"path": request.path, "expected_sha256": request.expected_sha256},
+                idempotency_key=action.idempotency_key,
+            )
         if self._context.policy is not None and self._context.policy_context is not None:
-            decision = self._context.policy.evaluate(action, self._context.policy_context)
+            decision = self._context.policy.evaluate(policy_action, self._context.policy_context)
             if decision.decision is PolicyDecision.DENY:
                 return ToolResult(ok=False, code=decision.reason_code)
             if decision.decision is PolicyDecision.REQUIRE_APPROVAL and action.tool != "delete_file":
                 return ToolResult(ok=False, code="APPROVAL_REQUIRED")
+        if action.tool == "delete_file":
+            return await self._delete_file(policy_action, action)
         handlers = {
             "apply_patch": self._apply_patch,
             "read_file": self._read_file,
-            "delete_file": self._delete_file,
             "search": self._search,
             "run_verification": self._verification,
             "git_status": self._git_status,
@@ -126,17 +141,46 @@ class ToolRegistry:
             return ToolResult(ok=False, code="INVALID_TEXT")
         return ToolResult(ok=True, code="OK", output=output)
 
-    async def _delete_file(self, arguments: dict[str, Any]) -> ToolResult:
+    async def _delete_file(self, policy_action: ToolAction, action: ToolAction) -> ToolResult:
         try:
-            request = _DeleteFile.model_validate(arguments)
+            request = _DeleteFile.model_validate(action.arguments)
         except ValidationError:
             return ToolResult(ok=False, code="INVALID_ARGUMENTS")
         path = self._path(request.path)
         if path is None:
             return ToolResult(ok=False, code="PATH_ESCAPE")
-        consumer = self._context.approval_consumer
-        if consumer is None or not await consumer():
+        manager = self._context.approval_manager
+        task_id = self._context.approval_task_id
+        policy_context = self._context.policy_context
+        if manager is None or task_id is None or policy_context is None or request.approval_id is None:
             return ToolResult(ok=False, code="APPROVAL_REQUIRED")
+        try:
+            approval_id = UUID(request.approval_id)
+        except ValueError:
+            return ToolResult(ok=False, code="INVALID_ARGUMENTS")
+        if self._context.policy is None:
+            return ToolResult(ok=False, code="APPROVAL_REQUIRED")
+        decision = self._context.policy.evaluate(policy_action, policy_context)
+        try:
+            scope = normalized_delete_scope(self._guard.root, path, request.expected_sha256)
+        except ValueError:
+            return ToolResult(ok=False, code="INVALID_ARGUMENTS")
+        if decision.decision is not PolicyDecision.REQUIRE_APPROVAL or decision.normalized_scope != scope:
+            return ToolResult(ok=False, code="APPROVAL_REQUIRED")
+        try:
+            await manager.consume(
+                approval_id,
+                ApprovalContext(
+                    action_id=action.idempotency_key,
+                    event_sequence=policy_context.event_sequence,
+                    normalized_scope=scope,
+                    task_state=policy_context.task_state,
+                    config_version=policy_context.config_version,
+                ),
+                expected_task_id=task_id,
+            )
+        except ApprovalError as error:
+            return ToolResult(ok=False, code=error.reason_code)
         code = files.delete_regular_file(path, request.expected_sha256)
         return ToolResult(ok=code == "OK", code=code, changed_paths=(request.path,) if code == "OK" else ())
 

@@ -35,13 +35,15 @@ class FeedbackEngine:
                 next_state=TaskState.WAITING_USER,
                 reason_code="FINGERPRINT_BUDGET",
             )
-        if history:
-            previous = history[-1]
+        if len(history) >= 2:
+            baseline, previous = history[-2:]
             if (
-                previous.category is observation.category
+                baseline.category is previous.category is observation.category
+                and baseline.failure_count is not None
                 and previous.failure_count is not None
                 and observation.failure_count is not None
-                and previous.failure_count == observation.failure_count
+                and previous.failure_count >= baseline.failure_count
+                and observation.failure_count >= previous.failure_count
             ):
                 return FeedbackDecision(
                     observation=observation,
