@@ -8,7 +8,7 @@ from coding_agent_harness.agent.orchestrator import AgentOrchestrator
 from coding_agent_harness.agent.parser import ActionParser
 from coding_agent_harness.domain.actions import TaskState, ToolAction
 from coding_agent_harness.domain.models import Task
-from coding_agent_harness.providers.mock import ScriptedMockProvider
+from coding_agent_harness.providers.mock import ScriptedMockProvider, ScriptExhaustedError
 from coding_agent_harness.storage.database import Database
 from coding_agent_harness.storage.event_store import EventStore
 from coding_agent_harness.storage.repositories import TaskRepository
@@ -122,6 +122,36 @@ async def test_feedback_changes_next_action_after_injected_failure(harness) -> N
         for event in events
     )
     assert (await orchestrator.task(task.id)).state is TaskState.WAITING_FINAL_REVIEW
+
+
+async def test_runtime_failure_is_recorded_once_through_legal_event(harness) -> None:
+    _, _, task, database = harness
+    orchestrator = AgentOrchestrator(
+        provider=ScriptedMockProvider([]),
+        parser=ActionParser(()),
+        tools=ScriptedTools([]),
+        event_store=EventStore(database),
+        tasks=TaskRepository(database),
+    )
+
+    with pytest.raises(ScriptExhaustedError):
+        await orchestrator.propose_plan(task.id)
+
+    waiting = await orchestrator.record_runtime_failure(
+        task.id,
+        "PROVIDER_UNAVAILABLE token=must-not-persist",
+    )
+    repeated = await orchestrator.record_runtime_failure(
+        task.id,
+        "PROVIDER_UNAVAILABLE token=must-not-persist",
+    )
+    events = await EventStore(database).list_for_task(task.id)
+
+    assert waiting.state is repeated.state is TaskState.WAITING_USER
+    assert [event.sequence for event in events] == [1, 2, 3, 4]
+    assert events[-1].event_type == "USER_INPUT_REQUIRED"
+    assert events[-1].payload["reason_code"].startswith("PROVIDER_UNAVAILABLE")
+    assert "must-not-persist" not in str(events[-1].payload)
 
 
 async def test_distinct_unreliable_failures_do_not_trigger_no_progress(tmp_path) -> None:

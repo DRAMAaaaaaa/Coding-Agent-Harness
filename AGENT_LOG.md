@@ -770,3 +770,10 @@
 - **范围与技能：** 仅修复质量审查 C1、I1、I3；使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 与 `verification-before-completion`。未处理 QB/QC，未联网、安装、merge、push，也未运行 399 回归或构建。
 - **RED → GREEN：** 未知 `evil.example` Host 原可先取得 token 再进入 mutation 业务依赖，启动构造失败时数据库关闭次数为 0，且数据库可显式落在私有状态根外。现由冻结 `HarnessSettings` 提供可信 Host/Origin 与私有路径：所有请求在路由前校验 Host，mutation 额外校验配置 Origin 和常量时间 session，首页使用 `Cache-Control: no-store`；自建数据库打开后立即受 `try/finally` 保护；数据库必须位于 `state_root`，数据库/WAL/SHM 父目录均参与项目重叠拒绝。
 - **验证事实：** Repository、Scanner、SafeGit、runtime 四类真实 lifespan 故障注入均关闭自建数据库恰好一次，外部注入数据库保持可用；聚焦测试 `30 passed`、API `22 passed`、含 workspace repository/003/config 的规约集合 `43 passed`。静态检查与差异门禁在提交前重新取得新鲜证据。
+
+### 2026-07-27 — REWORK-MVP-3-TASK-7-QUALITY-QB
+
+- **范围与技能：** 仅处理质量审查 I2、I4、I5；完整核对 Task 7 brief、质量报告、QA 复审、Agent 状态机、Provider 层级与 worktree 副作用契约，并使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 和 `verification-before-completion`。未处理 QC、未联网或安装依赖，未运行全量/构建，也未 merge/push。
+- **RED → GREEN：** Agent 首个 RED 为缺少 `record_runtime_failure`（`1 failed`）；API 故障矩阵与响应性首轮为 `9 failed, 2 passed`，取消收敛探针单独为 `1 failed`。GREEN 后，Detector、Scanner、SafeGit 分支解析和 WorktreeManager 创建均经同一依赖级 `CapacityLimiter` 的 worker thread；事件循环内的并发首页探针在三类只读端口执行期间均返回 200。worktree 创建与 Task 所有权持久化由 shielded task 收敛，取消后先等待线程及数据库结果，再传播取消；无法观察的内部取消固定升级为 `WorktreeUncertainError`，不遗留未观察 task。
+- **故障一致性与分类：** Provider/ScriptedMock 计划失败通过 `AgentOrchestrator.record_runtime_failure` 和合法 `USER_INPUT_REQUIRED` 事件幂等转为 `WAITING_USER`，payload 经既有 Redactor/限长投影；API 返回 `503 PROVIDER_UNAVAILABLE` 并携带 `details.task_id`，GET 可读取任务和 reason 事件，真实 worktree 与 `.active` 保留。重复 POST 从受控 active marker 取回原 task ID 并返回 `409 WORKSPACE_BUSY`，不创建第二 worktree；损坏 marker 固定升级为 `WORKTREE_UNCERTAIN`。路由只捕获 busy/conflict、uncertain、`TaskStateError`、`ProviderError`/`ScriptExhaustedError` 和 `RuntimeUnavailableError`，factory 使用同一类型边界；未知异常仍由全局 500 脱敏处理。
+- **新鲜限定验证：** API 全套 `38 passed`；Agent 全套加 worktree/process 回归 `127 passed, 1 skipped`；Ruff 为 `All checks passed!`，mypy 为 `Success: no issues found in 46 source files`。唯一 skip 为既有平台能力门禁；未运行全量或构建。差异检查在提交前单独执行。

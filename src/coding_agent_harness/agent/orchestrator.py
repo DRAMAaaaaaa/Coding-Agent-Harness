@@ -108,6 +108,26 @@ class AgentOrchestrator:
         response = await self._ask(task, "plan")
         return await self._emit(task, "PLAN_PROPOSED", {"plan": response})
 
+    async def record_runtime_failure(self, task_id: UUID, reason_code: str) -> Task:
+        """把运行时中断持久化为可恢复、可重放且幂等的等待状态。"""
+
+        task = await self.task(task_id)
+        events = await self._event_store.list_for_task(task.id)
+        if task.state is TaskState.WAITING_USER and any(
+            event.event_type == "USER_INPUT_REQUIRED"
+            and event.payload.get("reason_code")
+            == self._diagnostic(reason_code, limit=1_024)
+            for event in events
+        ):
+            return task
+        if task.state in {TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED}:
+            raise TaskStateError("终态任务不能记录运行时失败")
+        return await self._emit(
+            task,
+            "USER_INPUT_REQUIRED",
+            {"reason_code": reason_code},
+        )
+
     async def approve_plan(self, task_id: UUID) -> Task:
         task = await self.task(task_id)
         if task.state is not TaskState.WAITING_PLAN_APPROVAL:

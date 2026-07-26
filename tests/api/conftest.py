@@ -36,6 +36,7 @@ async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
         current.orchestrator_factory = lambda: orchestrator
         current.task_runner = LocalTaskRunner(
             current.tasks, current.state_root, step_budget=8, time_budget_seconds=300,
+            worker=current.worker,
         )
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as value:

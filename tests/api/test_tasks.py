@@ -1,12 +1,30 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
+import threading
 from uuid import UUID
 
 import httpx
+import pytest
+from anyio import CapacityLimiter
 
 from coding_agent_harness.api.app import create_app
+from coding_agent_harness.api.dependencies import (
+    BlockingWorker,
+    LocalTaskRunner,
+    RuntimeUnavailableError,
+)
+from coding_agent_harness.agent.orchestrator import AgentOrchestrator, TaskStateError
+from coding_agent_harness.agent.parser import ActionParser
 from coding_agent_harness.config import HarnessSettings
+from coding_agent_harness.providers.base import ProviderError
+from coding_agent_harness.providers.mock import ScriptedMockProvider
+from coding_agent_harness.workspace.worktrees import (
+    WorkspaceBusyError,
+    WorktreeConflictError,
+    WorktreeUncertainError,
+)
 from tests.api.conftest import session_headers
 from tests.api.test_projects import _git_repo
 
@@ -113,6 +131,291 @@ async def test_default_app_without_runtime_creates_no_task_or_worktree(tmp_path:
         assert not (state_root / "worktrees").exists()
 
 
+async def test_project_blocking_ports_run_off_event_loop_and_health_responds(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    loop = asyncio.get_running_loop()
+    main_thread = threading.get_ident()
+    detector = _ThreadProbe(active.detector, "detect", loop, client)
+    scanner = _ThreadProbe(active.scanner, "scan", loop, client)
+    branch = _ThreadProbe(active.branch_resolver, "default_branch", loop, client)
+    active.detector = detector
+    active.scanner = scanner
+    active.branch_resolver = branch
+
+    response = await client.post(
+        "/api/projects",
+        json={"path": str(_git_repo(tmp_path / "responsive"))},
+        headers=await session_headers(client),
+    )
+
+    assert response.status_code == 201
+    assert detector.thread_id != main_thread
+    assert scanner.thread_id != main_thread
+    assert branch.thread_id != main_thread
+    assert detector.concurrent_status == 200
+    assert scanner.concurrent_status == 200
+    assert branch.concurrent_status == 200
+
+
+async def test_cancelled_worktree_creation_settles_and_persists_owner(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, workspace_id = await _trusted_workspace(client, tmp_path / "cancelled-create")
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    stored = await active.workspaces.get(UUID(workspace_id))
+    assert stored is not None
+    started = threading.Event()
+    release = threading.Event()
+    completed = threading.Event()
+    observed_release: list[bool] = []
+
+    class BlockingWorktreeManager:
+        def __init__(self, workspace: object, state_root: object) -> None:
+            pass
+
+        def create(self, task_id: UUID, base_commit: str) -> None:
+            started.set()
+            observed_release.append(release.wait(timeout=1))
+            completed.set()
+
+    monkeypatch.setattr(
+        "coding_agent_harness.api.dependencies.WorktreeManager",
+        BlockingWorktreeManager,
+    )
+    task_id = UUID("12345678-1234-5678-1234-567812345678")
+    runner = LocalTaskRunner(
+        active.tasks,
+        active.state_root,
+        step_budget=8,
+        time_budget_seconds=300,
+        worker=active.worker,
+    )
+    creation = asyncio.create_task(
+        runner.create(stored.workspace, task_id, "取消期间仍应收敛")
+    )
+    assert await asyncio.to_thread(started.wait, 2)
+    creation.cancel()
+    assert not creation.done()
+    release.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await creation
+    assert completed.is_set()
+    assert observed_release == [True]
+    assert (await active.tasks.get(task_id)) is not None
+
+
+async def test_blocking_worker_capacity_is_shared_and_bounded() -> None:
+    worker = BlockingWorker(CapacityLimiter(1))
+    first_started = threading.Event()
+    second_started = threading.Event()
+    release_first = threading.Event()
+    second_submitted = asyncio.Event()
+
+    def first() -> str:
+        first_started.set()
+        release_first.wait()
+        return "first"
+
+    def second() -> str:
+        second_started.set()
+        return "second"
+
+    async def submit_second() -> str:
+        second_submitted.set()
+        return await worker.run(second)
+
+    first_task = asyncio.create_task(worker.run(first))
+    second_task = asyncio.create_task(submit_second())
+    assert await asyncio.to_thread(first_started.wait, 2)
+    await second_submitted.wait()
+    assert not second_started.is_set()
+    release_first.set()
+
+    assert await asyncio.gather(first_task, second_task) == ["first", "second"]
+    assert second_started.is_set()
+
+
+async def test_provider_failure_returns_recoverable_task_and_retry_keeps_owner(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    headers = await session_headers(client)
+    project = await client.post(
+        "/api/projects",
+        json={"path": str(_git_repo(tmp_path / "provider-failure"))},
+        headers=headers,
+    )
+    trusted = await client.post(
+        f"/api/projects/{project.json()['id']}/trust",
+        json={"fingerprint": project.json()["trust_fingerprint"]},
+        headers=headers,
+    )
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    orchestrator = AgentOrchestrator(
+        provider=ScriptedMockProvider([]),
+        parser=ActionParser(()),
+        tools=_UnusedTools(),
+        event_store=active.event_store,
+        tasks=active.tasks,
+    )
+    active.orchestrator_factory = lambda: orchestrator
+
+    failed = await client.post(
+        "/api/tasks",
+        json={"workspace_id": trusted.json()["id"], "requirement": "修复失败"},
+        headers=headers,
+    )
+    task_id = failed.json()["details"]["task_id"]
+    persisted = await client.get(f"/api/tasks/{task_id}")
+    events = await active.event_store.list_for_task(UUID(task_id))
+    retry = await client.post(
+        "/api/tasks",
+        json={"workspace_id": trusted.json()["id"], "requirement": "修复失败"},
+        headers=headers,
+    )
+
+    assert failed.status_code == 503
+    assert failed.json()["code"] == "PROVIDER_UNAVAILABLE"
+    assert persisted.json()["state"] == "WAITING_USER"
+    assert events[-1].event_type == "USER_INPUT_REQUIRED"
+    assert events[-1].payload["reason_code"] == "PROVIDER_UNAVAILABLE"
+    assert retry.status_code == 409
+    assert retry.json()["code"] == "WORKSPACE_BUSY"
+    assert retry.json()["details"]["task_id"] == task_id
+    marker = active.state_root / "worktrees" / trusted.json()["id"] / ".active"
+    assert marker.read_text(encoding="ascii") == task_id
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code", "code"),
+    [
+        (WorkspaceBusyError("busy"), 409, "WORKSPACE_BUSY"),
+        (WorktreeConflictError("conflict"), 409, "WORKSPACE_BUSY"),
+        (WorktreeUncertainError("uncertain"), 503, "WORKTREE_UNCERTAIN"),
+        (RuntimeUnavailableError("runtime"), 503, "RUNTIME_UNAVAILABLE"),
+        (ValueError("programmer bug token=hidden"), 500, "INTERNAL_ERROR"),
+    ],
+)
+async def test_task_creation_maps_only_specific_domain_errors(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+    error: Exception,
+    status_code: int,
+    code: str,
+) -> None:
+    headers, workspace_id = await _trusted_workspace(client, tmp_path / code)
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    active.task_runner = _FailingTaskRunner(error)
+    response = await _post(
+        client,
+        "/api/tasks",
+        json={"workspace_id": workspace_id, "requirement": "修复"},
+        headers=headers,
+        suppress_app_exception=status_code == 500,
+    )
+
+    assert response.status_code == status_code
+    assert response.json()["code"] == code
+    assert "hidden" not in str(response.json())
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code", "code"),
+    [
+        (TaskStateError("state"), 409, "INVALID_TASK_STATE"),
+        (
+            ProviderError("provider token=hidden", kind="transport", retryable=True),
+            503,
+            "PROVIDER_UNAVAILABLE",
+        ),
+        (RuntimeUnavailableError("runtime"), 503, "RUNTIME_UNAVAILABLE"),
+        (ValueError("programmer bug token=hidden"), 500, "INTERNAL_ERROR"),
+    ],
+)
+async def test_orchestrator_maps_only_specific_domain_errors(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+    error: Exception,
+    status_code: int,
+    code: str,
+) -> None:
+    headers, workspace_id = await _trusted_workspace(client, tmp_path / f"orchestrator-{code}")
+    task = await client.post(
+        "/api/tasks",
+        json={"workspace_id": workspace_id, "requirement": "修复"},
+        headers=headers,
+    )
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    active.orchestrator_factory = lambda: _FailingOrchestrator(error)
+    response = await _post(
+        client,
+        f"/api/tasks/{task.json()['id']}/plan/approve",
+        headers=headers,
+        suppress_app_exception=status_code == 500,
+    )
+
+    assert response.status_code == status_code
+    assert response.json()["code"] == code
+    if status_code != 500:
+        assert response.json()["details"]["task_id"] == task.json()["id"]
+    else:
+        assert response.json()["details"] == {}
+    assert "hidden" not in str(response.json())
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code", "code"),
+    [
+        (
+            ProviderError("provider token=hidden", kind="transport", retryable=True),
+            503,
+            "PROVIDER_UNAVAILABLE",
+        ),
+        (RuntimeUnavailableError("runtime"), 503, "RUNTIME_UNAVAILABLE"),
+        (ValueError("factory bug token=hidden"), 500, "INTERNAL_ERROR"),
+    ],
+)
+async def test_orchestrator_factory_has_the_same_typed_error_boundary(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+    error: Exception,
+    status_code: int,
+    code: str,
+) -> None:
+    headers, workspace_id = await _trusted_workspace(client, tmp_path / f"factory-{code}")
+    task = await client.post(
+        "/api/tasks",
+        json={"workspace_id": workspace_id, "requirement": "修复"},
+        headers=headers,
+    )
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+
+    def failing_factory() -> object:
+        raise error
+
+    active.orchestrator_factory = failing_factory
+    response = await _post(
+        client,
+        f"/api/tasks/{task.json()['id']}/plan/approve",
+        headers=headers,
+        suppress_app_exception=status_code == 500,
+    )
+
+    assert response.status_code == status_code
+    assert response.json()["code"] == code
+    if status_code != 500:
+        assert response.json()["details"]["task_id"] == task.json()["id"]
+    else:
+        assert response.json()["details"] == {}
+    assert "hidden" not in str(response.json())
+
+
 class _RecordingTaskRunner:
     def __init__(self, delegate: object) -> None:
         self._delegate = delegate
@@ -131,6 +434,84 @@ class _RecordingOrchestratorFactory:
     def __call__(self) -> object:
         self.calls += 1
         return self._delegate()  # type: ignore[operator]
+
+
+class _ThreadProbe:
+    def __init__(self, delegate: object, method: str, loop: asyncio.AbstractEventLoop, client: httpx.AsyncClient) -> None:
+        self._delegate = delegate
+        self._method = method
+        self._loop = loop
+        self._client = client
+        self.thread_id: int | None = None
+        self.concurrent_status: int | None = None
+
+    def __getattr__(self, name: str) -> object:
+        if name != self._method:
+            return getattr(self._delegate, name)
+
+        def call(*args: object) -> object:
+            self.thread_id = threading.get_ident()
+            future = asyncio.run_coroutine_threadsafe(self._client.get("/"), self._loop)
+            try:
+                self.concurrent_status = future.result(timeout=1).status_code
+            except TimeoutError:
+                self.concurrent_status = None
+            return getattr(self._delegate, self._method)(*args)
+
+        return call
+
+
+class _FailingTaskRunner:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def create(self, workspace: object, task_id: object, requirement: str) -> object:
+        raise self._error
+
+
+class _FailingOrchestrator:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def approve_plan(self, task_id: UUID) -> object:
+        raise self._error
+
+
+class _UnusedTools:
+    async def execute(self, action: object) -> object:
+        raise AssertionError("计划失败测试不应执行工具")
+
+
+async def _trusted_workspace(client: httpx.AsyncClient, root: Path) -> tuple[dict[str, str], str]:
+    headers = await session_headers(client)
+    project = await client.post(
+        "/api/projects", json={"path": str(_git_repo(root))}, headers=headers,
+    )
+    trusted = await client.post(
+        f"/api/projects/{project.json()['id']}/trust",
+        json={"fingerprint": project.json()["trust_fingerprint"]},
+        headers=headers,
+    )
+    return headers, trusted.json()["id"]
+
+
+async def _post(
+    client: httpx.AsyncClient,
+    path: str,
+    *,
+    headers: dict[str, str],
+    json: dict[str, object] | None = None,
+    suppress_app_exception: bool = False,
+) -> httpx.Response:
+    if not suppress_app_exception:
+        return await client.post(path, headers=headers, json=json)
+    app = client._transport.app  # type: ignore[attr-defined]
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+    ) as safe_client:
+        return await safe_client.post(path, headers=headers, json=json)
 
 
 def _relative_state_entries(root: Path) -> tuple[str, ...]:

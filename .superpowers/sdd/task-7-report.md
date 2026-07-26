@@ -50,3 +50,11 @@ wheel/sdist 均包含 `001_initial.sql`、`002_governance_approvals.sql`、
 自建数据库打开后立即进入 `try/finally`；Repository、Scanner、SafeGit、runtime 四个构造故障注入均证明关闭恰好一次，外部注入数据库仍归调用方所有。`HarnessSettings` 解析并冻结私有路径，数据库必须位于 `state_root`；数据库、WAL、SHM 的父目录显式进入 API 私有根集合，接入项目与任一私有根重叠时 fail closed。
 
 聚焦 `session/app/projects/config` 为 `30 passed`，API 全套为 `22 passed`，API + workspace repository + 003 migration + config 为 `43 passed`。按返工范围未运行 399 回归或构建。
+
+## 质量返工 QB（I2、I4、I5）
+
+本轮只处理 async 阻塞、计划失败孤儿和异常误分类。TDD 首轮分别取得：Agent 公共故障记录缺失 `1 failed`；API 响应性/Provider/异常矩阵 `9 failed, 2 passed`；worktree 取消收敛 `1 failed`。实现以单个依赖级 `BlockingWorker + CapacityLimiter` 承载 Detector、Scanner、SafeGit 分支解析及 WorktreeManager；事件/线程探针在每个只读阻塞端口中反向请求首页并得到 200，不使用 sleep。worktree 创建与 Task 持久化放入受 shield 保护的单一异步任务，收到取消时持续等待确定结果并观察异常，内部结果不可观察时固定为 `WorktreeUncertainError`。
+
+`AgentOrchestrator.record_runtime_failure` 只经状态机、EventStore 和 `_emit` 写入合法事件，不由 API 直接更新 Repository。Provider/ScriptedMock 计划失败后任务幂等进入 `WAITING_USER`，reason payload 脱敏且事件序号连续；API 的 503 携带 `details.task_id`，GET 可查询任务和 reason 事件，worktree/`.active` 保留。active marker 现在安全返回所属 task ID；重复请求固定返回同一可恢复 ID，marker 无效则为 uncertain 而不是 busy。
+
+错误矩阵以具体领域类型区分 `WORKSPACE_BUSY`、`WORKTREE_UNCERTAIN`、`INVALID_TASK_STATE`、`PROVIDER_UNAVAILABLE` 和 `RUNTIME_UNAVAILABLE`，factory 与方法调用使用同一类型边界；`ProviderError` 的 `ScriptExhaustedError` 子类不再落入 `RuntimeError` 泛捕，未知 `ValueError` 仍为脱敏 500。新鲜限定验证为 API `38 passed`；Agent 加 worktree/process `127 passed, 1 skipped`；Ruff 通过，mypy 检查 46 个源文件通过。按要求未运行全量或构建，未触碰 QC。

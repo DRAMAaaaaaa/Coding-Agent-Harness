@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from coding_agent_harness.api.dependencies import (
-    ApiDependencies, SafeBranchResolver, UnavailableTaskRunner,
+    ApiDependencies, BlockingWorker, SafeBranchResolver, UnavailableTaskRunner,
 )
 from coding_agent_harness.api.routes import create_router
 from coding_agent_harness.api.session import SessionGuard
@@ -50,6 +50,7 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
             workspaces = WorkspaceRepository(database)
             tasks = TaskRepository(database)
             events = EventStore(database)
+            worker = BlockingWorker()
             app.state.dependencies = ApiDependencies(
                 workspaces=workspaces, tasks=tasks, event_store=events,
                 detector=ProjectDetector(), scanner=WorkspaceScanner(state_root=settings.state_root),
@@ -58,6 +59,7 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
                 orchestrator_factory=None,
                 task_runner=UnavailableTaskRunner(),
                 branch_resolver=SafeBranchResolver(SafeGit(settings.state_root)),
+                worker=worker,
             )
             app.state.event_store = events
             app.state.tasks = tasks

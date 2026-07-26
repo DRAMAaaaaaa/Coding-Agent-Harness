@@ -9,15 +9,26 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from coding_agent_harness.api.dependencies import ApiDependencies
+from coding_agent_harness.api.dependencies import (
+    ApiDependencies,
+    OrchestratorPort,
+    RuntimeUnavailableError,
+)
 from coding_agent_harness.api.session import SessionGuard
 from coding_agent_harness.api.sse import task_events
+from coding_agent_harness.agent.orchestrator import TaskStateError
 from coding_agent_harness.domain.models import Task
 from coding_agent_harness.governance.path_identity import trusted_paths_overlap
 from coding_agent_harness.storage.workspaces import StoredWorkspace, WorkspaceStorageError
 from coding_agent_harness.workspace.detector import ProjectDetectionError
 from coding_agent_harness.workspace.scanner import RepositoryScanError
 from coding_agent_harness.governance.redaction import Redactor
+from coding_agent_harness.providers.base import ProviderError
+from coding_agent_harness.workspace.worktrees import (
+    WorkspaceBusyError,
+    WorktreeConflictError,
+    WorktreeUncertainError,
+)
 
 _SUMMARY_ITEM_LIMIT = 256
 _SUMMARY_TOTAL_LIMIT = 16 * 1024
@@ -66,11 +77,11 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
                 for private_root in active.private_roots
             ):
                 raise ValueError("项目路径与 Harness 私有状态重叠")
-            profile = active.detector.detect(root)
-            repository_map = active.scanner.scan(root)
+            profile = await active.worker.run(active.detector.detect, root)
+            repository_map = await active.worker.run(active.scanner.scan, root)
             if repository_map.root != root:
                 raise ValueError("项目路径不是 Git 根目录")
-            branch = active.branch_resolver.default_branch(root)
+            branch = await active.worker.run(active.branch_resolver.default_branch, root)
             from coding_agent_harness.workspace.models import Workspace
 
             stored = await active.workspaces.create(
@@ -90,7 +101,10 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
         if stored is None:
             raise _error(404, "WORKSPACE_NOT_FOUND", "Workspace 不存在")
         try:
-            current = active.detector.detect(stored.workspace.root)
+            current = await active.worker.run(
+                active.detector.detect,
+                stored.workspace.root,
+            )
             if current.trust_fingerprint != body.fingerprint:
                 raise WorkspaceStorageError("信任指纹已变化或不匹配")
             if current != stored.workspace.profile:
@@ -112,17 +126,65 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
         if active.orchestrator_factory is None:
             raise _error(503, "RUNTIME_UNAVAILABLE", "Agent 运行时未配置")
         try:
-            current = active.detector.detect(stored.workspace.root)
+            current = await active.worker.run(
+                active.detector.detect,
+                stored.workspace.root,
+            )
             if current != stored.workspace.profile or current.trust_fingerprint != stored.trusted_fingerprint:
                 await active.workspaces.revoke_trust(stored.workspace.id)
                 raise _error(409, "STALE_PROJECT_TRUST", "项目配置已变化，需要重新建立信任")
         except ProjectDetectionError:
             raise _error(409, "STALE_PROJECT_TRUST", "项目配置已变化，需要重新建立信任") from None
+        orchestrator = _create_orchestrator(active)
         try:
             task = await active.task_runner.create(stored.workspace, uuid4(), body.requirement)
-        except (OSError, RuntimeError, ValueError):
+        except WorkspaceBusyError as error:
+            details: dict[str, object] = (
+                {"task_id": str(error.active_task_id)}
+                if error.active_task_id is not None
+                else {}
+            )
+            raise _error(
+                409,
+                "WORKSPACE_BUSY",
+                "Workspace 无法创建独立任务工作树",
+                details=details,
+            ) from None
+        except WorktreeConflictError:
             raise _error(409, "WORKSPACE_BUSY", "Workspace 无法创建独立任务工作树") from None
-        proposed = await active.orchestrator_factory().propose_plan(task.id)
+        except WorktreeUncertainError:
+            raise _error(
+                503,
+                "WORKTREE_UNCERTAIN",
+                "任务工作树结果不确定，需要人工检查",
+            ) from None
+        except RuntimeUnavailableError:
+            raise _error(503, "RUNTIME_UNAVAILABLE", "Agent 运行时未配置") from None
+        try:
+            proposed = await orchestrator.propose_plan(task.id)
+        except ProviderError:
+            await orchestrator.record_runtime_failure(task.id, "PROVIDER_UNAVAILABLE")
+            raise _error(
+                503,
+                "PROVIDER_UNAVAILABLE",
+                "Provider 暂时不可用，任务已保留",
+                details={"task_id": str(task.id)},
+            ) from None
+        except RuntimeUnavailableError:
+            await orchestrator.record_runtime_failure(task.id, "RUNTIME_UNAVAILABLE")
+            raise _error(
+                503,
+                "RUNTIME_UNAVAILABLE",
+                "Agent 运行时不可用，任务已保留",
+                details={"task_id": str(task.id)},
+            ) from None
+        except TaskStateError:
+            raise _error(
+                409,
+                "INVALID_TASK_STATE",
+                "任务当前状态不允许该操作",
+                details={"task_id": str(task.id)},
+            ) from None
         return _task_response(proposed)
 
     @router.post("/api/tasks/{task_id}/plan/approve")
@@ -166,12 +228,62 @@ async def _orchestrator_task(dependencies: ApiDependencies, method: str, task_id
         raise _error(404, "TASK_NOT_FOUND", "任务不存在")
     if dependencies.orchestrator_factory is None:
         raise _error(503, "RUNTIME_UNAVAILABLE", "Agent 运行时未配置")
-    orchestrator = dependencies.orchestrator_factory()
+    orchestrator = _create_orchestrator(dependencies, task_id=task_id)
     try:
         operation = getattr(orchestrator, method)
         return await operation(task_id)  # type: ignore[no-any-return]
-    except (KeyError, RuntimeError, ValueError):
-        raise _error(409, "INVALID_TASK_STATE", "任务当前状态不允许该操作") from None
+    except (KeyError, TaskStateError):
+        raise _error(
+            409,
+            "INVALID_TASK_STATE",
+            "任务当前状态不允许该操作",
+            details={"task_id": str(task_id)},
+        ) from None
+    except ProviderError:
+        raise _error(
+            503,
+            "PROVIDER_UNAVAILABLE",
+            "Provider 暂时不可用",
+            details={"task_id": str(task_id)},
+        ) from None
+    except RuntimeUnavailableError:
+        raise _error(
+            503,
+            "RUNTIME_UNAVAILABLE",
+            "Agent 运行时未配置",
+            details={"task_id": str(task_id)},
+        ) from None
+
+
+def _create_orchestrator(
+    dependencies: ApiDependencies,
+    *,
+    task_id: UUID | None = None,
+) -> OrchestratorPort:
+    factory = dependencies.orchestrator_factory
+    if factory is None:
+        raise _error(
+            503,
+            "RUNTIME_UNAVAILABLE",
+            "Agent 运行时未配置",
+            details={} if task_id is None else {"task_id": str(task_id)},
+        )
+    try:
+        return factory()
+    except ProviderError:
+        raise _error(
+            503,
+            "PROVIDER_UNAVAILABLE",
+            "Provider 暂时不可用",
+            details={} if task_id is None else {"task_id": str(task_id)},
+        ) from None
+    except RuntimeUnavailableError:
+        raise _error(
+            503,
+            "RUNTIME_UNAVAILABLE",
+            "Agent 运行时未配置",
+            details={} if task_id is None else {"task_id": str(task_id)},
+        ) from None
 
 
 def _workspace_response(
@@ -213,5 +325,19 @@ def _task_response(task: Task) -> dict[str, object]:
     return {"id": str(task.id), "workspace_id": str(task.workspace_id), "state": task.state.value}
 
 
-def _error(status_code: int, code: str, message: str) -> HTTPException:
-    return HTTPException(status_code=status_code, detail={"code": code, "message": message, "details": {}, "event_id": None})
+def _error(
+    status_code: int,
+    code: str,
+    message: str,
+    *,
+    details: dict[str, object] | None = None,
+) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={
+            "code": code,
+            "message": message,
+            "details": details or {},
+            "event_id": None,
+        },
+    )

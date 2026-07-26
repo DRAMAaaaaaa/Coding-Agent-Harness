@@ -42,6 +42,10 @@ class BaseCommitError(WorktreeError):
 class WorkspaceBusyError(WorktreeError):
     """同一 Workspace 已经有写任务。"""
 
+    def __init__(self, message: str, *, active_task_id: UUID | None = None) -> None:
+        super().__init__(message)
+        self.active_task_id = active_task_id
+
 
 class WorktreeConflictError(WorktreeError):
     """任务分支或目标目录已经存在。"""
@@ -289,7 +293,21 @@ class WorktreeManager:
                 0o600,
             )
         except FileExistsError:
-            raise WorkspaceBusyError("Workspace 已有写任务") from None
+            try:
+                active_task = self._read_active_marker()
+                active_task_id = UUID(active_task) if active_task is not None else None
+            except (ValueError, WorktreeError):
+                raise WorktreeUncertainError(
+                    "Workspace 活动任务归属不确定，需人工处理"
+                ) from None
+            if active_task_id is None:
+                raise WorktreeUncertainError(
+                    "Workspace 活动任务归属不确定，需人工处理"
+                )
+            raise WorkspaceBusyError(
+                "Workspace 已有写任务",
+                active_task_id=active_task_id,
+            ) from None
         except OSError:
             raise WorktreeCreationError("无法记录 Workspace 写任务") from None
         try:

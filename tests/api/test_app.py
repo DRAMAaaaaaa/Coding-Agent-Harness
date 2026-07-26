@@ -8,6 +8,7 @@ import coding_agent_harness.api.app as app_module
 from coding_agent_harness.api.app import create_app
 from coding_agent_harness.api.dependencies import (
     ApiDependencies,
+    BlockingWorker,
     SafeBranchResolver,
     UnavailableTaskRunner,
 )
@@ -83,6 +84,7 @@ async def test_injected_database_remains_caller_owned(tmp_path: Path) -> None:
             orchestrator_factory=None,
             task_runner=UnavailableTaskRunner(),
             branch_resolver=SafeBranchResolver(SafeGit(state_root)),
+            worker=BlockingWorker(),
         )
         app = create_app(settings=settings, dependencies=dependencies)
 
