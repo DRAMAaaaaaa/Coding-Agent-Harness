@@ -168,7 +168,7 @@ class AgentOrchestrator:
             finished_event,
             {"execution_id": execution_id, "result": result.model_dump(mode="json")},
         )
-        if action.tool in {"search", "git_status", "git_diff"} and result.ok:
+        if action.tool in {"read_file", "search", "git_status", "git_diff"} and result.ok:
             return await self._emit(task, "READ_TOOL_COMPLETED", {"tool": action.tool})
         task = await self._emit(task, "TOOL_COMPLETED", {"tool": action.tool})
         if action.tool != "run_verification":

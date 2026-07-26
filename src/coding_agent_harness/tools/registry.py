@@ -10,6 +10,15 @@ from coding_agent_harness.governance.paths import PathEscapeError, PathGuard
 from coding_agent_harness.governance.policy import PolicyDecision
 from coding_agent_harness.tools import files, git, search, verification
 from coding_agent_harness.tools.models import ToolContext, ToolResult
+from coding_agent_harness.workspace.files import (
+    BoundedFileReadError,
+    BoundedFileReader,
+    BoundedFileTooLargeError,
+    UnsafeBoundedFileError,
+)
+
+
+_MAX_READ_FILE_BYTES = 64 * 1024
 
 
 class _ApplyPatch(BaseModel):
@@ -28,6 +37,11 @@ class _DeleteFile(BaseModel):
 class _Search(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     query: str
+
+
+class _ReadFile(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    path: str
 
 
 class _Verification(BaseModel):
@@ -57,6 +71,7 @@ class ToolRegistry:
                 return ToolResult(ok=False, code="APPROVAL_REQUIRED")
         handlers = {
             "apply_patch": self._apply_patch,
+            "read_file": self._read_file,
             "delete_file": self._delete_file,
             "search": self._search,
             "run_verification": self._verification,
@@ -85,6 +100,28 @@ class ToolRegistry:
         code = files.atomic_replace(path, request.content, request.expected_sha256)
         return ToolResult(ok=code == "OK", code=code, changed_paths=(request.path,) if code == "OK" else ())
 
+    async def _read_file(self, arguments: dict[str, Any]) -> ToolResult:
+        try:
+            request = _ReadFile.model_validate(arguments)
+        except ValidationError:
+            return ToolResult(ok=False, code="INVALID_ARGUMENTS")
+        path = self._path(request.path)
+        if path is None:
+            return ToolResult(ok=False, code="PATH_ESCAPE")
+        try:
+            content = BoundedFileReader().read(path, _MAX_READ_FILE_BYTES)
+        except BoundedFileTooLargeError:
+            return ToolResult(ok=False, code="FILE_TOO_LARGE")
+        except UnsafeBoundedFileError:
+            return ToolResult(ok=False, code="UNSAFE_FILE")
+        except BoundedFileReadError:
+            return ToolResult(ok=False, code="FILE_UNREADABLE")
+        try:
+            output = content.decode("utf-8")
+        except UnicodeDecodeError:
+            return ToolResult(ok=False, code="INVALID_TEXT")
+        return ToolResult(ok=True, code="OK", output=output)
+
     async def _delete_file(self, arguments: dict[str, Any]) -> ToolResult:
         try:
             request = _DeleteFile.model_validate(arguments)
@@ -106,7 +143,13 @@ class ToolRegistry:
             return ToolResult(ok=False, code="INVALID_ARGUMENTS")
         if self._context.repository_map is None:
             return ToolResult(ok=False, code="REPOSITORY_MAP_REQUIRED")
-        return ToolResult(ok=True, code="OK", output=search.search(self._context.repository_map, request.query))
+        if self._context.repository_map.root.resolve(strict=False) != self._guard.root:
+            return ToolResult(ok=False, code="PATH_ESCAPE")
+        return ToolResult(
+            ok=True,
+            code="OK",
+            output=search.search(self._context.repository_map, request.query, self._guard),
+        )
 
     async def _verification(self, arguments: dict[str, Any]) -> ToolResult:
         try:

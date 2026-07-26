@@ -675,3 +675,10 @@
 - **独立复审：** Task 6 最终提交 `b9ac938` 的规约符合性与代码质量复审通过，Critical / Important / Minor 为 `0 / 0 / 0`，Task quality 为 Approved；定向复验为 `65 passed`，Ruff 通过。原 4 个 Important、1 个 Minor及验证新鲜度回归均已关闭。
 - **主控新鲜门禁：** `scripts/test.ps1 -Mode All` 取得全量 pytest `572 passed, 14 skipped`，Ruff、mypy（39 个源文件）、Web ESLint 与 TypeScript typecheck 全部通过；`pip check` 无损坏依赖，`git diff --check 6e9c805..HEAD` 通过，工作树在写入本记录前干净。
 - **状态与范围：** MVP-2 Task 6 据此完成，下一门禁为 MVP-2 整阶段审查；未联网、安装依赖、merge、push 或处理 `MVP-ISSUE-016`。
+
+### 2026-07-27 — IMPL-MVP-2-FINAL-REWORK-A
+
+- **范围与技能：** 仅执行 MVP-2 最终返工 A：C1 的 worktree 根身份隔离、受限 `read_file`，以及 I1 的真实 ToolRegistry/PolicyEngine/CAS/受控 runner Mock 闭环。使用 `test-driven-development` 与 `verification-before-completion`；不提前修改返工 B 的验证信任契约、返工 C 的事件脱敏或返工 D 的审批契约。
+- **RED → GREEN：** RepositoryMap 根目录落在 worktree 外的 search 用例先失败并泄露 `private.py`，现固定返回 `PATH_ESCAPE`。新增的 `read_file` 用例先得到 `UNSUPPORTED_TOOL`，实现后以 64 KiB 上限、普通文件/无跟随打开和 UTF-8 解码边界返回稳定结果。真实临时 Git worktree 集成用例最初暴露 Windows checkout 字节摘要与文本摘要不一致，改为从实际字节计算 CAS SHA-256；随后验证错误输出通过 `FEEDBACK_RECORDED` 进入下一次 Mock 请求。
+- **实现事实：** `search` 要求 RepositoryMap 根与 ToolRegistry 的 PathGuard 根一致，并逐级 no-follow 检查受追踪候选项；`read_file` 不支持越界、符号链接、超限或非 UTF-8 内容。集成测试依次实际读取当前文件、使用当前 SHA 写入错误补丁、由受控 runner 返回失败、让反馈进入下一请求、使用错误版本的新 SHA 写入修复补丁、验证通过并记录最终摘要；通过同一真实注册表/策略的删除请求未移除文件。
+- **当前证据与状态：** 聚焦命令 `PYTHONPATH=src .venv\Scripts\python.exe -m pytest tests/tools tests/agent/test_real_tool_loop.py -q` 为 `15 passed, 1 skipped`（唯一 skip 为 Windows 无创建符号链接权限）；Ruff 与 3 个变更源文件的 mypy 均通过，`git diff --check` 通过。返工 A 已随指定标题提交，返工 B 保持待执行。

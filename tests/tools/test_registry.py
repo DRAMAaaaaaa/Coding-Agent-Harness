@@ -16,7 +16,7 @@ def tool(name: str, arguments: dict[str, object]) -> ToolAction:
 @pytest.fixture
 def worktree(tmp_path: Path) -> Path:
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "src" / "app.py").write_bytes(b"VALUE = 1\n")
     return tmp_path
 
 
@@ -42,3 +42,21 @@ async def test_delete_waits_for_approval_and_shell_is_absent(registry: ToolRegis
     assert delete.code == "APPROVAL_REQUIRED"
     shell = await registry.execute(tool("shell", {"argv": ["curl", "https://example.test"]}))
     assert shell.code == "UNSUPPORTED_TOOL"
+
+
+async def test_read_file_returns_bounded_regular_file(registry: ToolRegistry) -> None:
+    result = await registry.execute(tool("read_file", {"path": "src/app.py"}))
+
+    assert result.ok
+    assert result.code == "OK"
+    assert result.output == "VALUE = 1\n"
+
+
+async def test_read_file_rejects_oversized_content(registry: ToolRegistry, worktree: Path) -> None:
+    (worktree / "src" / "large.py").write_bytes(b"x" * (64 * 1024 + 1))
+
+    result = await registry.execute(tool("read_file", {"path": "src/large.py"}))
+
+    assert result.ok is False
+    assert result.code == "FILE_TOO_LARGE"
+    assert result.output == ""

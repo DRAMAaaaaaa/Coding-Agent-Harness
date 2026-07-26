@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from coding_agent_harness.domain.actions import ToolAction
 from coding_agent_harness.domain.actions import TaskState
 from coding_agent_harness.governance.paths import PathGuard
@@ -35,3 +37,62 @@ async def test_search_uses_query_protocol_when_governed(tmp_path: Path) -> None:
 
     assert result.ok
     assert "tracked.py" in result.output
+
+
+async def test_search_rejects_repository_map_root_outside_worktree(tmp_path: Path) -> None:
+    worktree = tmp_path / "worktree"
+    state_root = tmp_path / "state"
+    worktree.mkdir()
+    state_root.mkdir()
+    (state_root / "private.py").write_text("needle\n", encoding="utf-8")
+    context = ToolContext(
+        workspace_root=worktree,
+        repository_map=RepositoryMap(
+            root=state_root,
+            tracked_files=("private.py",),
+            documents=(),
+            test_paths=(),
+            recent_commits=(),
+            dirty_paths=(),
+        ),
+    )
+
+    result = await ToolRegistry(context).execute(
+        ToolAction.model_validate(
+            {"kind": "tool", "tool": "search", "arguments": {"query": "needle"}, "idempotency_key": "outside"}
+        )
+    )
+
+    assert result.ok is False
+    assert result.code == "PATH_ESCAPE"
+    assert result.output == ""
+
+
+async def test_search_does_not_follow_tracked_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "target.py"
+    target.write_text("needle\n", encoding="utf-8")
+    link = tmp_path / "linked.py"
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip("当前 Windows 测试账户没有创建符号链接权限")
+    context = ToolContext(
+        workspace_root=tmp_path,
+        repository_map=RepositoryMap(
+            root=tmp_path,
+            tracked_files=("linked.py",),
+            documents=(),
+            test_paths=(),
+            recent_commits=(),
+            dirty_paths=(),
+        ),
+    )
+
+    result = await ToolRegistry(context).execute(
+        ToolAction.model_validate(
+            {"kind": "tool", "tool": "search", "arguments": {"query": "needle"}, "idempotency_key": "symlink"}
+        )
+    )
+
+    assert result.ok
+    assert result.output == ""
