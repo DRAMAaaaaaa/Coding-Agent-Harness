@@ -18,6 +18,7 @@ from coding_agent_harness.api.session import SessionGuard
 from coding_agent_harness.api.sse import task_events
 from coding_agent_harness.agent.orchestrator import TaskStateError
 from coding_agent_harness.domain.models import Task
+from coding_agent_harness.domain.limits import validate_requirement_size
 from coding_agent_harness.governance.path_identity import trusted_paths_overlap
 from coding_agent_harness.storage.workspaces import StoredWorkspace, WorkspaceStorageError
 from coding_agent_harness.workspace.detector import ProjectDetectionError
@@ -48,7 +49,12 @@ class TrustRequest(_Request):
 
 class TaskRequest(_Request):
     workspace_id: UUID
-    requirement: str = Field(min_length=1, max_length=65_536)
+    requirement: str = Field(min_length=1)
+
+    @field_validator("requirement")
+    @classmethod
+    def validate_requirement_bytes(cls, value: str) -> str:
+        return validate_requirement_size(value)
 
     @field_validator("workspace_id", mode="before")
     @classmethod

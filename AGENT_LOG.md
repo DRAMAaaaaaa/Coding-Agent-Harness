@@ -783,3 +783,10 @@
 - **复审核实与范围：** 完整读取 QB 独立复审并使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 与 `verification-before-completion`；只修复两个 Important，不触碰 QC。根因是 task/worktree 落盘后的未知 propose 异常仍交给无 task 上下文的全局 500，以及 `_orchestrator_task` 把无领域含义的裸 `KeyError` 与 `TaskStateError` 合并捕获。
 - **RED → GREEN：** 未知 propose 与故障记录二次异常的首轮为 `2 failed, 10 passed`；裸 KeyError 精确矩阵为 `1 failed, 4 passed`。GREEN 后，未知 propose 固定返回脱敏 `500 INTERNAL_ERROR` 且 `details.task_id` 指向真实已持久化任务，并 best-effort 调用公共 `record_runtime_failure`；故障事件记录自身异常被脱敏吞掉，Provider 原 `503` 与 task ID 仍保留，GET 仍能定位任务。`_orchestrator_task` 只将 `TaskStateError` 映射为 409，裸 KeyError 由全局边界返回脱敏 500。
 - **新鲜验证与边界：** 三类复审聚焦 `7 passed, 16 deselected`；API 全套 `41 passed`；Ruff 通过，mypy 检查 46 个源文件通过。未运行全量或构建，未联网、安装、merge、push；差异检查在提交前执行。
+
+### 2026-07-27 — REWORK-MVP-3-TASK-7-QUALITY-QC
+
+- **范围与技能：** 仅处理质量审查 I6、I7、M1；完整读取 Task 7 brief、质量报告及 QA/QB 复审，使用 `systematic-debugging`、`test-driven-development` 和 `verification-before-completion`。未修改 QA/QB 行为，未联网、安装依赖、运行全量/构建、merge 或 push。
+- **RED → GREEN：** 30,000 个 CJK 字符（90,000 UTF-8 bytes）原被 API 以 201 接受且 Repository 静默替换，首轮为 `2 failed`；持久化 `git_root` 或独立 `trust_fingerprint` 列被篡改后仍可读取，首轮为 `2 failed, 1 passed`；EventStore 缺少有界批次接口、SSE 使用无界读取且超大事件丢失信封，首轮为 `3 failed`。GREEN 后三组聚焦依次为 `2 passed`、`3 passed`、`3 passed`。
+- **实现事实：** 任务需求统一经共享 `MAX_REQUIREMENT_BYTES` 的 UTF-8 字节规则验证，API 超限固定 422 且任务表、state_root/worktree 无副作用，Repository 保留同规则的防御性拒绝而不再静默改写。Workspace 恢复分别规范化 root/git_root，要求二者路径键均等于持久化 root_key 且物理同一，并核对 profile 与独立信任指纹列。EventStore 提供上限 100 的公共批次读取；SSE 以 sequence 游标固定分批，超大事件只替换 payload 并保留完整 TaskEvent 信封。
+- **限定验证：** 四个直接相关测试文件为 `53 passed`，API + storage 回归为 `89 passed`；Ruff 和 mypy（47 个源文件）通过。最终差异检查和提交前新鲜证据另行取得。

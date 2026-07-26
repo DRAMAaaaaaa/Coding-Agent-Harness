@@ -77,6 +77,33 @@ async def test_rejects_duplicate_root_and_invalid_legacy_row(tmp_path: Path) -> 
         await database.close()
 
 
+@pytest.mark.parametrize("column", ["root", "git_root", "trust_fingerprint"])
+async def test_get_fails_closed_when_workspace_identity_is_tampered(
+    tmp_path: Path,
+    column: str,
+) -> None:
+    root = tmp_path / "repo"
+    other = tmp_path / "other"
+    root.mkdir()
+    other.mkdir()
+    database = await Database.open(tmp_path / "harness.db")
+    try:
+        repository = WorkspaceRepository(database)
+        workspace = _workspace(root)
+        await repository.create(workspace)
+        tampered = "b" * 64 if column == "trust_fingerprint" else str(other)
+        await database.connection.execute(
+            f"UPDATE workspaces SET {column} = ? WHERE id = ?",
+            (tampered, str(workspace.id)),
+        )
+        await database.connection.commit()
+
+        with pytest.raises(WorkspaceStorageError):
+            await repository.get(workspace.id)
+    finally:
+        await database.close()
+
+
 def test_windows_extended_namespace_helper_rejects_unsafe_device_name() -> None:
     with pytest.raises(UnsafePathNamespaceError):
         collapse_windows_extended_path("\\\\?\\GLOBALROOT\\Device")

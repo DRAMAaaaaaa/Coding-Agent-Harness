@@ -7,6 +7,8 @@ from coding_agent_harness.domain.actions import TaskState
 from coding_agent_harness.domain.events import TaskEvent
 from coding_agent_harness.storage.database import Database
 
+MAX_EVENT_BATCH_SIZE = 100
+
 
 class ConcurrencyError(RuntimeError):
     """乐观序号与已落盘事件流不一致。"""
@@ -83,6 +85,31 @@ class EventStore:
                 ORDER BY sequence ASC
                 """,
                 (str(task_id), after),
+            )
+            rows = await cursor.fetchall()
+        return [_event_from_row(row) for row in rows]
+
+    async def list_batch_for_task(
+        self,
+        task_id: UUID,
+        after: int = 0,
+        limit: int = MAX_EVENT_BATCH_SIZE,
+    ) -> list[TaskEvent]:
+        if after < 0:
+            raise ValueError("after 不能为负数")
+        if not 1 <= limit <= MAX_EVENT_BATCH_SIZE:
+            raise ValueError("事件批次大小超出安全边界")
+        async with self._database.operation_lock:
+            cursor = await self._database.connection.execute(
+                """
+                SELECT task_id, sequence, event_type, payload,
+                       state_before, state_after, occurred_at
+                FROM task_events
+                WHERE task_id = ? AND sequence > ?
+                ORDER BY sequence ASC
+                LIMIT ?
+                """,
+                (str(task_id), after, limit),
             )
             rows = await cursor.fetchall()
         return [_event_from_row(row) for row in rows]

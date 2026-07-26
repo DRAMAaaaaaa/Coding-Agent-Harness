@@ -74,6 +74,35 @@ async def test_task_rejects_untrusted_and_host_controls(client: httpx.AsyncClien
     assert rejected.status_code == 422
 
 
+async def test_task_rejects_utf8_requirement_over_limit_without_side_effects(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    headers, workspace_id = await _trusted_workspace(client, tmp_path / "large-requirement")
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    before_tasks = await (
+        await active.tasks._database.connection.execute(  # type: ignore[attr-defined]
+            "SELECT COUNT(*) FROM tasks"
+        )
+    ).fetchone()
+    before_state = _relative_state_entries(active.state_root)
+
+    response = await client.post(
+        "/api/tasks",
+        json={"workspace_id": workspace_id, "requirement": "汉" * 30_000},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    after_tasks = await (
+        await active.tasks._database.connection.execute(  # type: ignore[attr-defined]
+            "SELECT COUNT(*) FROM tasks"
+        )
+    ).fetchone()
+    assert before_tasks == after_tasks == (0,)
+    assert _relative_state_entries(active.state_root) == before_state
+
+
 async def test_config_change_invalidates_trust_before_creating_task(
     client: httpx.AsyncClient, tmp_path: Path
 ) -> None:

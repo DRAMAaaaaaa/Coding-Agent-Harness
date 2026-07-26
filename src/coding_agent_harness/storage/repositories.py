@@ -4,6 +4,7 @@ from uuid import UUID
 
 from coding_agent_harness.domain.actions import TaskState
 from coding_agent_harness.domain.models import Task
+from coding_agent_harness.domain.limits import validate_requirement_size
 from coding_agent_harness.governance.redaction import Redactor
 from coding_agent_harness.storage.database import Database
 
@@ -24,11 +25,11 @@ class TaskRepository:
         self._redactor = redactor or Redactor()
 
     async def create(self, task: Task) -> Task:
+        validate_requirement_size(task.requirement)
         requirement = self._redactor.sanitize(task.requirement).value
         if not isinstance(requirement, str):
             raise TypeError("任务需求必须是字符串")
-        if len(requirement.encode("utf-8")) > 65_536:
-            requirement = "[REDACTED: task requirement exceeds safety limit]"
+        validate_requirement_size(requirement)
         task = task.model_copy(update={"requirement": requirement})
         async with self._database.operation_lock:
             try:

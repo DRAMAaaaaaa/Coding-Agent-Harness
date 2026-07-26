@@ -64,3 +64,11 @@ wheel/sdist 均包含 `001_initial.sql`、`002_governance_approvals.sql`、
 复审发现 task/worktree 已持久化后的未知 propose 异常仍会通过全局 500 丢失 task ID，且裸 `KeyError` 被误归类为非法状态。新增三条确定性回归：未知 Provider 实现异常、`record_runtime_failure` 二次异常、approve 内部裸 KeyError。RED 分别为前两项 `2 failed, 10 passed` 和 KeyError `1 failed, 4 passed`。
 
 实现只收紧现有边界：任何未知 propose 异常都先丢弃脱敏后的异常值，再 best-effort 记录 `RUNTIME_FAILURE`，最后返回固定 `500 INTERNAL_ERROR` 与 `details.task_id`；记录失败也不会覆盖原 Provider/runtime 响应或丢失 task 身份。裸 `KeyError` 不再进入 `INVALID_TASK_STATE`，只有 `TaskStateError` 保持 409。GREEN 聚焦为 `7 passed, 16 deselected`；API 全套 `41 passed`，Ruff 和 46 个源文件的 mypy 均通过。未触碰 QC，未运行全量或构建。
+
+## 质量返工 QC（I6、I7、M1）
+
+本轮只收紧任务需求、Workspace 恢复与 SSE 事件读取边界。I6 的两个 RED 证明 90,000 UTF-8 bytes 的 CJK 需求会被 API 接受，并在 Repository 内被静默替换；I7 的真实 SQLite 篡改矩阵证明 root 已能拒绝，但 git_root 与独立 trust_fingerprint 列仍被信任；M1 的三个 RED 证明缺少公共有界批次方法、SSE 仍调用无界读取，且超大事件仅剩 sequence/payload。
+
+GREEN 后，API 与 Repository 统一使用共享 `MAX_REQUIREMENT_BYTES` 的 UTF-8 字节规则：超限 API 请求返回 422，真实 task 计数及 state_root 条目保持不变，持久层防御性检查直接拒绝而不改写需求。Workspace 从行恢复时分别严格规范化 root/git_root，要求两者的 path key 均匹配持久化 root_key、`same_path` 成立，并核对 profile 与独立指纹列；三类篡改均 fail closed。EventStore 新增最大 100 条的公共批次读取，SSE 按最后 sequence 循环读取固定批次；超大事件仅将 payload 替换为结构化脱敏标记，task_id、sequence、event_type、状态和时间字段全部保留。
+
+直接相关四文件回归为 `53 passed`，API + storage 回归为 `89 passed`；Ruff 与 47 个源文件的 mypy 通过。未运行全量或构建，未联网、安装、merge 或 push。

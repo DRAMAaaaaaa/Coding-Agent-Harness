@@ -8,6 +8,7 @@ import httpx
 from coding_agent_harness.domain.actions import TaskState
 from coding_agent_harness.domain.events import TaskEvent
 from coding_agent_harness.storage.event_store import EventStore
+from coding_agent_harness.api.sse import task_events
 
 
 async def test_sse_streams_only_events_after_sequence(client: httpx.AsyncClient) -> None:
@@ -47,3 +48,97 @@ async def test_sse_streams_only_events_after_sequence(client: httpx.AsyncClient)
     resumed = await client.get(f"/api/tasks/{task_id}/events?after={event.sequence}")
     assert resumed.status_code == 200
     assert resumed.text == ""
+
+
+async def test_sse_consumes_event_history_in_multiple_bounded_batches() -> None:
+    task_id = UUID("00000000-0000-0000-0000-000000000007")
+    events = tuple(
+        TaskEvent(
+            task_id=task_id,
+            sequence=sequence,
+            event_type="BATCH_TEST",
+            payload={"index": sequence},
+            state_before=TaskState.CREATED,
+            state_after=TaskState.SCANNING,
+            occurred_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        for sequence in range(1, 206)
+    )
+    reader = _BatchOnlyEventReader(events)
+
+    chunks = [chunk async for chunk in task_events(reader, task_id, after=0)]  # type: ignore[arg-type]
+
+    sequences = [
+        int(chunk.split(b"\n", 1)[0].removeprefix(b"id: "))
+        for chunk in chunks
+    ]
+    assert len(sequences) == 205
+    assert sequences[0] == 1
+    assert sequences[-1] == 205
+
+
+async def test_sse_oversize_event_preserves_complete_envelope() -> None:
+    import json
+
+    task_id = UUID("00000000-0000-0000-0000-000000000008")
+    event = TaskEvent(
+        task_id=task_id,
+        sequence=9,
+        event_type="OVERSIZE_TEST",
+        payload={"content": "大" * 20_000},
+        state_before=TaskState.EXECUTING,
+        state_after=TaskState.WAITING_USER,
+        occurred_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+    )
+    reader = _StaticEventReader((event,))
+
+    [chunk] = [chunk async for chunk in task_events(reader, task_id, after=0)]  # type: ignore[arg-type]
+    data = json.loads(chunk.decode("utf-8").split("data: ", 1)[1])
+
+    assert data == {
+        "event_type": "OVERSIZE_TEST",
+        "occurred_at": "2026-01-02T03:04:05Z",
+        "payload": {"redacted": "[REDACTED: event exceeds safety limit]"},
+        "sequence": 9,
+        "state_after": "WAITING_USER",
+        "state_before": "EXECUTING",
+        "task_id": str(task_id),
+    }
+
+
+class _StaticEventReader:
+    def __init__(self, events: tuple[TaskEvent, ...]) -> None:
+        self._events = events
+
+    async def list_for_task(self, task_id: UUID, after: int = 0) -> list[TaskEvent]:
+        return [
+            event
+            for event in self._events
+            if event.task_id == task_id and event.sequence > after
+        ]
+
+    async def list_batch_for_task(
+        self,
+        task_id: UUID,
+        after: int = 0,
+        limit: int = 100,
+    ) -> list[TaskEvent]:
+        return (await self.list_for_task(task_id, after=after))[:limit]
+
+
+class _BatchOnlyEventReader(_StaticEventReader):
+    async def list_for_task(self, task_id: UUID, after: int = 0) -> list[TaskEvent]:
+        raise AssertionError("SSE 不得无界读取事件历史")
+
+    async def list_batch_for_task(
+        self,
+        task_id: UUID,
+        after: int = 0,
+        limit: int = 100,
+    ) -> list[TaskEvent]:
+        matches = [
+            event
+            for event in self._events
+            if event.task_id == task_id and event.sequence > after
+        ]
+        return matches[:limit]

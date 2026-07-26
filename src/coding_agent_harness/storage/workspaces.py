@@ -10,7 +10,11 @@ from pathlib import Path
 from uuid import UUID
 
 from coding_agent_harness.storage.database import Database
-from coding_agent_harness.governance.path_identity import UnsafePathNamespaceError, path_key
+from coding_agent_harness.governance.path_identity import (
+    UnsafePathNamespaceError,
+    path_key,
+    same_path,
+)
 from coding_agent_harness.workspace.models import ProjectProfile, Workspace
 
 
@@ -147,10 +151,20 @@ def _from_row(row: sqlite3.Row | tuple[object, ...]) -> StoredWorkspace:
         if any(row[index] is None for index in range(1, 8)):
             raise WorkspaceStorageError("Workspace 旧记录不完整")
         profile = ProjectProfile.model_validate_json(str(row[5]), strict=True)
-        root = Path(str(row[1])).resolve(strict=True)
-        git_root = Path(str(row[3])).resolve(strict=True)
-        if str(row[2]) != "\x1f".join(path_key(root)):
+        root_value, root_key = _normalized_path(Path(str(row[1])))
+        git_root_value, git_root_key = _normalized_path(Path(str(row[3])))
+        root = Path(root_value)
+        git_root = Path(git_root_value)
+        persisted_root_key = str(row[2])
+        if (
+            root_key != persisted_root_key
+            or git_root_key != persisted_root_key
+            or not same_path(root, git_root)
+        ):
             raise WorkspaceStorageError("Workspace 根路径身份无效")
+        persisted_fingerprint = str(row[6]) if row[6] is not None else None
+        if persisted_fingerprint != profile.trust_fingerprint:
+            raise WorkspaceStorageError("Workspace 信任指纹记录无效")
         workspace = Workspace(
             id=UUID(str(row[0])), root=root, git_root=git_root,
             default_branch=str(row[4]), profile=profile,

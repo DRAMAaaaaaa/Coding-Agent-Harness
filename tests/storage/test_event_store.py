@@ -203,6 +203,20 @@ async def test_task_repository_requires_existing_workspace(database: Database) -
         await TaskRepository(database).create(_task(uuid4()))
 
 
+async def test_task_repository_rejects_requirement_over_utf8_limit(
+    database: Database,
+) -> None:
+    workspace_id = uuid4()
+    await _insert_workspace(database, workspace_id)
+    task = _task(workspace_id, requirement="汉" * 30_000)
+    repository = TaskRepository(database)
+
+    with pytest.raises(ValueError, match="UTF-8"):
+        await repository.create(task)
+
+    assert await repository.get(task.id) is None
+
+
 async def test_task_repository_rejects_missing_task_update(database: Database) -> None:
     with pytest.raises(TaskNotFoundError):
         await TaskRepository(database).update_state(uuid4(), TaskState.FAILED)
@@ -223,6 +237,29 @@ async def test_append_assigns_ordered_sequences_and_lists_after(
     assert await store.list_for_task(persisted_task.id) == [first, second]
     assert await store.list_for_task(persisted_task.id, after=1) == [second]
     assert await store.list_for_task(uuid4()) == []
+
+
+async def test_event_store_reads_bounded_batches(
+    database: Database,
+    persisted_task: Task,
+) -> None:
+    store = EventStore(database)
+    events: list[TaskEvent] = []
+    for expected_sequence in range(5):
+        events.append(
+            await store.append(
+                _event(persisted_task.id, payload={"index": expected_sequence}),
+                expected_sequence=expected_sequence,
+            )
+        )
+    list_batch = getattr(store, "list_batch_for_task", None)
+    assert list_batch is not None
+
+    first = await list_batch(persisted_task.id, after=0, limit=2)
+    second = await list_batch(persisted_task.id, after=first[-1].sequence, limit=2)
+
+    assert first == events[:2]
+    assert second == events[2:4]
 
 
 async def test_append_rejects_stale_sequence_without_partial_write(

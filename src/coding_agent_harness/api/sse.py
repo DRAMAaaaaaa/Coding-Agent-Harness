@@ -4,25 +4,78 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from typing import Protocol
 from uuid import UUID
 
-from coding_agent_harness.storage.event_store import EventStore
+from coding_agent_harness.domain.events import TaskEvent
+from coding_agent_harness.storage.event_store import MAX_EVENT_BATCH_SIZE
 from coding_agent_harness.governance.redaction import Redactor
 
 _MAX_EVENT_BYTES = 32 * 1024
 _PRIVATE_FIELDS = frozenset({"state_root", "database_path", "session", "x-harness-session"})
 
 
-async def task_events(store: EventStore, task_id: UUID, after: int, redactor: Redactor | None = None) -> AsyncIterator[bytes]:
+class EventBatchReader(Protocol):
+    async def list_batch_for_task(
+        self,
+        task_id: UUID,
+        after: int = 0,
+        limit: int = MAX_EVENT_BATCH_SIZE,
+    ) -> list[TaskEvent]: ...
+
+
+async def task_events(
+    store: EventBatchReader,
+    task_id: UUID,
+    after: int,
+    redactor: Redactor | None = None,
+) -> AsyncIterator[bytes]:
     sanitizer = redactor or Redactor()
-    for event in await store.list_for_task(task_id, after=after):
-        transport = _hide_private(sanitizer.sanitize(event.model_dump(mode="json")).value)
-        payload = json.dumps(
-            transport, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    cursor = after
+    while True:
+        batch = await store.list_batch_for_task(
+            task_id,
+            after=cursor,
+            limit=MAX_EVENT_BATCH_SIZE,
         )
-        if len(payload.encode("utf-8")) > _MAX_EVENT_BYTES:
-            payload = json.dumps({"sequence": event.sequence, "payload": "[REDACTED: event exceeds safety limit]"}, separators=(",", ":"))
-        yield f"id: {event.sequence}\nevent: task-event\ndata: {payload}\n\n".encode("utf-8")
+        if not batch:
+            return
+        for event in batch:
+            payload = _encode_event(event, sanitizer)
+            yield f"id: {event.sequence}\nevent: task-event\ndata: {payload}\n\n".encode(
+                "utf-8"
+            )
+        cursor = batch[-1].sequence
+        if len(batch) < MAX_EVENT_BATCH_SIZE:
+            return
+
+
+def _encode_event(event: TaskEvent, sanitizer: Redactor) -> str:
+    transport = _hide_private(
+        sanitizer.sanitize(event.model_dump(mode="json")).value
+    )
+    if not isinstance(transport, dict):
+        raise TypeError("事件传输信封无效")
+    payload = json.dumps(
+        transport,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if len(payload.encode("utf-8")) > _MAX_EVENT_BYTES:
+        transport = {
+            **transport,
+            "payload": {
+                "redacted": "[REDACTED: event exceeds safety limit]",
+            },
+        }
+        payload = json.dumps(
+            transport,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    return payload
 
 
 def _hide_private(value: object) -> object:
