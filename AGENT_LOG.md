@@ -642,3 +642,9 @@
 
 - **批准的契约收口：** 同一 Workspace 最多一个 Harness 写任务；同目录 `O_EXCL` 协作锁线性化所有遵守协议的 Harness 实例。create 使用原子 no-replace；replace 在持锁且最终 replace 前复验 `expected_sha256`，复验前完成的编辑返回 `STALE_CONTENT`。
 - **明确限制与证据：** 普通跨平台文件系统不存在按 SHA-256 条件原子 replace。忽略锁的同 UID 外部进程若恰在最终复验与 replace 之间改写，属于 SPEC 9.2 已批准的外部竞争边界；已检测到身份或摘要不一致 fail closed，现场不确定则人工接管。测试名称和断言新增 Harness 协作锁 `CAS_BUSY` 与预替换摘要变化 `STALE_CONTENT` 覆盖；未删除复验或弱化 PathGuard/审批，未联网、安装依赖、merge 或 push。
+
+### 2026-07-26 — REVIEW-MVP-2-TOOLS-FINAL
+
+- **独立复审：** Task 5 最终提交 `0663960` 的规约符合性与代码质量复审均通过，Critical / Important / Minor 为 `0 / 0 / 0`，Task quality 为 Approved；定向复验为 `8 passed`。此前 search 策略协议、失效验证 runner 零调用和协作 CAS 契约均已收口。
+- **主控新鲜门禁：** `scripts/test.ps1 -Mode All` 取得全量 pytest `557 passed, 14 skipped`，Ruff 检查 33 个源文件通过、mypy 无问题，Web ESLint 与 TypeScript typecheck 通过；`pip check` 无损坏依赖，`git diff --check 07dfa31..HEAD` 通过，工作树干净。
+- **状态与范围：** MVP-2 Task 5 据此完成，Task 6 尚未开始；未联网、安装依赖、merge 或 push，`MVP-ISSUE-016` 仍由 MVP-4 Task 9 处理。

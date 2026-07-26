@@ -440,6 +440,8 @@ git commit -m "feat: 完成安全项目接入与任务工作树"
 
 ### Task 5：实现受治理的最小工具集
 
+**状态：** 完成。实现提交 `0663960`；独立规约符合性与代码质量复审均通过，Critical / Important / Minor 为 `0 / 0 / 0`，Task quality 为 Approved。主控新鲜门禁为全量 pytest `557 passed, 14 skipped`，Ruff、mypy、Web lint/typecheck、`pip check` 与差异检查均通过。
+
 **Files:**
 - Create: `src/coding_agent_harness/tools/models.py`
 - Create: `src/coding_agent_harness/tools/registry.py`
@@ -460,7 +462,7 @@ git commit -m "feat: 完成安全项目接入与任务工作树"
 - Produces: `ToolRegistry.execute(action: ToolAction, context: ToolContext) -> ToolResult`
 - Consumes: `PolicyEngine`、`PathGuard`、`SafeGit`、当前 `ProjectProfile`
 
-- [ ] **Step 1: 写注册表、原子替换和审批 RED 测试**
+- [x] **Step 1: 写注册表、原子替换和审批 RED 测试**
 
 ```python
 async def test_apply_patch_is_compare_and_swap(registry, worktree: Path) -> None:
@@ -480,13 +482,13 @@ async def test_delete_waits_for_approval_and_shell_is_absent(registry) -> None:
     assert shell.code == "UNSUPPORTED_TOOL"
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/tools -q`
 
 Expected: tools 包不存在。
 
-- [ ] **Step 3: 实现严格工具协议**
+- [x] **Step 3: 实现严格工具协议**
 
 `apply_patch` 使用全文件 compare-and-swap：同一 Workspace 最多一个 Harness 写任务，同目录 `O_EXCL` 协作锁线性化所有遵守协议的 Harness 实例。create 时摘要为 null 且以原子 no-replace 创建；replace 时摘要精确匹配，并在持锁、原子 replace 前复验。写入同目录独占临时文件、flush、fsync、原子 replace；复验前完成的用户编辑返回 `STALE_CONTENT`。普通跨平台文件系统没有按 SHA-256 条件原子 replace，忽略锁的同 UID 外部进程若恰在最终复验与 replace 之间改写属于 SPEC 9.2 已批准的外部竞争边界；已检测到不一致 fail closed，现场不确定时人工接管。`delete_file` 只接受单个普通文件和摘要，消费审批后删除；目录、symlink 和缺失摘要拒绝。
 
@@ -494,11 +496,11 @@ Expected: tools 包不存在。
 
 `search` 只扫描 RepositoryMap 跟踪文本文件并限制文件数、单文件 bytes、匹配数和总输出。`run_verification` 重新 detect 并比较批准指纹，只执行精确 argv；变化返回 `STALE_CONFIG` 且 runner 零调用。
 
-- [ ] **Step 4: Git 工具只暴露 status/diff**
+- [x] **Step 4: Git 工具只暴露 status/diff**
 
 `git_status` 使用安全 porcelain；`git_diff` 固定 `--no-ext-diff --no-textconv --binary --`。checkpoint、push、merge 和任意 Git argv 不注册。
 
-- [ ] **Step 5: 转绿并提交**
+- [x] **Step 5: 转绿并提交**
 
 Run:
 

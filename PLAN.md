@@ -163,7 +163,7 @@ class TaskOrchestrator:
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
 | 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 完成（首次合并 `8f2ae34`；WAL/路径门闩纠偏复审通过；补充合并 `873f1d4`） |
 | 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 完成：最终受审范围 `6b2f21e..9d01b77`；规约与质量双门禁均为 CLEAN，`MVP-ISSUE-003/004/006/008`—`015` 已关闭；主控新鲜验证已通过，待本地合并 |
-| 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 实现已提交并完成审查返工，待独立规约/质量审查 |
+| 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 完成（`0663960`；独立规约/质量审查 0 / 0 / 0、Approved；主控全量 `557 passed, 14 skipped`） |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
 | 8 | 记忆筛选、存储与上下文 | 3、4 | 可与 7 并行 | `codex/memory` | 待执行 |
 | 9 | Agent 编排循环与机制演示 | 3—8 | 无 | `codex/orchestrator` | 待执行 |
