@@ -488,7 +488,7 @@ Expected: tools 包不存在。
 
 - [ ] **Step 3: 实现严格工具协议**
 
-`apply_patch` 使用全文件 compare-and-swap：create 时摘要为 null 且文件必须不存在；replace 时摘要精确匹配。写入同目录独占临时文件、flush、fsync、原子 replace。`delete_file` 只接受单个普通文件和摘要，消费审批后删除；目录、symlink 和缺失摘要拒绝。
+`apply_patch` 使用全文件 compare-and-swap：同一 Workspace 最多一个 Harness 写任务，同目录 `O_EXCL` 协作锁线性化所有遵守协议的 Harness 实例。create 时摘要为 null 且以原子 no-replace 创建；replace 时摘要精确匹配，并在持锁、原子 replace 前复验。写入同目录独占临时文件、flush、fsync、原子 replace；复验前完成的用户编辑返回 `STALE_CONTENT`。普通跨平台文件系统没有按 SHA-256 条件原子 replace，忽略锁的同 UID 外部进程若恰在最终复验与 replace 之间改写属于 SPEC 9.2 已批准的外部竞争边界；已检测到不一致 fail closed，现场不确定时人工接管。`delete_file` 只接受单个普通文件和摘要，消费审批后删除；目录、symlink 和缺失摘要拒绝。
 
 `PolicyEngine` 同步把 `apply_patch` 解析为结构化 `path/expected_sha256/content`，把 `delete_file` 解析为 `path/expected_sha256`；所有路径先经过 `PathGuard`，未知字段由 Pydantic 严格拒绝。
 

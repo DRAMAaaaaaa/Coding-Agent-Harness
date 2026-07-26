@@ -163,7 +163,7 @@ class TaskOrchestrator:
 | 3 | SQLite 事件存储与状态机 | 2 | 可与 10 并行 | `codex/event-state` | 完成（RED 5b7da3c；实现 2f010b3；修复 ec28b1b；复审通过；完成提交 3861613） |
 | 4 | 治理、路径围栏、脱敏与审批 | 2、3 | 可与 5 并行 | `codex/governance` | 完成（首次合并 `8f2ae34`；WAL/路径门闩纠偏复审通过；补充合并 `873f1d4`） |
 | 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 完成：最终受审范围 `6b2f21e..9d01b77`；规约与质量双门禁均为 CLEAN，`MVP-ISSUE-003/004/006/008`—`015` 已关闭；主控新鲜验证已通过，待本地合并 |
-| 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 待执行 |
+| 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 实现已提交并完成审查返工，待独立规约/质量审查 |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
 | 8 | 记忆筛选、存储与上下文 | 3、4 | 可与 7 并行 | `codex/memory` | 待执行 |
 | 9 | Agent 编排循环与机制演示 | 3—8 | 无 | `codex/orchestrator` | 待执行 |
@@ -989,6 +989,8 @@ git commit -m "功能：实现项目识别和任务工作树（工作区子智�
 - 消费：Task 4 `PolicyEngine/PathGuard/Redactor`，Task 5 worktree。
 
 Harness `state_root` 永久不属于 worktree，也不进入普通 `read_file`、`search`、`apply_patch`、`delete_path`、`shell` 或 Git 工具的可访问范围；审批不能提升该能力。Task 6 聚焦测试和后续 Task 13 集成/E2E 必须验证访问 `state_root` 固定返回 `DENY/PATH_ESCAPE`，不能仅依赖 state_root 未出现在提示词中。
+
+`apply_patch` 的 Task 5 协作边界：同一 Workspace 最多一个 Harness 写任务；同目录 `O_EXCL` 锁线性化所有遵守协议的 Harness 实例。create 使用原子 no-replace；replace 在持锁下、`os.replace` 前复验 `expected_sha256`，已在复验前完成的编辑返回 `STALE_CONTENT`。普通跨平台文件系统没有按 SHA-256 条件原子 replace；忽略锁的同 UID 外部进程若恰在最终复验与 replace 之间改写，属于 SPEC 9.2 已批准的外部竞争边界。检测到身份或摘要不一致必须 fail closed，现场不确定时人工接管。
 
 - [ ] **步骤 1：写策略先于执行和原子 patch 冲突测试**
 

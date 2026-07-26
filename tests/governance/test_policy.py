@@ -570,7 +570,8 @@ def test_every_real_tool_denies_path_escape_before_risk_approval(
     )
 
     assert result.decision is PolicyDecision.DENY
-    assert result.reason_code == "PATH_ESCAPE"
+    expected_code = "INVALID_ACTION" if tool == "search" else "PATH_ESCAPE"
+    assert result.reason_code == expected_code
 
 
 @pytest.mark.parametrize(
@@ -877,3 +878,44 @@ def test_cmd_slash_options_remain_valid_only_in_cmd_prefix(
 
     assert result.decision is PolicyDecision.REQUIRE_APPROVAL
     assert result.reason_code == "HIGH_RISK_SHELL"
+
+
+def test_structured_file_tools_guard_paths_and_require_delete_approval(
+    policy: PolicyEngine,
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path / "workspace")
+    patch = policy.evaluate(
+        _action(
+            "apply_patch",
+            {"path": "../outside.py", "expected_sha256": None, "content": "x\n"},
+        ),
+        context,
+    )
+    delete = policy.evaluate(
+        _action(
+            "delete_file",
+            {"path": "src/file.py", "expected_sha256": "0" * 64},
+        ),
+        context,
+    )
+
+    assert patch.decision is PolicyDecision.DENY
+    assert patch.reason_code == "PATH_ESCAPE"
+    assert delete.decision is PolicyDecision.REQUIRE_APPROVAL
+    assert delete.reason_code == "DELETE_PATH"
+
+
+def test_search_accepts_only_the_registry_query_protocol(
+    policy: PolicyEngine,
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path / "workspace")
+    allowed = policy.evaluate(_action("search", {"query": "needle"}), context)
+    rejected = policy.evaluate(
+        _action("search", {"query": "needle", "path": "src/app.py"}), context
+    )
+
+    assert allowed.decision is PolicyDecision.ALLOW
+    assert rejected.decision is PolicyDecision.DENY
+    assert rejected.reason_code == "INVALID_ACTION"

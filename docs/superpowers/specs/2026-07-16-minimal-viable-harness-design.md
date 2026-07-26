@@ -60,6 +60,8 @@
 
 安装依赖、网络请求、Git push/merge/release 和任意 Shell 在首版固定拒绝。验证命令只能来自已批准且当前指纹仍一致的项目配置。
 
+`apply_patch` 在同一 Workspace 内假定最多一个 Harness 写任务；同目录 `O_EXCL` 锁协调遵守协议的实例。创建用原子 no-replace，替换在持锁且最终 replace 前复验 SHA-256，已检测到的变化 fail closed。跨平台文件系统不提供按摘要条件原子 replace；忽略锁的同 UID 外部进程在最终复验与 replace 之间的竞争由 SPEC 9.2 明确排除，现场不确定时不自动回滚，转人工接管。
+
 ### 4.3 Provider 层
 
 `ScriptedMockProvider` 按预置响应序列驱动演示，不根据隐藏网络服务生成答案。DeepSeek/Qwen 继续实现相同 Provider 协议，但真实调用不属于首版验收门禁。

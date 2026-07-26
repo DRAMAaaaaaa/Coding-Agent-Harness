@@ -205,7 +205,7 @@ class PolicyEngine:
         tool = self._executable(action.tool)
         command = self._unwrap_command(parsed.argv)
 
-        if tool == "delete_path":
+        if tool in {"delete_path", "delete_file"}:
             return self._result(PolicyDecision.REQUIRE_APPROVAL, "DELETE_PATH", scope, context)
         if command.high_risk:
             return self._result(
@@ -272,12 +272,37 @@ class PolicyEngine:
 
         argv: tuple[str, ...] = ()
         candidates: list[tuple[str, str]] = []
-        if tool in {"read_file", "search", "delete_path"}:
+        if tool in {"read_file", "delete_path"}:
             path = arguments.get("path")
             if not isinstance(path, str):
                 return None
             candidates.append(("path", path))
+        elif tool == "search":
+            if set(arguments) != {"query"} or not isinstance(arguments.get("query"), str):
+                return None
+        elif tool == "delete_file":
+            path = arguments.get("path")
+            digest = arguments.get("expected_sha256")
+            if (
+                set(arguments) != {"path", "expected_sha256"}
+                or not isinstance(path, str)
+                or not isinstance(digest, str)
+            ):
+                return None
+            candidates.append(("path", path))
         elif tool == "apply_patch":
+            path = arguments.get("path")
+            expected = arguments.get("expected_sha256")
+            content = arguments.get("content")
+            if set(arguments) == {"path", "expected_sha256", "content"}:
+                if (
+                    not isinstance(path, str)
+                    or not isinstance(expected, str | None)
+                    or not isinstance(content, str)
+                ):
+                    return None
+                candidates.append(("path", path))
+                return self._resolve_candidates(argv, candidates)
             patch = arguments.get("patch")
             if not isinstance(patch, str):
                 return None
@@ -305,6 +330,13 @@ class PolicyEngine:
             if arguments:
                 return None
 
+        return self._resolve_candidates(argv, candidates)
+
+    def _resolve_candidates(
+        self,
+        argv: tuple[str, ...],
+        candidates: list[tuple[str, str]],
+    ) -> _ParsedAction:
         paths: dict[str, Path] = {}
         escaped = False
         for index, (field, candidate) in enumerate(candidates):

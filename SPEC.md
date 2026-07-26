@@ -249,6 +249,8 @@ flowchart LR
 
 Harness `state_root` 是宿主进程私有状态边界，不进入 LLM 上下文、普通 Agent 工具 schema 或普通 read/patch/delete/shell 的能力范围。首版信任运行 Harness 的同一 OS 账户不会用原生进程主动替换、移动或篡改该私有目录；“用户并发修改”只指用户对项目或任务 worktree 的正常编辑，不包含同 UID 恶意进程攻击。首版不宣称能够跨平台抵御同 UID 原生进程对父目录的竞争交换；检测到路径身份、Git worktree 注册或副作用结果不一致时，不主动删除仍存在的 target/branch 等现场、不回滚 Git 已完成的副作用，并保留活动标记进入人工接管；禁止自动递归清理不确定路径。
 
+`apply_patch` 的并发契约是：同一 Workspace 最多运行一个 Harness 写任务；同目录 `O_EXCL` 协作锁使所有遵守协议的 Harness 实例线性化。create 使用原子 no-replace，replace 在持锁下于原子替换前复验 `expected_sha256`，复验前完成的用户编辑固定返回 `STALE_CONTENT`。普通跨平台文件系统没有“按 SHA-256 条件原子 replace”原语：若同 UID 外部进程忽略锁并恰在最终复验与 `os.replace` 之间改写，首版无法可靠检测或阻断，属于本节已批准的同 UID 外部竞争边界；已检测到身份或摘要不一致时 fail closed，现场不确定时交由人工接管。
+
 ### 9.3 可用性
 
 - 桌面优先，键盘可操作，焦点清晰，不仅依靠颜色表达状态。

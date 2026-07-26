@@ -626,3 +626,19 @@
 - **主控新鲜门禁：** 在关闭提交 `eceac96` 后，固定 `PYTHONPATH` 指向当前 worktree 的 `src`，取得 Ruff 全通过、mypy 26 个源文件无问题、全量 pytest `544 passed, 14 skipped in 67.18s`、Web ESLint 与 TypeScript typecheck 通过、`pip check` 无损坏依赖、Python sdist/wheel 构建成功以及 `git diff --check 6b2f21e..HEAD` 通过的证据。
 - **一键入口诊断：** 当前 PowerShell 环境没有名为 `make` 的入口；仓库等价脚本 `scripts/test.ps1` 又假设 worktree 内存在 `.venv`。首次运行时 `Resolve-Path` 失败后脚本仍继续，并可能由后续命令覆盖退出码；第二次在 Python 门禁通过后因 worktree 缺少 `web/node_modules` 于 ESLint 启动前失败。主控核对主仓库与 worktree 的 `package.json`/`package-lock.json` SHA-256 完全一致后，只在被忽略目录建立本地 junction 复用已批准依赖，再次运行等价一键入口并取得全部真实门禁通过。该假阳性风险登记为 `MVP-ISSUE-016`，由 MVP-4 Task 9 修复，不回开 MVP-1。
 - **边界：** 没有修改生产代码或测试，没有联网、重新安装依赖、推送或接触凭据；当前仅待把 `codex/workspaces` 本地合并到 `p1`。
+
+### 2026-07-26 — IMPL-MVP-2-TOOLS
+
+- **任务与范围：** 在隔离 worktree `codex/tools` 实现 MVP-2 Task 5 的受治理最小编码工具集；使用 `test-driven-development` 与 `verification-before-completion`。范围未包含 shell、任意 Git、网络或依赖安装工具，未修改 `MVP-ISSUE-016`，未联网、未 merge、未 push。
+- **TDD RED→GREEN：** 新增工具测试后，`PYTHONPATH=src .venv\Scripts\python.exe -m pytest tests/tools -q` 首次因 `coding_agent_harness.tools` 不存在而出现 5 个收集错误；实现最小接口后转为 `7 passed`。结构化文件工具策略测试先因返回 `INVALID_ACTION` 失败，补齐解析和 `PathGuard` 路径处理后转绿。
+- **提交与新鲜验证：** 提交 `4636189 feat: 实现受治理的最小编码工具集` 包含 CAS 原子替换、审批门控删除、有界搜索、信任指纹重检验证及固定 Git status/diff。focused `tests/tools tests/governance` 为 `305 passed, 2 skipped`；Ruff、mypy 均通过；全量 pytest 为 `552 passed, 14 skipped`，`git diff --check` 通过。当前仅等待独立规约与代码质量审查。
+
+### 2026-07-26 — IMPL-MVP-2-TOOLS-REWORK
+
+- **审查返工与 TDD：** 确认审查提出的 1 个 Critical 与 2 个 Important 均成立。文件工具新增“写入临时文件后并发创建/改写目标”的确定性 RED：旧实现两种路径均返回 `OK` 并覆盖并发内容；改为同目录 `O_EXCL` CAS 协调、创建 `link` no-replace、替换写前复验后转绿。受治理 `search({query})` 的 RED 复现策略返回 `INVALID_ACTION`，统一协议且拒绝未知字段后转绿；失效 verification 以计数失败 runner 验证 `STALE_CONFIG` 且零调用。
+- **新鲜验证与边界：** focused `tests/tools tests/governance` 为 `309 passed, 2 skipped`，Ruff、mypy 通过；全量 pytest 为 `556 passed, 14 skipped`，`git diff --check` 通过。仅修复 Task 5 审查项，未扩展功能；未联网、安装依赖、merge 或 push，`MVP-ISSUE-016` 未修改；Task 5 实现提交已 amend，继续等待独立规约/质量审查。
+
+### 2026-07-26 — IMPL-MVP-2-TOOLS-CAS-BOUNDARY
+
+- **批准的契约收口：** 同一 Workspace 最多一个 Harness 写任务；同目录 `O_EXCL` 协作锁线性化所有遵守协议的 Harness 实例。create 使用原子 no-replace；replace 在持锁且最终 replace 前复验 `expected_sha256`，复验前完成的编辑返回 `STALE_CONTENT`。
+- **明确限制与证据：** 普通跨平台文件系统不存在按 SHA-256 条件原子 replace。忽略锁的同 UID 外部进程若恰在最终复验与 replace 之间改写，属于 SPEC 9.2 已批准的外部竞争边界；已检测到身份或摘要不一致 fail closed，现场不确定则人工接管。测试名称和断言新增 Harness 协作锁 `CAS_BUSY` 与预替换摘要变化 `STALE_CONTENT` 覆盖；未删除复验或弱化 PathGuard/审批，未联网、安装依赖、merge 或 push。
