@@ -682,3 +682,22 @@
 - **RED → GREEN：** RepositoryMap 根目录落在 worktree 外的 search 用例先失败并泄露 `private.py`，现固定返回 `PATH_ESCAPE`。新增的 `read_file` 用例先得到 `UNSUPPORTED_TOOL`，实现后以 64 KiB 上限、普通文件/无跟随打开和 UTF-8 解码边界返回稳定结果。真实临时 Git worktree 集成用例最初暴露 Windows checkout 字节摘要与文本摘要不一致，改为从实际字节计算 CAS SHA-256；随后验证错误输出通过 `FEEDBACK_RECORDED` 进入下一次 Mock 请求。
 - **实现事实：** `search` 要求 RepositoryMap 根与 ToolRegistry 的 PathGuard 根一致，并逐级 no-follow 检查受追踪候选项；`read_file` 不支持越界、符号链接、超限或非 UTF-8 内容。集成测试依次实际读取当前文件、使用当前 SHA 写入错误补丁、由受控 runner 返回失败、让反馈进入下一请求、使用错误版本的新 SHA 写入修复补丁、验证通过并记录最终摘要；通过同一真实注册表/策略的删除请求未移除文件。
 - **当前证据与状态：** 聚焦命令 `PYTHONPATH=src .venv\Scripts\python.exe -m pytest tests/tools tests/agent/test_real_tool_loop.py -q` 为 `15 passed, 1 skipped`（唯一 skip 为 Windows 无创建符号链接权限）；Ruff 与 3 个变更源文件的 mypy 均通过，`git diff --check` 通过。返工 A 已随指定标题提交，返工 B 保持待执行。
+
+### 2026-07-27 — IMPL-MVP-2-FINAL-REWORK-B
+
+- **范围与技能：** 仅执行返工 B 的 C2/I4：显式验证批准绑定、实际 argv 的 PolicyEngine 复核，以及完整验证新鲜度门禁。使用 `test-driven-development`；未修改返工 C 的事件/Provider 脱敏或返工 D 的审批消费契约。
+- **RED → GREEN：** 新增的显式批准测试先因 `VerificationApproval` 缺失无法收集，补齐模型后，无批准与不匹配指纹的验证先暴露为实际调用 runner；现在均固定拒绝且 runner 零调用。完整门禁的 RED 显示“仅 lint 成功”仍进入最终审查，现要求所有当前必需检查都在同一当前快照、配置版本和信任指纹下成功。
+- **实现事实：** ToolContext 需要独立的 `VerificationApproval`（审批标识、配置版本、信任指纹），重新 detect 后校验其与当前 profile 一致；实际 argv 被构造成 shell ToolAction 并交 PolicyEngine，curl、pip install、git push 与 shell 解释器固定拒绝，安全 pytest 才可执行。成功验证持久化检查名、配置版本、信任指纹、受 PathGuard/RepositoryMap 约束的确定性 worktree 快照和必需检查集合；CompleteAction 重新取当前证据，拒绝漏检、外部编辑、配置变化及最后修改前的结果，只读工具不失效。
+- **当前证据与状态：** `tests/tools/test_verification.py tests/agent/test_orchestrator.py tests/agent/test_real_tool_loop.py` 为 `19 passed`；Ruff、mypy（4 个变更源文件）和 `git diff --check` 通过。返工 B 已随指定标题提交；返工 C 保持待执行。
+
+### 2026-07-27 — IMPL-MVP-2-FINAL-REWORK-B-SNAPSHOT
+
+- **根因与范围：** 独立复审确认 B 的唯一 Important：旧快照只遍历构造 RepositoryMap 时的 `tracked_files`，验证后出现的未跟踪普通文件不会改变指纹。仅修复动态快照；未触及返工 C/D。
+- **RED → GREEN：** 在真实临时 Git worktree 中，先通过 test 验证，再由 Provider 在 CompleteAction 返回前创建未跟踪 `external.py`；旧实现错误进入 `WAITING_FINAL_REVIEW`，新实现固定进入 `WAITING_USER/VERIFICATION_REQUIRED`。补充断言证明受跟踪文件改写改变快照、未跟踪文件改变快照，而删除/重命名已跟踪文件使快照不可用并 fail closed。
+- **实现与证据：** 快照现在 no-follow、有界遍历当前 worktree 文件系统，动态纳入所有普通文件并区分已跟踪/未跟踪；`.git` 被排除，若显式 state_root 位于 worktree 内则拒绝读取并不放行。目录、链接/reparse、非普通文件、遍历/读取错误、大小/数量上限以及静态已跟踪文件缺失均固定返回不可用。聚焦 `tests/tools/test_verification.py tests/agent/test_orchestrator.py tests/agent/test_real_tool_loop.py` 为 `21 passed`；Ruff、mypy（4 个源文件）和 diff check 通过。待 amend 同名 B 提交，返工 C 保持待执行。
+
+### 2026-07-27 — IMPL-MVP-2-FINAL-REWORK-B-SCAN-BOUND
+
+- **审查返工与根因：** 复审继续指出快照动态扫描仅限制普通文件数、单文件大小和总字节数；空目录不计入上述预算，因而可以使扫描无界。
+- **TDD RED → GREEN：** 先新增 10,001 个空目录的用例，旧行为返回验证证据，因而输出明确的断言失败；同时新增 65 层目录深度的 RED 用例。GREEN 后，对当前 worktree 扫描使用确定性的 10,000 目录、10,000 条目和 64 层深度预算；枚举错误、symlink/reparse 或任何超限均固定 fail closed。
+- **状态：** 仅 amend 同一个返工 B 提交，未触及返工 C/D、网络、依赖安装、merge 或 push。

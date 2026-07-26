@@ -165,7 +165,7 @@ class TaskOrchestrator:
 | 5 | 项目识别、扫描与 worktree | 1、2；worktree 子步骤依赖 4 的 `PathGuard` 契约 | detector/scanner 可与 4 并行，worktree 子步骤须等待 4 契约冻结 | `codex/workspaces` | 完成：最终受审范围 `6b2f21e..9d01b77`；规约与质量双门禁均为 CLEAN，`MVP-ISSUE-003/004/006/008`—`015` 已关闭；主控新鲜验证已通过，待本地合并 |
 | 6 | 工具注册表和受限编码工具 | 4、5 | 无 | `codex/tools` | 完成（`0663960`；独立规约/质量审查 0 / 0 / 0、Approved；主控全量 `557 passed, 14 skipped`） |
 | 7 | 验证与确定性反馈闭环 | 2、6 | 可与 8 并行 | `codex/feedback` | 待执行 |
-| MVP-2 Task 6（brief） | 确定性反馈与 Mock Agent 主循环 | 2、6 | 独立 worktree | `codex/agent-loop` | 返工 A 已提交（本提交：收紧工具路径、受限 `read_file` 与真实 Mock 闭环）；返工 B 待执行（验证信任门禁） |
+| MVP-2 Task 6（brief） | 确定性反馈与 Mock Agent 主循环 | 2、6 | 独立 worktree | `codex/agent-loop` | 返工 A 已提交（`d931496`）；返工 B 已修订（验证批准绑定、完整新鲜度与有界动态快照）；返工 C 待执行（事件/Provider 脱敏） |
 | 8 | 记忆筛选、存储与上下文 | 3、4 | 可与 7 并行 | `codex/memory` | 待执行 |
 | 9 | Agent 编排循环与机制演示 | 3—8 | 无 | `codex/orchestrator` | 待执行 |
 | 10 | 凭据生命周期 | 1、4 | 可与 3 或 8 并行 | `codex/credentials` | 待执行 |

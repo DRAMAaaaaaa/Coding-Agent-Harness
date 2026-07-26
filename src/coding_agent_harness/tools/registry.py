@@ -9,7 +9,11 @@ from coding_agent_harness.domain.actions import ToolAction
 from coding_agent_harness.governance.paths import PathEscapeError, PathGuard
 from coding_agent_harness.governance.policy import PolicyDecision
 from coding_agent_harness.tools import files, git, search, verification
-from coding_agent_harness.tools.models import ToolContext, ToolResult
+from coding_agent_harness.tools.models import (
+    ToolContext,
+    ToolResult,
+    VerificationEvidence,
+)
 from coding_agent_harness.workspace.files import (
     BoundedFileReadError,
     BoundedFileReader,
@@ -158,8 +162,37 @@ class ToolRegistry:
             return ToolResult(ok=False, code="INVALID_ARGUMENTS")
         if request.name not in {"test", "lint", "typecheck", "build"} or self._context.profile is None:
             return ToolResult(ok=False, code="UNAVAILABLE_VERIFICATION")
-        code, output = verification.run_verification(self._guard.root, self._context.profile, request.name, self._context.runner)
-        return ToolResult(ok=code == "OK", code=code, output=output, retryable=code == "VERIFICATION_FAILED")
+        execution = verification.run_verification(
+            self._guard.root,
+            self._context.profile,
+            request.name,
+            self._context.runner,
+            repository_map=self._context.repository_map,
+            approval=self._context.verification_approval,
+            config_version=self._context.verification_config_version,
+            policy=self._context.policy,
+            policy_context=self._context.policy_context,
+            state_root=self._context.state_root,
+        )
+        return ToolResult(
+            ok=execution.code == "OK",
+            code=execution.code,
+            output=execution.output,
+            retryable=execution.code == "VERIFICATION_FAILED",
+            verification=execution.evidence,
+        )
+
+    async def current_verification_evidence(self) -> VerificationEvidence | None:
+        if self._context.profile is None:
+            return None
+        return verification.current_verification_evidence(
+            self._guard.root,
+            self._context.profile,
+            self._context.repository_map,
+            self._context.verification_approval,
+            self._context.verification_config_version,
+            self._context.state_root,
+        )
 
     async def _git_status(self, arguments: dict[str, Any]) -> ToolResult:
         try:

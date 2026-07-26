@@ -18,11 +18,15 @@ from coding_agent_harness.feedback.models import FailureCategory, FeedbackObserv
 from coding_agent_harness.providers.base import LLMProvider, LLMRequest
 from coding_agent_harness.storage.event_store import EventStore
 from coding_agent_harness.storage.repositories import TaskRepository
-from coding_agent_harness.tools.models import ToolResult
+from coding_agent_harness.tools.models import ToolResult, VerificationEvidence
 
 
 class ToolExecutor(Protocol):
     async def execute(self, action: ToolAction) -> ToolResult: ...
+
+
+class VerificationEvidenceSource(Protocol):
+    async def current_verification_evidence(self) -> VerificationEvidence | None: ...
 
 
 class TaskStateError(RuntimeError):
@@ -185,10 +189,19 @@ class AgentOrchestrator:
             {"run": run.model_dump(mode="json")},
         )
         if result.ok:
+            if result.verification is None:
+                return await self._emit(
+                    task,
+                    "USER_INPUT_REQUIRED",
+                    {"reason_code": "VERIFICATION_EVIDENCE_REQUIRED"},
+                )
             return await self._emit(
                 task,
                 "VERIFICATION_SUCCEEDED",
-                {"run": run.model_dump(mode="json")},
+                {
+                    "run": run.model_dump(mode="json"),
+                    "verification": result.verification.model_dump(mode="json"),
+                },
             )
         decision = self._feedback.evaluate(await self._feedback_history(task.id), run)
         task = await self._emit(
@@ -296,16 +309,49 @@ class AgentOrchestrator:
         return name if isinstance(name, str) and name else "verification"
 
     async def _has_successful_verification(self, task_id: UUID) -> bool:
+        current = await self._current_verification_evidence()
+        if current is None:
+            return False
+        required = set(current.required_checks)
+        succeeded: set[str] = set()
         for event in reversed(await self._event_store.list_for_task(task_id)):
-            if event.event_type == "VERIFICATION_SUCCEEDED":
-                return True
             if event.event_type == "TOOL_EXECUTION_COMPLETED":
                 result = event.payload.get("result")
                 if isinstance(result, dict):
                     changed_paths = result.get("changed_paths")
                     if isinstance(changed_paths, list) and changed_paths:
                         return False
+            if event.event_type != "VERIFICATION_SUCCEEDED":
+                continue
+            raw_evidence = event.payload.get("verification")
+            if not isinstance(raw_evidence, dict):
+                continue
+            normalized: dict[str, object] = dict(raw_evidence)
+            checks = normalized.get("required_checks")
+            if isinstance(checks, list) and all(isinstance(check, str) for check in checks):
+                normalized["required_checks"] = tuple(checks)
+            try:
+                evidence = VerificationEvidence.model_validate(normalized)
+            except ValueError:
+                continue
+            if (
+                evidence.config_version == current.config_version
+                and evidence.trust_fingerprint == current.trust_fingerprint
+                and evidence.worktree_fingerprint == current.worktree_fingerprint
+                and evidence.required_checks == current.required_checks
+                and evidence.name in required
+            ):
+                succeeded.add(evidence.name)
+                if succeeded == required:
+                    return True
         return False
+
+    async def _current_verification_evidence(self) -> VerificationEvidence | None:
+        provider = getattr(self._tools, "current_verification_evidence", None)
+        if provider is None or not callable(provider):
+            return None
+        evidence = await provider()
+        return evidence if isinstance(evidence, VerificationEvidence) else None
 
     @staticmethod
     def _failure_count(output: str) -> int | None:

@@ -5,21 +5,46 @@ import pytest
 
 from coding_agent_harness.agent.orchestrator import AgentOrchestrator
 from coding_agent_harness.agent.parser import ActionParser
-from coding_agent_harness.domain.actions import TaskState
+from coding_agent_harness.domain.actions import TaskState, ToolAction
 from coding_agent_harness.domain.models import Task
 from coding_agent_harness.providers.mock import ScriptedMockProvider
 from coding_agent_harness.storage.database import Database
 from coding_agent_harness.storage.event_store import EventStore
 from coding_agent_harness.storage.repositories import TaskRepository
 from coding_agent_harness.tools.models import ToolResult
+from coding_agent_harness.tools.models import VerificationEvidence
 
 
 class ScriptedTools:
     def __init__(self, results: list[ToolResult]) -> None:
         self._results = iter(results)
+        self._evidence = VerificationEvidence(
+            name="test",
+            config_version="scripted-v1",
+            trust_fingerprint="a" * 64,
+            worktree_fingerprint="b" * 64,
+            required_checks=("test",),
+        )
 
-    async def execute(self, _action: object) -> ToolResult:
-        return next(self._results)
+    async def execute(self, action: ToolAction) -> ToolResult:
+        result = next(self._results)
+        if action.tool != "run_verification" or not result.ok or result.verification is not None:
+            return result
+        return result.model_copy(
+            update={"verification": self._evidence.model_copy(update={"name": action.arguments["name"]})}
+        )
+
+    async def current_verification_evidence(self) -> VerificationEvidence:
+        return self._evidence
+
+
+class EvidenceTools(ScriptedTools):
+    def __init__(self, results: list[ToolResult], current: VerificationEvidence) -> None:
+        super().__init__(results)
+        self._current = current
+
+    async def current_verification_evidence(self) -> VerificationEvidence:
+        return self._current
 
 
 @pytest.fixture
@@ -220,5 +245,125 @@ async def test_loop_persists_each_decision_and_blocks_dangerous_action(tmp_path)
         assert [event.sequence for event in events] == list(range(1, len(events) + 1))
         assert any(event.event_type == "GOVERNANCE_BLOCKED" for event in events)
         assert not any(event.event_type == "TOOL_EXECUTION_STARTED" for event in events)
+    finally:
+        await database.close()
+
+
+async def test_complete_requires_every_current_configured_check(tmp_path) -> None:
+    database = await Database.open(tmp_path / "missing-check.sqlite3")
+    workspace_id = uuid4()
+    await database.connection.execute("INSERT INTO workspaces (id) VALUES (?)", (str(workspace_id),))
+    await database.connection.commit()
+    now = datetime.now(UTC)
+    task = await TaskRepository(database).create(
+        Task(id=uuid4(), workspace_id=workspace_id, requirement="完整验证", state=TaskState.CREATED, step_budget=3, time_budget_seconds=60, created_at=now, deadline_at=now + timedelta(minutes=1))
+    )
+    evidence = VerificationEvidence(
+        name="lint",
+        config_version="v1",
+        trust_fingerprint="a" * 64,
+        worktree_fingerprint="b" * 64,
+        required_checks=("test", "lint"),
+    )
+    provider = ScriptedMockProvider([
+        "计划",
+        '{"kind":"tool","tool":"run_verification","arguments":{"name":"lint"},"idempotency_key":"lint"}',
+        '{"kind":"complete","summary":"只跑 lint"}',
+    ])
+    orchestrator = AgentOrchestrator(
+        provider=provider,
+        parser=ActionParser({"run_verification"}),
+        tools=EvidenceTools([ToolResult(ok=True, code="OK", verification=evidence)], evidence),
+        event_store=EventStore(database),
+        tasks=TaskRepository(database),
+    )
+    try:
+        await orchestrator.propose_plan(task.id)
+        await orchestrator.approve_plan(task.id)
+
+        assert (await orchestrator.run_until_wait(task.id)).state is TaskState.WAITING_USER
+    finally:
+        await database.close()
+
+
+async def test_complete_rejects_changed_current_worktree_snapshot(tmp_path) -> None:
+    database = await Database.open(tmp_path / "external-edit.sqlite3")
+    workspace_id = uuid4()
+    await database.connection.execute("INSERT INTO workspaces (id) VALUES (?)", (str(workspace_id),))
+    await database.connection.commit()
+    now = datetime.now(UTC)
+    task = await TaskRepository(database).create(
+        Task(id=uuid4(), workspace_id=workspace_id, requirement="外部编辑", state=TaskState.CREATED, step_budget=3, time_budget_seconds=60, created_at=now, deadline_at=now + timedelta(minutes=1))
+    )
+    succeeded = VerificationEvidence(
+        name="test",
+        config_version="v1",
+        trust_fingerprint="a" * 64,
+        worktree_fingerprint="b" * 64,
+        required_checks=("test",),
+    )
+    current = succeeded.model_copy(update={"name": "current", "worktree_fingerprint": "c" * 64})
+    provider = ScriptedMockProvider([
+        "计划",
+        '{"kind":"tool","tool":"run_verification","arguments":{"name":"test"},"idempotency_key":"test"}',
+        '{"kind":"complete","summary":"外部编辑后摘要"}',
+    ])
+    orchestrator = AgentOrchestrator(
+        provider=provider,
+        parser=ActionParser({"run_verification"}),
+        tools=EvidenceTools([ToolResult(ok=True, code="OK", verification=succeeded)], current),
+        event_store=EventStore(database),
+        tasks=TaskRepository(database),
+    )
+    try:
+        await orchestrator.propose_plan(task.id)
+        await orchestrator.approve_plan(task.id)
+
+        assert (await orchestrator.run_until_wait(task.id)).state is TaskState.WAITING_USER
+    finally:
+        await database.close()
+
+
+async def test_complete_accepts_all_current_checks_after_last_change(tmp_path) -> None:
+    database = await Database.open(tmp_path / "all-checks.sqlite3")
+    workspace_id = uuid4()
+    await database.connection.execute("INSERT INTO workspaces (id) VALUES (?)", (str(workspace_id),))
+    await database.connection.commit()
+    now = datetime.now(UTC)
+    task = await TaskRepository(database).create(
+        Task(id=uuid4(), workspace_id=workspace_id, requirement="全部检查", state=TaskState.CREATED, step_budget=4, time_budget_seconds=60, created_at=now, deadline_at=now + timedelta(minutes=1))
+    )
+    test_evidence = VerificationEvidence(
+        name="test",
+        config_version="v1",
+        trust_fingerprint="a" * 64,
+        worktree_fingerprint="b" * 64,
+        required_checks=("test", "lint"),
+    )
+    lint_evidence = test_evidence.model_copy(update={"name": "lint"})
+    provider = ScriptedMockProvider([
+        "计划",
+        '{"kind":"tool","tool":"run_verification","arguments":{"name":"test"},"idempotency_key":"test"}',
+        '{"kind":"tool","tool":"run_verification","arguments":{"name":"lint"},"idempotency_key":"lint"}',
+        '{"kind":"complete","summary":"全部检查已通过"}',
+    ])
+    orchestrator = AgentOrchestrator(
+        provider=provider,
+        parser=ActionParser({"run_verification"}),
+        tools=EvidenceTools(
+            [
+                ToolResult(ok=True, code="OK", verification=test_evidence),
+                ToolResult(ok=True, code="OK", verification=lint_evidence),
+            ],
+            test_evidence,
+        ),
+        event_store=EventStore(database),
+        tasks=TaskRepository(database),
+    )
+    try:
+        await orchestrator.propose_plan(task.id)
+        await orchestrator.approve_plan(task.id)
+
+        assert (await orchestrator.run_until_wait(task.id)).state is TaskState.WAITING_FINAL_REVIEW
     finally:
         await database.close()

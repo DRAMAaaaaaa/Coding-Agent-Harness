@@ -18,9 +18,10 @@ from coding_agent_harness.providers.mock import ScriptedMockProvider
 from coding_agent_harness.storage.database import Database
 from coding_agent_harness.storage.event_store import EventStore
 from coding_agent_harness.storage.repositories import TaskRepository
-from coding_agent_harness.tools.models import ToolContext
+from coding_agent_harness.tools.models import ToolContext, VerificationApproval
 from coding_agent_harness.tools.registry import ToolRegistry
 from coding_agent_harness.workspace.detector import ProjectDetector
+from coding_agent_harness.workspace.models import RepositoryMap
 from coding_agent_harness.workspace.processes import CommandResult, ProcessRequest
 
 
@@ -42,6 +43,18 @@ class SourceAwareRunner:
         return CommandResult(returncode=0, stdout=b"1 passed\n", stderr=b"")
 
 
+class UntrackedBeforeCompleteProvider(ScriptedMockProvider):
+    def __init__(self, script: list[str], untracked_path: Path) -> None:
+        super().__init__(script)
+        self._untracked_path = untracked_path
+
+    async def complete(self, request):
+        response = await super().complete(request)
+        if '"kind": "complete"' in response.content:
+            self._untracked_path.write_bytes(b"external change\n")
+        return response
+
+
 def _run_git(root: Path, *arguments: str) -> None:
     subprocess.run(
         ["git", *arguments],
@@ -60,9 +73,7 @@ def _real_temporary_worktree(tmp_path: Path) -> Path:
     _run_git(repository, "config", "user.name", "Harness Test")
     (repository / "src").mkdir()
     (repository / "src" / "add.py").write_bytes(b"def add(a, b):\n    return a + b\n")
-    (repository / "pyproject.toml").write_bytes(
-        b"[build-system]\nrequires=[]\nbuild-backend='setuptools.build_meta'\n"
-    )
+    (repository / "pyproject.toml").write_bytes(b"[project]\nname='loop'\n")
     _run_git(repository, "add", ".")
     _run_git(repository, "commit", "-m", "baseline")
     worktree = tmp_path / "task-worktree"
@@ -94,10 +105,24 @@ async def test_real_registry_mock_loop_repairs_file_after_feedback(tmp_path: Pat
     registry = ToolRegistry(
         ToolContext(
             workspace_root=worktree,
+            repository_map=RepositoryMap(
+                root=worktree,
+                tracked_files=("pyproject.toml", "src/add.py"),
+                documents=(),
+                test_paths=(),
+                recent_commits=(),
+                dirty_paths=(),
+            ),
             profile=profile,
             runner=runner,
             policy=PolicyEngine(PathGuard(worktree), Redactor()),
             policy_context=policy_context,
+            verification_config_version="test-v1",
+            verification_approval=VerificationApproval(
+                approval_id="integration-test",
+                config_version="test-v1",
+                trust_fingerprint=profile.trust_fingerprint,
+            ),
         )
     )
     database = await Database.open(tmp_path / "loop.sqlite3")
@@ -174,5 +199,87 @@ async def test_real_registry_mock_loop_repairs_file_after_feedback(tmp_path: Pat
         )
         assert delete.code == "APPROVAL_REQUIRED"
         assert (worktree / "src" / "add.py").exists()
+    finally:
+        await database.close()
+
+
+async def test_real_registry_rejects_completion_after_untracked_file_appears(tmp_path: Path) -> None:
+    worktree = _real_temporary_worktree(tmp_path)
+    fixed = "def add(a, b):\n    return a + b\n"
+    runner = SourceAwareRunner(
+        worktree,
+        "def add(a, b):\n    return a - b\n",
+        fixed,
+    )
+    profile = ProjectDetector().detect(worktree)
+    registry = ToolRegistry(
+        ToolContext(
+            workspace_root=worktree,
+            repository_map=RepositoryMap(
+                root=worktree,
+                tracked_files=("pyproject.toml", "src/add.py"),
+                documents=(),
+                test_paths=(),
+                recent_commits=(),
+                dirty_paths=(),
+            ),
+            profile=profile,
+            runner=runner,
+            policy=PolicyEngine(PathGuard(worktree), Redactor()),
+            policy_context=PolicyContext(
+                workspace_root=worktree,
+                task_state=TaskState.EXECUTING,
+                event_sequence=1,
+                config_version="test-v1",
+                llm_api_authorized=False,
+            ),
+            verification_config_version="test-v1",
+            verification_approval=VerificationApproval(
+                approval_id="untracked-test",
+                config_version="test-v1",
+                trust_fingerprint=profile.trust_fingerprint,
+            ),
+        )
+    )
+    database = await Database.open(tmp_path / "untracked.sqlite3")
+    workspace_id = uuid4()
+    await database.connection.execute("INSERT INTO workspaces (id) VALUES (?)", (str(workspace_id),))
+    await database.connection.commit()
+    now = datetime.now(UTC)
+    task = await TaskRepository(database).create(
+        Task(
+            id=uuid4(),
+            workspace_id=workspace_id,
+            requirement="拒绝验证后的外部未跟踪文件",
+            state=TaskState.CREATED,
+            step_budget=3,
+            time_budget_seconds=60,
+            created_at=now,
+            deadline_at=now + timedelta(minutes=1),
+        )
+    )
+    provider = UntrackedBeforeCompleteProvider(
+        [
+            "计划",
+            _tool("run_verification", {"name": "test"}, "verified"),
+            json.dumps({"kind": "complete", "summary": "不应完成"}),
+        ],
+        worktree / "external.py",
+    )
+    orchestrator = AgentOrchestrator(
+        provider=provider,
+        parser=ActionParser({"run_verification"}),
+        tools=registry,
+        event_store=EventStore(database),
+        tasks=TaskRepository(database),
+    )
+    try:
+        await orchestrator.propose_plan(task.id)
+        await orchestrator.approve_plan(task.id)
+
+        assert (await orchestrator.run_until_wait(task.id)).state is TaskState.WAITING_USER
+        events = await EventStore(database).list_for_task(task.id)
+        assert events[-1].payload["reason_code"] == "VERIFICATION_REQUIRED"
+        assert runner.calls
     finally:
         await database.close()
