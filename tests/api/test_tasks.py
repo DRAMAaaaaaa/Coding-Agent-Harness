@@ -292,6 +292,68 @@ async def test_provider_failure_returns_recoverable_task_and_retry_keeps_owner(
     assert marker.read_text(encoding="ascii") == task_id
 
 
+async def test_unknown_propose_failure_keeps_persisted_task_identity(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    headers, workspace_id = await _trusted_workspace(client, tmp_path / "unknown-propose")
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    orchestrator = AgentOrchestrator(
+        provider=_FailingProvider(ValueError("programmer bug token=hidden")),
+        parser=ActionParser(()),
+        tools=_UnusedTools(),
+        event_store=active.event_store,
+        tasks=active.tasks,
+    )
+    active.orchestrator_factory = lambda: orchestrator
+
+    response = await _post(
+        client,
+        "/api/tasks",
+        json={"workspace_id": workspace_id, "requirement": "修复未知故障"},
+        headers=headers,
+        suppress_app_exception=True,
+    )
+    task_id = response.json()["details"]["task_id"]
+    persisted = await client.get(f"/api/tasks/{task_id}")
+
+    assert response.status_code == 500
+    assert response.json()["code"] == "INTERNAL_ERROR"
+    assert persisted.status_code == 200
+    assert persisted.json()["state"] == "WAITING_USER"
+    assert "hidden" not in str(response.json())
+
+
+async def test_record_runtime_failure_error_does_not_hide_provider_task_identity(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    headers, workspace_id = await _trusted_workspace(client, tmp_path / "record-failure")
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    delegate = AgentOrchestrator(
+        provider=ScriptedMockProvider([]),
+        parser=ActionParser(()),
+        tools=_UnusedTools(),
+        event_store=active.event_store,
+        tasks=active.tasks,
+    )
+    active.orchestrator_factory = lambda: _FailingFailureRecorder(delegate)
+
+    response = await client.post(
+        "/api/tasks",
+        json={"workspace_id": workspace_id, "requirement": "保留故障任务"},
+        headers=headers,
+    )
+    task_id = response.json()["details"]["task_id"]
+    persisted = await client.get(f"/api/tasks/{task_id}")
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "PROVIDER_UNAVAILABLE"
+    assert persisted.status_code == 200
+    assert persisted.json()["id"] == task_id
+    assert "secondary-hidden" not in str(response.json())
+
+
 @pytest.mark.parametrize(
     ("error", "status_code", "code"),
     [
@@ -336,6 +398,7 @@ async def test_task_creation_maps_only_specific_domain_errors(
         ),
         (RuntimeUnavailableError("runtime"), 503, "RUNTIME_UNAVAILABLE"),
         (ValueError("programmer bug token=hidden"), 500, "INTERNAL_ERROR"),
+        (KeyError("unrelated missing key token=hidden"), 500, "INTERNAL_ERROR"),
     ],
 )
 async def test_orchestrator_maps_only_specific_domain_errors(
@@ -475,6 +538,25 @@ class _FailingOrchestrator:
 
     async def approve_plan(self, task_id: UUID) -> object:
         raise self._error
+
+
+class _FailingProvider:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def complete(self, request: object) -> object:
+        raise self._error
+
+
+class _FailingFailureRecorder:
+    def __init__(self, delegate: AgentOrchestrator) -> None:
+        self._delegate = delegate
+
+    async def propose_plan(self, task_id: UUID) -> object:
+        return await self._delegate.propose_plan(task_id)
+
+    async def record_runtime_failure(self, task_id: UUID, reason_code: str) -> object:
+        raise ValueError("record failure token=secondary-hidden")
 
 
 class _UnusedTools:

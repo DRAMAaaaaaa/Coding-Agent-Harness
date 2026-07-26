@@ -58,3 +58,9 @@ wheel/sdist 均包含 `001_initial.sql`、`002_governance_approvals.sql`、
 `AgentOrchestrator.record_runtime_failure` 只经状态机、EventStore 和 `_emit` 写入合法事件，不由 API 直接更新 Repository。Provider/ScriptedMock 计划失败后任务幂等进入 `WAITING_USER`，reason payload 脱敏且事件序号连续；API 的 503 携带 `details.task_id`，GET 可查询任务和 reason 事件，worktree/`.active` 保留。active marker 现在安全返回所属 task ID；重复请求固定返回同一可恢复 ID，marker 无效则为 uncertain 而不是 busy。
 
 错误矩阵以具体领域类型区分 `WORKSPACE_BUSY`、`WORKTREE_UNCERTAIN`、`INVALID_TASK_STATE`、`PROVIDER_UNAVAILABLE` 和 `RUNTIME_UNAVAILABLE`，factory 与方法调用使用同一类型边界；`ProviderError` 的 `ScriptExhaustedError` 子类不再落入 `RuntimeError` 泛捕，未知 `ValueError` 仍为脱敏 500。新鲜限定验证为 API `38 passed`；Agent 加 worktree/process `127 passed, 1 skipped`；Ruff 通过，mypy 检查 46 个源文件通过。按要求未运行全量或构建，未触碰 QC。
+
+## QB 独立复审返工
+
+复审发现 task/worktree 已持久化后的未知 propose 异常仍会通过全局 500 丢失 task ID，且裸 `KeyError` 被误归类为非法状态。新增三条确定性回归：未知 Provider 实现异常、`record_runtime_failure` 二次异常、approve 内部裸 KeyError。RED 分别为前两项 `2 failed, 10 passed` 和 KeyError `1 failed, 4 passed`。
+
+实现只收紧现有边界：任何未知 propose 异常都先丢弃脱敏后的异常值，再 best-effort 记录 `RUNTIME_FAILURE`，最后返回固定 `500 INTERNAL_ERROR` 与 `details.task_id`；记录失败也不会覆盖原 Provider/runtime 响应或丢失 task 身份。裸 `KeyError` 不再进入 `INVALID_TASK_STATE`，只有 `TaskStateError` 保持 409。GREEN 聚焦为 `7 passed, 16 deselected`；API 全套 `41 passed`，Ruff 和 46 个源文件的 mypy 均通过。未触碰 QC，未运行全量或构建。

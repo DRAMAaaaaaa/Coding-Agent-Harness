@@ -777,3 +777,9 @@
 - **RED → GREEN：** Agent 首个 RED 为缺少 `record_runtime_failure`（`1 failed`）；API 故障矩阵与响应性首轮为 `9 failed, 2 passed`，取消收敛探针单独为 `1 failed`。GREEN 后，Detector、Scanner、SafeGit 分支解析和 WorktreeManager 创建均经同一依赖级 `CapacityLimiter` 的 worker thread；事件循环内的并发首页探针在三类只读端口执行期间均返回 200。worktree 创建与 Task 所有权持久化由 shielded task 收敛，取消后先等待线程及数据库结果，再传播取消；无法观察的内部取消固定升级为 `WorktreeUncertainError`，不遗留未观察 task。
 - **故障一致性与分类：** Provider/ScriptedMock 计划失败通过 `AgentOrchestrator.record_runtime_failure` 和合法 `USER_INPUT_REQUIRED` 事件幂等转为 `WAITING_USER`，payload 经既有 Redactor/限长投影；API 返回 `503 PROVIDER_UNAVAILABLE` 并携带 `details.task_id`，GET 可读取任务和 reason 事件，真实 worktree 与 `.active` 保留。重复 POST 从受控 active marker 取回原 task ID 并返回 `409 WORKSPACE_BUSY`，不创建第二 worktree；损坏 marker 固定升级为 `WORKTREE_UNCERTAIN`。路由只捕获 busy/conflict、uncertain、`TaskStateError`、`ProviderError`/`ScriptExhaustedError` 和 `RuntimeUnavailableError`，factory 使用同一类型边界；未知异常仍由全局 500 脱敏处理。
 - **新鲜限定验证：** API 全套 `38 passed`；Agent 全套加 worktree/process 回归 `127 passed, 1 skipped`；Ruff 为 `All checks passed!`，mypy 为 `Success: no issues found in 46 source files`。唯一 skip 为既有平台能力门禁；未运行全量或构建。差异检查在提交前单独执行。
+
+### 2026-07-27 — REWORK-MVP-3-TASK-7-QUALITY-QB-REREVIEW
+
+- **复审核实与范围：** 完整读取 QB 独立复审并使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 与 `verification-before-completion`；只修复两个 Important，不触碰 QC。根因是 task/worktree 落盘后的未知 propose 异常仍交给无 task 上下文的全局 500，以及 `_orchestrator_task` 把无领域含义的裸 `KeyError` 与 `TaskStateError` 合并捕获。
+- **RED → GREEN：** 未知 propose 与故障记录二次异常的首轮为 `2 failed, 10 passed`；裸 KeyError 精确矩阵为 `1 failed, 4 passed`。GREEN 后，未知 propose 固定返回脱敏 `500 INTERNAL_ERROR` 且 `details.task_id` 指向真实已持久化任务，并 best-effort 调用公共 `record_runtime_failure`；故障事件记录自身异常被脱敏吞掉，Provider 原 `503` 与 task ID 仍保留，GET 仍能定位任务。`_orchestrator_task` 只将 `TaskStateError` 映射为 409，裸 KeyError 由全局边界返回脱敏 500。
+- **新鲜验证与边界：** 三类复审聚焦 `7 passed, 16 deselected`；API 全套 `41 passed`；Ruff 通过，mypy 检查 46 个源文件通过。未运行全量或构建，未联网、安装、merge、push；差异检查在提交前执行。

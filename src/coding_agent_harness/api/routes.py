@@ -163,7 +163,11 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
         try:
             proposed = await orchestrator.propose_plan(task.id)
         except ProviderError:
-            await orchestrator.record_runtime_failure(task.id, "PROVIDER_UNAVAILABLE")
+            await _record_runtime_failure_best_effort(
+                orchestrator,
+                task.id,
+                "PROVIDER_UNAVAILABLE",
+            )
             raise _error(
                 503,
                 "PROVIDER_UNAVAILABLE",
@@ -171,7 +175,11 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
                 details={"task_id": str(task.id)},
             ) from None
         except RuntimeUnavailableError:
-            await orchestrator.record_runtime_failure(task.id, "RUNTIME_UNAVAILABLE")
+            await _record_runtime_failure_best_effort(
+                orchestrator,
+                task.id,
+                "RUNTIME_UNAVAILABLE",
+            )
             raise _error(
                 503,
                 "RUNTIME_UNAVAILABLE",
@@ -183,6 +191,19 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
                 409,
                 "INVALID_TASK_STATE",
                 "任务当前状态不允许该操作",
+                details={"task_id": str(task.id)},
+            ) from None
+        except Exception as error:
+            Redactor().sanitize(error)
+            await _record_runtime_failure_best_effort(
+                orchestrator,
+                task.id,
+                "RUNTIME_FAILURE",
+            )
+            raise _error(
+                500,
+                "INTERNAL_ERROR",
+                "服务内部错误",
                 details={"task_id": str(task.id)},
             ) from None
         return _task_response(proposed)
@@ -232,7 +253,7 @@ async def _orchestrator_task(dependencies: ApiDependencies, method: str, task_id
     try:
         operation = getattr(orchestrator, method)
         return await operation(task_id)  # type: ignore[no-any-return]
-    except (KeyError, TaskStateError):
+    except TaskStateError:
         raise _error(
             409,
             "INVALID_TASK_STATE",
@@ -253,6 +274,17 @@ async def _orchestrator_task(dependencies: ApiDependencies, method: str, task_id
             "Agent 运行时未配置",
             details={"task_id": str(task_id)},
         ) from None
+
+
+async def _record_runtime_failure_best_effort(
+    orchestrator: OrchestratorPort,
+    task_id: UUID,
+    reason_code: str,
+) -> None:
+    try:
+        await orchestrator.record_runtime_failure(task_id, reason_code)
+    except Exception as error:
+        Redactor().sanitize(error)
 
 
 def _create_orchestrator(
