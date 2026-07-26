@@ -732,3 +732,9 @@
 - **整阶段最终复审：** 受审范围 `07dfa31..c75c26a`。原 3 个 Critical、5 个 Important，以及返工后发现的工具观察回灌、验证期间 worktree 竞态、brief 冻结两轮停机和验证失败 code 可见性均已关闭；最终结论为 Spec compliant、Critical / Important / Minor `0 / 0 / 0`、Ready to merge。
 - **主控新鲜门禁：** `scripts/test.ps1 -Mode All` 得到 `620 passed, 15 skipped`；Ruff、mypy（39 个源文件）、Web ESLint、TypeScript typecheck、`pip check` 与 `git diff --check 07dfa31..HEAD` 全部通过，工作树在写入本记录前干净。
 - **状态与范围：** MVP-2 Task 5/6 完成，等待按既定选择本地合并到 `p1`；未联网、安装依赖、push 或处理 `MVP-ISSUE-016`。
+
+### 2026-07-27 — MERGE-MVP-2-TO-P1
+
+- **本地集成：** 按用户既定选择，将 `codex/agent-loop` 以 fast-forward 从 `6e9c805` 合并到 `p1`，保留 Task 6 与四个整阶段返工的独立提交记录；未执行 pull、push 或任何网络请求。
+- **合并后验证：** 在 `p1` 重新运行 `scripts/test.ps1 -Mode All`，得到 `620 passed, 15 skipped`；Ruff、mypy、Web ESLint、TypeScript typecheck、`pip check` 与 `git diff --check 07dfa31..HEAD` 全部通过。
+- **清理事实：** Git worktree 注册与本地分支 `codex/agent-loop` 已删除，两个依赖 junction 只删除链接本身且主仓库依赖仍存在。Windows 进程仍短暂占用已清空的 `.worktrees/agent-loop` 目录，三次安全重试后仅保留空目录；不含代码或状态，不影响 Git 与产品验证。
