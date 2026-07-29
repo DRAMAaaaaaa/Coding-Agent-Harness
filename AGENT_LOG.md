@@ -804,3 +804,10 @@
 - **RED → GREEN：** 真实 Git/SQLite/API 首组 RED 为 `7 failed`：SQLite trigger 使 Task 插入失败后原响应为 500，detector/scanner/branch 的六项未知 `RuntimeError`/`ValueError` 均被误报为 400。补偿不确定分支的变异 RED 证明，不执行所有权校验时会谎报普通存储失败。GREEN 后，存储失败只安全释放本次 task worktree；成功补偿固定为可重试的 `503 TASK_STORAGE_UNAVAILABLE`，所有权变化、清理失败或结果不确定固定为 `503 WORKTREE_UNCERTAIN` 并保留其他 owner 的 marker/目录。移除 SQLite 故障后同一 Workspace 可重试成功，不存在幽灵 owner。
 - **异常边界：** 项目路径与默认分支使用专用领域异常；只有路径解析/私有状态重叠、项目检测、仓库扫描和默认分支领域失败返回 400。依赖端口的未知内置异常由全局边界脱敏为 500，不再伪装用户输入错误。
 - **限定证据：** 核心与不确定分支 `8 passed`，task/project 聚焦 `43 passed`，API + worktree + storage 组合回归 `147 passed, 1 skipped`；静态检查和差异门禁在提交前重新取得。
+
+### 2026-07-30 — CLOSE-MVP-3-TASK-7-PROCESS-GATE
+
+- **技能与状态核对：** 使用 `subagent-driven-development`、`requesting-code-review` 与 `verification-before-completion` 恢复 Task 7 收尾；以 `p1` 的 `340edfb` 为基线核对 `codex/api` 的七个技术提交 `b706439..9691b03`，工作树在过程回填前保持干净。
+- **独立复审结论：** QA、QB、QC 的限定复审均已清零；整阶段最终技术复验确认 SQLite 落盘补偿、worktree 不确定状态和项目异常边界已关闭，Technical Spec 为 Yes、Technical Quality 为 Approved，Critical / Important / Minor 为 `0 / 0 / 0`。
+- **延期审计：** Task 7 的 Workspace 持久化、REST/SSE、同源会话防护、运行期恢复、UTF-8 数据边界和有界事件流均已交付，没有遗漏发布必需范围；本 Task 无新增延期，也未改变既有 `DW-05-001` 与 `DW-MVP-001`—`DW-MVP-006`。WebUI、三机制演示、Docker 和双 CI 仍属于后续未开始 Task，不在本 Task 伪装为延期。
+- **待执行门禁：** 本条仅关闭 PLAN/日志/延期声明的过程缺口；主控仍须在当前 Head 上取得全量测试、Ruff、mypy、Web lint/typecheck、`pip check`、wheel/sdist 构建、003 归档矩阵和差异检查的新鲜证据，随后才能宣布 Task 7 完成或本地合并。
