@@ -9,7 +9,11 @@ from coding_agent_harness.domain.actions import TaskState
 
 
 BASE_TRANSITIONS = {
-    TaskState.CREATED: {TaskState.SCANNING, TaskState.CANCELLED},
+    TaskState.CREATED: {
+        TaskState.SCANNING,
+        TaskState.WAITING_USER,
+        TaskState.CANCELLED,
+    },
     TaskState.SCANNING: {
         TaskState.PLANNING,
         TaskState.DECIDING,

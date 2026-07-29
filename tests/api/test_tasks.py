@@ -433,6 +433,114 @@ async def test_cancelled_worktree_creation_settles_and_persists_owner(
     assert (await active.tasks.get(task_id)) is not None
 
 
+async def test_cancelled_plan_request_recovers_same_task_after_restart(
+    tmp_path: Path,
+) -> None:
+    settings = HarnessSettings(
+        state_root=tmp_path / "state",
+        database_path=tmp_path / "state" / "harness.db",
+        trusted_hosts=("testserver",),
+        trusted_origins=("http://testserver",),
+    )
+    provider = _CancellationBarrierProvider()
+    first_app = create_app(settings=settings)
+    async with first_app.router.lifespan_context(first_app):
+        active = first_app.state.dependencies
+        orchestrator = AgentOrchestrator(
+            provider=provider,
+            parser=ActionParser(()),
+            tools=_UnusedTools(),
+            event_store=active.event_store,
+            tasks=active.tasks,
+        )
+        recovery = _CancellationRecoveryBarrier(orchestrator)
+        active.orchestrator_factory = lambda: recovery
+        active.task_runner = LocalTaskRunner(
+            active.tasks,
+            active.state_root,
+            step_budget=8,
+            time_budget_seconds=300,
+            worker=active.worker,
+        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=first_app),
+            base_url="http://testserver",
+        ) as first_client:
+            headers, workspace_id = await _trusted_workspace(
+                first_client,
+                tmp_path / "cancelled-plan",
+            )
+            request = asyncio.create_task(
+                first_client.post(
+                    "/api/tasks",
+                    json={"workspace_id": workspace_id, "requirement": "取消计划请求"},
+                    headers=headers,
+                )
+            )
+            await provider.started.wait()
+            request.cancel()
+            await recovery.started.wait()
+            request.cancel()
+            assert not request.done()
+            recovery.release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await request
+            assert provider.cancelled.is_set()
+            assert provider.settled.is_set()
+            rows = await (
+                await active.tasks._database.connection.execute(  # type: ignore[attr-defined]
+                    "SELECT id, state FROM tasks"
+                )
+            ).fetchall()
+            assert len(rows) == 1
+            task_id = str(rows[0][0])
+            assert str(rows[0][1]) == "WAITING_USER"
+
+    second_app = create_app(settings=settings)
+    async with second_app.router.lifespan_context(second_app):
+        active = second_app.state.dependencies
+        orchestrator = AgentOrchestrator(
+            provider=ScriptedMockProvider([]),
+            parser=ActionParser(()),
+            tools=_UnusedTools(),
+            event_store=active.event_store,
+            tasks=active.tasks,
+        )
+        active.orchestrator_factory = lambda: orchestrator
+        active.task_runner = LocalTaskRunner(
+            active.tasks,
+            active.state_root,
+            step_budget=8,
+            time_budget_seconds=300,
+            worker=active.worker,
+        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=second_app),
+            base_url="http://testserver",
+        ) as second_client:
+            persisted = await second_client.get(f"/api/tasks/{task_id}")
+            headers = await session_headers(second_client)
+            resumed = await second_client.post(
+                f"/api/tasks/{task_id}/run",
+                headers=headers,
+            )
+            repeated = await second_client.post(
+                "/api/tasks",
+                json={"workspace_id": workspace_id, "requirement": "取消计划请求"},
+                headers=headers,
+            )
+
+            assert persisted.status_code == resumed.status_code == 200
+            assert persisted.json()["state"] == resumed.json()["state"] == "WAITING_USER"
+            assert repeated.status_code == 409
+            assert repeated.json()["details"]["task_id"] == task_id
+            workspace_state = active.state_root / "worktrees" / workspace_id
+            assert _task_worktree_directories(workspace_state) == (
+                workspace_state / task_id,
+            )
+            assert (workspace_state / ".active").read_text(encoding="ascii") == task_id
+
+
 async def test_blocking_worker_capacity_is_shared_and_bounded() -> None:
     worker = BlockingWorker(CapacityLimiter(1))
     first_started = threading.Event()
@@ -769,6 +877,40 @@ class _FailingProvider:
 
     async def complete(self, request: object) -> object:
         raise self._error
+
+
+class _CancellationBarrierProvider:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.cancelled = asyncio.Event()
+        self.settled = asyncio.Event()
+        self._release = asyncio.Event()
+
+    async def complete(self, request: object) -> object:
+        self.started.set()
+        try:
+            await self._release.wait()
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
+        finally:
+            self.settled.set()
+        raise AssertionError("计划 Provider 不应在取消测试中正常返回")
+
+
+class _CancellationRecoveryBarrier:
+    def __init__(self, delegate: AgentOrchestrator) -> None:
+        self._delegate = delegate
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def propose_plan(self, task_id: UUID) -> object:
+        return await self._delegate.propose_plan(task_id)
+
+    async def record_runtime_failure(self, task_id: UUID, reason_code: str) -> object:
+        self.started.set()
+        await self.release.wait()
+        return await self._delegate.record_runtime_failure(task_id, reason_code)
 
 
 class _FailingFailureRecorder:

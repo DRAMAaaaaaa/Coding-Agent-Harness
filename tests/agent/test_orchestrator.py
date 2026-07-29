@@ -154,6 +154,27 @@ async def test_runtime_failure_is_recorded_once_through_legal_event(harness) -> 
     assert "must-not-persist" not in str(events[-1].payload)
 
 
+async def test_request_cancellation_can_recover_created_task_through_legal_event(
+    harness,
+) -> None:
+    _, _, task, database = harness
+    orchestrator = AgentOrchestrator(
+        provider=ScriptedMockProvider([]),
+        parser=ActionParser(()),
+        tools=ScriptedTools([]),
+        event_store=EventStore(database),
+        tasks=TaskRepository(database),
+    )
+
+    waiting = await orchestrator.record_runtime_failure(task.id, "REQUEST_CANCELLED")
+    repeated = await orchestrator.record_runtime_failure(task.id, "REQUEST_CANCELLED")
+    events = await EventStore(database).list_for_task(task.id)
+
+    assert waiting.state is repeated.state is TaskState.WAITING_USER
+    assert [event.event_type for event in events] == ["USER_INPUT_REQUIRED"]
+    assert events[0].payload == {"reason_code": "REQUEST_CANCELLED"}
+
+
 async def test_distinct_unreliable_failures_do_not_trigger_no_progress(tmp_path) -> None:
     database = await Database.open(tmp_path / "unreliable-count.sqlite3")
     workspace_id = uuid4()

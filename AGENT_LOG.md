@@ -811,3 +811,10 @@
 - **独立复审结论：** QA、QB、QC 的限定复审均已清零；整阶段最终技术复验确认 SQLite 落盘补偿、worktree 不确定状态和项目异常边界已关闭，Technical Spec 为 Yes、Technical Quality 为 Approved，Critical / Important / Minor 为 `0 / 0 / 0`。
 - **延期审计：** Task 7 的 Workspace 持久化、REST/SSE、同源会话防护、运行期恢复、UTF-8 数据边界和有界事件流均已交付，没有遗漏发布必需范围；本 Task 无新增延期，也未改变既有 `DW-05-001` 与 `DW-MVP-001`—`DW-MVP-006`。WebUI、三机制演示、Docker 和双 CI 仍属于后续未开始 Task，不在本 Task 伪装为延期。
 - **待执行门禁：** 本条仅关闭 PLAN/日志/延期声明的过程缺口；主控仍须在当前 Head 上取得全量测试、Ruff、mypy、Web lint/typecheck、`pip check`、wheel/sdist 构建、003 归档矩阵和差异检查的新鲜证据，随后才能宣布 Task 7 完成或本地合并。
+
+### 2026-07-30 — REWORK-MVP-3-TASK-7-FINAL-C1-I1
+
+- **范围与技能：** 只处理最终独立审查 C1/I1；完整读取 Task 7 brief、final review、既有报告与仓库约束，使用 `systematic-debugging`、`test-driven-development` 和 `verification-before-completion`。未扩张到 WebUI/Task 8、联网、依赖、凭据管理、全量构建、merge 或 push。
+- **RED：** C1 的真实 SQLite canary 探针为 `1 failed`，证明敏感命令赋值可进入 `profile_json`；I1 的 Agent 状态机与真实 ASGI/SQLite/Git Provider barrier 为 `2 failed`，证明 CREATED 无合法等待恢复路径且请求取消后任务停在 PLANNING。所有失败输出只描述布尔/状态，不回显 canary 值。
+- **GREEN 设计：** Workspace 仓储在完整 profile 序列化后、任何 INSERT 前调用既有 Redactor，命中敏感规则即抛固定领域错误且不持久化脱敏副本；现有行恢复和信任更新入口复用同一 fail-closed 判定。任务路由先分配 task ID；计划操作在独立可观察任务中运行，取消时先取消并收敛 Provider，再以公开 `record_runtime_failure` 和固定 `REQUEST_CANCELLED` 事件恢复为 WAITING_USER，恢复落盘后原样传播取消；重复取消由 barrier 验证不会遗留后台任务。
+- **验证事实：** C1 聚焦 `3 passed`，I1 核心 `2 passed`，四个直接相关文件 `70 passed`。限定 API+storage+agent+worktree 回归首轮唯一失败为冻结状态机契约未包含新合法迁移；更新契约后新鲜重跑为 `219 passed, 1 skipped`。Ruff 通过，mypy 检查 47 个源文件通过；提交前另行取得差异与工作区检查证据。

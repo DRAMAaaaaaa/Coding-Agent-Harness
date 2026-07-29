@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
+from coding_agent_harness.governance.redaction import Redactor
 from coding_agent_harness.storage.database import Database
 from coding_agent_harness.governance.path_identity import (
     UnsafePathNamespaceError,
@@ -28,6 +29,10 @@ class WorkspaceStorageError(ValueError):
     """Workspace 记录无法安全读写。"""
 
 
+class SensitiveWorkspaceProfileError(WorkspaceStorageError):
+    """Workspace profile 命中敏感规则，禁止进入持久化边界。"""
+
+
 @dataclass(frozen=True, slots=True)
 class StoredWorkspace:
     workspace: Workspace
@@ -41,8 +46,9 @@ class StoredWorkspace:
 
 
 class WorkspaceRepository:
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, redactor: Redactor | None = None) -> None:
         self._database = database
+        self._redactor = redactor or Redactor()
 
     async def create(self, workspace: Workspace) -> StoredWorkspace:
         root, root_key = _normalized_path(workspace.root)
@@ -56,6 +62,7 @@ class WorkspaceRepository:
             sort_keys=True,
             separators=(",", ":"),
         )
+        _reject_sensitive_profile(profile_json, self._redactor)
         async with self._database.operation_lock:
             try:
                 await self._database.connection.execute(
@@ -86,7 +93,7 @@ class WorkspaceRepository:
                 f"SELECT {_COLUMNS} FROM workspaces ORDER BY created_at, id"
             )
             rows = await cursor.fetchall()
-        return [_from_row(row) for row in rows]
+        return [_from_row(row, self._redactor) for row in rows]
 
     async def trust(self, workspace_id: UUID, fingerprint: str) -> StoredWorkspace:
         stored = await self.get(workspace_id)
@@ -118,6 +125,8 @@ class WorkspaceRepository:
         return StoredWorkspace(stored.workspace, stored.created_at, trusted_at, fingerprint)
 
     async def revoke_trust(self, workspace_id: UUID) -> None:
+        if await self.get(workspace_id) is None:
+            raise WorkspaceStorageError("Workspace 不存在")
         async with self._database.operation_lock:
             try:
                 await self._database.connection.execute(
@@ -135,7 +144,7 @@ class WorkspaceRepository:
                 f"SELECT {_COLUMNS} FROM workspaces {suffix}", parameters
             )
             row = await cursor.fetchone()
-        return _from_row(row) if row is not None else None
+        return _from_row(row, self._redactor) if row is not None else None
 
 
 def _normalized_path(value: Path) -> tuple[str, str]:
@@ -146,11 +155,16 @@ def _normalized_path(value: Path) -> tuple[str, str]:
         raise WorkspaceStorageError("Workspace 路径无效") from None
 
 
-def _from_row(row: sqlite3.Row | tuple[object, ...]) -> StoredWorkspace:
+def _from_row(
+    row: sqlite3.Row | tuple[object, ...],
+    redactor: Redactor,
+) -> StoredWorkspace:
     try:
         if any(row[index] is None for index in range(1, 8)):
             raise WorkspaceStorageError("Workspace 旧记录不完整")
-        profile = ProjectProfile.model_validate_json(str(row[5]), strict=True)
+        profile_json = str(row[5])
+        _reject_sensitive_profile(profile_json, redactor)
+        profile = ProjectProfile.model_validate_json(profile_json, strict=True)
         root_value, root_key = _normalized_path(Path(str(row[1])))
         git_root_value, git_root_key = _normalized_path(Path(str(row[3])))
         root = Path(root_value)
@@ -184,3 +198,10 @@ def _from_row(row: sqlite3.Row | tuple[object, ...]) -> StoredWorkspace:
         raise
     except (TypeError, ValueError, OSError, RuntimeError, json.JSONDecodeError):
         raise WorkspaceStorageError("Workspace 记录无效") from None
+
+
+def _reject_sensitive_profile(profile_json: str, redactor: Redactor) -> None:
+    if redactor.sanitize(profile_json).rule_names:
+        raise SensitiveWorkspaceProfileError(
+            "Workspace 配置包含敏感信息，拒绝持久化"
+        )

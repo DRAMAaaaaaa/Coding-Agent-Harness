@@ -12,7 +12,11 @@ _TERMINAL_STATES: Final = {
 }
 
 LEGAL_TRANSITIONS: dict[TaskState, set[TaskState]] = {
-    TaskState.CREATED: {TaskState.SCANNING, TaskState.CANCELLED},
+    TaskState.CREATED: {
+        TaskState.SCANNING,
+        TaskState.WAITING_USER,
+        TaskState.CANCELLED,
+    },
     TaskState.SCANNING: {
         TaskState.PLANNING,
         TaskState.DECIDING,

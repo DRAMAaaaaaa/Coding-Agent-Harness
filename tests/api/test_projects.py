@@ -44,6 +44,35 @@ async def test_project_requires_git_and_hides_host_paths(
     assert "state_root" not in body
 
 
+async def test_project_rejects_sensitive_detected_profile_without_persisting_canary(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    project = _git_repo(tmp_path / "sensitive-profile")
+    canary = "profile-" + project.name
+    (project / ".harness.yml").write_text(
+        f"test: [python, -m, pytest, token={canary}]\n",
+        encoding="utf-8",
+    )
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+
+    response = await client.post(
+        "/api/projects",
+        json={"path": str(project)},
+        headers=await session_headers(client),
+    )
+
+    row = await (
+        await active.workspaces._database.connection.execute(  # type: ignore[attr-defined]
+            "SELECT COUNT(*), COALESCE(group_concat(profile_json), '') FROM workspaces"
+        )
+    ).fetchone()
+    assert response.status_code == 409
+    assert response.json()["code"] == "WORKSPACE_CONFLICT"
+    assert canary not in response.text
+    assert row == (0, "")
+
+
 async def test_trust_requires_current_exact_fingerprint(
     client: httpx.AsyncClient, tmp_path: Path
 ) -> None:

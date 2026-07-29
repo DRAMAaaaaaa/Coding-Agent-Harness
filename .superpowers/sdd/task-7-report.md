@@ -88,3 +88,13 @@ GREEN 后，扩张输入为 422，task count 保持 0，workspace worktree 目�
 GREEN 后，`LocalTaskRunner` 复用创建工作树的同一 `WorktreeManager`：`create_prepared()` 失败时只释放本次 task ID；释放成功后抛出专用 `TaskStorageUnavailableError`，API 固定返回脱敏、可重试的 `503 TASK_STORAGE_UNAVAILABLE`；释放失败、所有权变化或结果不可确认时固定升级为 `503 WORKTREE_UNCERTAIN`，保留现场且不清理其他 owner。真实 SQLite 故障测试断言首次请求无 Task、无 task worktree、无 `.active`，移除故障后重试为 201，不受幽灵 owner 阻塞。
 
 项目端点新增窄化的 `ProjectPathError` 与 `DefaultBranchError`：仅路径解析/私有状态重叠、`ProjectDetectionError`、`RepositoryScanError` 和默认分支领域失败映射为 400；端口抛出的未知内置异常继续进入全局脱敏 500。核心与不确定分支为 `8 passed`，task/project 聚焦为 `43 passed`，API + worktree + storage 组合回归为 `147 passed, 1 skipped`。本轮未处理 M1 文档关闭、未运行全量或构建，也未联网、安装、merge 或 push。
+
+## 最终独立审查 C1/I1 返工
+
+本轮只处理 `task-7-final-review.md` 的 C1/I1，并使用 `systematic-debugging`、`test-driven-development` 与 `verification-before-completion`。C1 的最小 RED 使用真实 SQLite 和运行期生成的 canary，证明 `WorkspaceRepository.create()` 未拒绝敏感赋值，结果为 `1 failed`；I1 的 Agent/真实 ASGI Provider barrier RED 为 `2 failed`，分别证明 `CREATED → WAITING_USER` 缺少合法事件路径，以及取消请求后任务持久化停在 `PLANNING`。测试和输出均未记录 canary 原值。
+
+C1 的 GREEN 在 `profile_json` 形成后、进入任何仓储 INSERT 前使用既有 `Redactor` 检查完整序列化内容；命中规则即抛出固定的 `SensitiveWorkspaceProfileError`，不持久化脱敏副本，避免 profile 与信任指纹分叉。`get/list/trust/revoke` 读取现有行时使用同一判定，外部篡改的敏感 profile 会 fail closed。真实 detector→API 和直接 SQLite 探针确认响应/异常不含 canary、Workspace 行数保持为零；聚焦为 `3 passed`。
+
+I1 的 GREEN 在路由进入任务副作用前预分配 `task_id`，用独立受观察任务运行 `propose_plan()`；ASGI 取消时先取消并收敛 Provider 计划操作，再通过公开 `AgentOrchestrator.record_runtime_failure(task_id, "REQUEST_CANCELLED")` 和合法 `USER_INPUT_REQUIRED` 事件幂等进入 `WAITING_USER`，确认恢复操作收敛后原样传播 `CancelledError`。重复取消由 shielded recovery barrier 收敛，不遗留未观察后台任务。真实 Git/SQLite/ASGI 重启探针确认 GET 与 `/run` 均读取原任务为 `WAITING_USER`，重复 POST 返回 `.active` 中的原 task ID，且没有第二个 worktree；核心为 `2 passed`，四个直接相关测试文件为 `70 passed`。
+
+限定回归命令为 `pytest tests/api tests/storage tests/agent tests/workspace/test_worktrees.py -q`。首轮唯一失败是冻结状态机契约仍缺少本次所需的 `CREATED → WAITING_USER`；精确更新契约后重跑为 `219 passed, 1 skipped`。Ruff 为 `All checks passed!`，mypy 为 `Success: no issues found in 47 source files`。本轮未运行全量或构建，未触碰 WebUI/Task 8，未联网、安装、merge 或 push。

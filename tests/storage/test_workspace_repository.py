@@ -77,6 +77,80 @@ async def test_rejects_duplicate_root_and_invalid_legacy_row(tmp_path: Path) -> 
         await database.close()
 
 
+async def test_create_rejects_sensitive_profile_before_sqlite_write(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    database = await Database.open(tmp_path / "harness.db")
+    canary = "credential-" + uuid4().hex
+    workspace = _workspace(root).model_copy(
+        update={
+            "profile": ProjectProfile(
+                languages=("python",),
+                commands=VerificationCommands(
+                    test=("python", "-m", "pytest", f"token={canary}"),
+                ),
+                requires_trust=True,
+                trust_fingerprint="a" * 64,
+            )
+        }
+    )
+    try:
+        repository = WorkspaceRepository(database)
+
+        with pytest.raises(
+            WorkspaceStorageError,
+            match="Workspace 配置包含敏感信息，拒绝持久化",
+        ) as captured:
+            await repository.create(workspace)
+
+        row = await (
+            await database.connection.execute(
+                "SELECT COUNT(*), COALESCE(group_concat(profile_json), '') FROM workspaces"
+            )
+        ).fetchone()
+        assert row == (0, "")
+        assert canary not in str(captured.value)
+    finally:
+        await database.close()
+
+
+async def test_get_rejects_sensitive_profile_tampering_with_fixed_error(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    database = await Database.open(tmp_path / "harness.db")
+    workspace = _workspace(root)
+    canary = "tamper-" + uuid4().hex
+    try:
+        repository = WorkspaceRepository(database)
+        await repository.create(workspace)
+        profile_json = (
+            workspace.profile.model_copy(
+                update={
+                    "commands": VerificationCommands(
+                        test=("python", "-m", "pytest", f"password={canary}"),
+                    )
+                }
+            ).model_dump_json()
+        )
+        await database.connection.execute(
+            "UPDATE workspaces SET profile_json = ? WHERE id = ?",
+            (profile_json, str(workspace.id)),
+        )
+        await database.connection.commit()
+
+        with pytest.raises(
+            WorkspaceStorageError,
+            match="Workspace 配置包含敏感信息，拒绝持久化",
+        ) as captured:
+            await repository.get(workspace.id)
+
+        assert canary not in str(captured.value)
+    finally:
+        await database.close()
+
+
 @pytest.mark.parametrize("column", ["root", "git_root", "trust_fingerprint"])
 async def test_get_fails_closed_when_workspace_identity_is_tampered(
     tmp_path: Path,

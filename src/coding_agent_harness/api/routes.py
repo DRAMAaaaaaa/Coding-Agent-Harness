@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -154,8 +155,12 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
         except ProjectDetectionError:
             raise _error(409, "STALE_PROJECT_TRUST", "项目配置已变化，需要重新建立信任") from None
         orchestrator = _create_orchestrator(active)
+        task_id = uuid4()
         try:
-            task = await active.task_runner.create(stored.workspace, uuid4(), body.requirement)
+            task = await active.task_runner.create(stored.workspace, task_id, body.requirement)
+        except asyncio.CancelledError as cancellation:
+            await _record_request_cancellation(orchestrator, task_id)
+            raise cancellation from None
         except WorkspaceBusyError as error:
             details: dict[str, object] = (
                 {"task_id": str(error.active_task_id)}
@@ -188,7 +193,7 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
         except RequirementTooLargeError:
             raise _error(422, "VALIDATION_ERROR", "请求格式无效") from None
         try:
-            proposed = await orchestrator.propose_plan(task.id)
+            proposed = await _propose_plan(orchestrator, task.id)
         except ProviderError:
             await _record_runtime_failure_best_effort(
                 orchestrator,
@@ -328,6 +333,51 @@ async def _record_runtime_failure_best_effort(
         await orchestrator.record_runtime_failure(task_id, reason_code)
     except Exception as error:
         Redactor().sanitize(error)
+
+
+async def _propose_plan(orchestrator: OrchestratorPort, task_id: UUID) -> Task:
+    operation = asyncio.create_task(orchestrator.propose_plan(task_id))
+    try:
+        return await asyncio.shield(operation)
+    except asyncio.CancelledError as cancellation:
+        operation.cancel()
+        await _settle_operation(operation)
+        await _record_request_cancellation(orchestrator, task_id)
+        raise cancellation from None
+
+
+async def _record_request_cancellation(
+    orchestrator: OrchestratorPort,
+    task_id: UUID,
+) -> None:
+    recovery = asyncio.create_task(
+        orchestrator.record_runtime_failure(task_id, "REQUEST_CANCELLED")
+    )
+    await _settle_operation(recovery)
+
+
+async def _settle_operation(operation: asyncio.Task[Task]) -> Task | None:
+    """在重复宿主取消下收敛并观察内部任务，不遗留后台异常。"""
+
+    while not operation.done():
+        try:
+            return await asyncio.shield(operation)
+        except asyncio.CancelledError:
+            if operation.done():
+                break
+            current = asyncio.current_task()
+            if current is not None:
+                current.uncancel()
+        except Exception as error:
+            Redactor().sanitize(error)
+            return None
+    if operation.cancelled():
+        return None
+    try:
+        return operation.result()
+    except Exception as error:
+        Redactor().sanitize(error)
+        return None
 
 
 def _create_orchestrator(
