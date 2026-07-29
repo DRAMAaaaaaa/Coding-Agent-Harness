@@ -818,3 +818,9 @@
 - **RED：** C1 的真实 SQLite canary 探针为 `1 failed`，证明敏感命令赋值可进入 `profile_json`；I1 的 Agent 状态机与真实 ASGI/SQLite/Git Provider barrier 为 `2 failed`，证明 CREATED 无合法等待恢复路径且请求取消后任务停在 PLANNING。所有失败输出只描述布尔/状态，不回显 canary 值。
 - **GREEN 设计：** Workspace 仓储在完整 profile 序列化后、任何 INSERT 前调用既有 Redactor，命中敏感规则即抛固定领域错误且不持久化脱敏副本；现有行恢复和信任更新入口复用同一 fail-closed 判定。任务路由先分配 task ID；计划操作在独立可观察任务中运行，取消时先取消并收敛 Provider，再以公开 `record_runtime_failure` 和固定 `REQUEST_CANCELLED` 事件恢复为 WAITING_USER，恢复落盘后原样传播取消；重复取消由 barrier 验证不会遗留后台任务。
 - **验证事实：** C1 聚焦 `3 passed`，I1 核心 `2 passed`，四个直接相关文件 `70 passed`。限定 API+storage+agent+worktree 回归首轮唯一失败为冻结状态机契约未包含新合法迁移；更新契约后新鲜重跑为 `219 passed, 1 skipped`。Ruff 通过，mypy 检查 47 个源文件通过；提交前另行取得差异与工作区检查证据。
+
+### 2026-07-30 — REWORK-AND-VERIFY-MVP-3-TASK-7-FINAL
+
+- **最终审查返工：** 最终整分支审查实证发现 Workspace profile 可把敏感赋值写入 SQLite，以及计划 Provider 等待期间取消请求会让 Task 固定停在 `PLANNING`。提交 `5f6ab5c` 以写库前 fail-closed 敏感判定关闭前者，并通过合法状态机事件、取消收敛和幂等故障记录把后者恢复到 `WAITING_USER`；独立复验确认 C1/I1 均已关闭，核心 `5 passed`、相关回归 `109 passed`，Quality Approved。
+- **主控新鲜验证：** 首次直接执行 PowerShell 脚本被宿主执行策略拒绝；改用 `ExecutionPolicy Bypass` 后又因新进程未显式继承 worktree `PYTHONPATH` 而误导入主目录旧代码。确认根因后显式绑定 `PYTHONPATH` 到当前 `src`，最终 `scripts/test.ps1 -Mode All` 为 `703 passed, 15 skipped`，Ruff、mypy（47 个源文件）、Web ESLint 与 TypeScript 均通过；`pip check` 无破损依赖，wheel/sdist 无隔离构建成功，001/002/003 在两种归档中均各 1 份，`git diff --check 340edfb..HEAD` 通过。
+- **范围与延期：** PLAN 的 Task 7 受审范围更新为 `340edfb..5f6ab5c`，关闭最终复审指出的唯一过程 Minor。本 Task 未新增延期，也未改变既有延期条目；未联网、安装依赖、接触真实凭据、实现 WebUI、merge 或 push。当前只待对本次过程回填做最终复审后本地合并到 `p1`。
