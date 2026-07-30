@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 import hashlib
 import json
+from pathlib import Path
 import re
 from typing import Protocol
 from uuid import UUID
@@ -18,6 +19,7 @@ from coding_agent_harness.domain.models import Task
 from coding_agent_harness.feedback.engine import FeedbackEngine
 from coding_agent_harness.feedback.models import FailureCategory, FeedbackObservation, VerificationRun
 from coding_agent_harness.governance.redaction import Redactor
+from coding_agent_harness.governance.policy import normalized_delete_scope
 from coding_agent_harness.providers.base import LLMProvider, LLMRequest
 from coding_agent_harness.storage.event_store import EventStore
 from coding_agent_harness.storage.repositories import TaskRepository
@@ -610,14 +612,17 @@ class AgentOrchestrator:
         arguments = action.get("arguments")
         if not isinstance(arguments, dict):
             return "[INVALID_SCOPE]"
-        scope: dict[str, JsonValue] = {"tool": self._diagnostic(str(action.get("tool", "")))}
+        tool = action.get("tool")
         path = arguments.get("path")
-        if isinstance(path, str):
-            scope["path"] = self._diagnostic(path, limit=2_048)
         digest = arguments.get("expected_sha256")
-        if isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest):
-            scope["expected_sha256"] = digest
-        return json.dumps(scope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if tool != "delete_file" or not isinstance(path, str) or not isinstance(digest, str):
+            return "[INVALID_SCOPE]"
+        root = Path.cwd().resolve(strict=False)
+        try:
+            normalized = normalized_delete_scope(root, root / path, digest)
+        except (OSError, ValueError):
+            return "[INVALID_SCOPE]"
+        return self._diagnostic(normalized, limit=4_096)
 
     def _result_metadata(self, result: dict[str, JsonValue]) -> dict[str, JsonValue]:
         output = result.get("output")

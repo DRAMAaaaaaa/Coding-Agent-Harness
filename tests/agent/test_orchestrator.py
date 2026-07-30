@@ -290,7 +290,7 @@ async def test_loop_persists_each_decision_and_blocks_dangerous_action(tmp_path)
     task = await TaskRepository(database).create(
         Task(id=uuid4(), workspace_id=workspace_id, requirement="清理", state=TaskState.CREATED, step_budget=2, time_budget_seconds=60, created_at=now, deadline_at=now + timedelta(minutes=1))
     )
-    provider = ScriptedMockProvider(["计划", '{"kind":"tool","tool":"delete_file","arguments":{"path":"old.py","expected_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"idempotency_key":"delete"}'])
+    provider = ScriptedMockProvider(["计划", '{"kind":"tool","tool":"delete_file","arguments":{"path":"src/../old.py","expected_sha256":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},"idempotency_key":"delete"}'])
     orchestrator = AgentOrchestrator(provider=provider, parser=ActionParser({"delete_file"}), tools=ScriptedTools([]), event_store=EventStore(database), tasks=TaskRepository(database))
     try:
         await orchestrator.propose_plan(task.id)
@@ -299,7 +299,7 @@ async def test_loop_persists_each_decision_and_blocks_dangerous_action(tmp_path)
         events = await EventStore(database).list_for_task(task.id)
         assert [event.sequence for event in events] == list(range(1, len(events) + 1))
         blocked = next(event for event in events if event.event_type == "GOVERNANCE_BLOCKED")
-        assert blocked.payload["normalized_scope"] == '{"expected_sha256":"0000000000000000000000000000000000000000000000000000000000000000","path":"old.py","tool":"delete_file"}'
+        assert blocked.payload["normalized_scope"] == '{"expected_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","path":"old.py","tool":"delete_file"}'
         assert not any(event.event_type == "TOOL_EXECUTION_STARTED" for event in events)
     finally:
         await database.close()

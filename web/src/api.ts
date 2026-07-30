@@ -21,10 +21,20 @@ export function createBrowserApi(options: BrowserApiOptions = {}): HarnessApi {
     const connect = (): void => {
       if (closed) return;
       const next = eventSourceFactory(`/api/tasks/${encodeURIComponent(taskId)}/events?after=${lastSequence}`); source = next;
-      const receive = (message: MessageEvent<string>): void => { try { const event = parseTaskEvent(JSON.parse(message.data), taskId); if (event && event.sequence > lastSequence) { lastSequence = event.sequence; listener.onEvent(event); } } catch { listener.onConnection("disconnected"); } };
-      next.onopen = () => listener.onConnection("connected");
+      let invalidated = false;
+      const invalidate = (): void => {
+        if (closed || invalidated) return;
+        invalidated = true;
+        next.removeEventListener("task-event", receive);
+        next.close();
+        listener.onConnection("reconnecting");
+        listener.onInvalidEvent?.();
+        scheduleReconnect(connect);
+      };
+      const receive = (message: MessageEvent<string>): void => { try { const event = parseTaskEvent(JSON.parse(message.data), taskId); if (event.sequence > lastSequence) { lastSequence = event.sequence; listener.onEvent(event); } } catch { invalidate(); } };
+      next.onopen = () => { if (!invalidated) listener.onConnection("connected"); };
       next.addEventListener("task-event", receive);
-      next.onerror = () => { if (closed) return; next.removeEventListener("task-event", receive); next.close(); listener.onConnection("reconnecting"); scheduleReconnect(connect); };
+      next.onerror = () => { if (closed || invalidated) return; next.removeEventListener("task-event", receive); next.close(); listener.onConnection("reconnecting"); scheduleReconnect(connect); };
       cleanup = () => next.removeEventListener("task-event", receive);
     };
     let cleanup: () => void = () => undefined;

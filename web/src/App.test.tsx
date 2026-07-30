@@ -8,23 +8,25 @@ import type { HarnessApi, TaskEvent, Workspace } from "./types";
 const taskId = "00000000-0000-0000-0000-000000000001";
 const workspace: Workspace = { id: "00000000-0000-0000-0000-000000000010", default_branch: "main", languages: ["Python"], trust_fingerprint: "a".repeat(64), trusted: false, repository: { tracked_count: 4, test_count: 1, dirty_count: 0, test_paths: ["tests/test_math.py"] } };
 const event = (sequence: number, event_type: string, payload: Record<string, unknown>, before: TaskEvent["state_before"], after: TaskEvent["state_after"]): TaskEvent => ({ task_id: taskId, sequence, event_type, payload, state_before: before, state_after: after, occurred_at: `2026-07-30T00:00:${String(sequence).padStart(2, "0")}Z` });
+const content = (diagnostic: string): Record<string, unknown> => ({ content_sha256: "a".repeat(64), content_bytes: new TextEncoder().encode(diagnostic).length, diagnostic });
 const taskEvents = [
-  event(1, "PLAN_PROPOSED", { content_sha256: "a".repeat(64), content_bytes: 12, diagnostic: "修复 add 的真实计划" }, "PLANNING", "WAITING_PLAN_APPROVAL"),
+  event(1, "PLAN_PROPOSED", content("修复 add 的真实计划"), "PLANNING", "WAITING_PLAN_APPROVAL"),
   event(2, "TOOL_EXECUTION_STARTED", { execution_id: "diff-1", action: { tool: "git_diff" } }, "EXECUTING", "EXECUTING"),
-  event(3, "TOOL_EXECUTION_COMPLETED", { execution_id: "diff-1", result: { ok: true, diagnostic: "diff --git a/src/add.py" } }, "EXECUTING", "EXECUTING"),
-  event(4, "VERIFICATION_SUCCEEDED", { run: { name: "test", ok: true, diagnostic: "1 passed" }, verification: { name: "test", config_version: "v1", trust_fingerprint: "b".repeat(64), worktree_fingerprint: "c".repeat(64), required_checks: ["test"] } }, "VERIFYING", "VERIFYING"),
+  event(3, "TOOL_EXECUTION_COMPLETED", { execution_id: "diff-1", result: { ok: true, ...content("diff --git a/src/add.py") } }, "EXECUTING", "EXECUTING"),
+  event(4, "VERIFICATION_SUCCEEDED", { run: { name: "test", ok: true, failure_count: null, diagnostic: "1 passed" }, verification: { name: "test", config_version: "v1", trust_fingerprint: "b".repeat(64), worktree_fingerprint: "c".repeat(64), required_checks: ["test"] } }, "VERIFYING", "VERIFYING"),
+  event(5, "FINAL_SUMMARY_PROPOSED", content("add 已修复"), "VERIFYING", "WAITING_FINAL_REVIEW"),
 ];
 const latestTaskEvents = [
-  event(1, "PLAN_PROPOSED", { content_sha256: "a".repeat(64), content_bytes: 12, diagnostic: "修复 add 的真实计划" }, "PLANNING", "WAITING_PLAN_APPROVAL"),
+  event(1, "PLAN_PROPOSED", content("修复 add 的真实计划"), "PLANNING", "WAITING_PLAN_APPROVAL"),
   event(2, "TOOL_EXECUTION_COMPLETED", { execution_id: "write-1", result: { ok: true, changed_paths: ["src/add.py"] } }, "EXECUTING", "EXECUTING"),
   event(3, "TOOL_EXECUTION_STARTED", { execution_id: "diff-1", action: { tool: "git_diff" } }, "EXECUTING", "EXECUTING"),
-  event(4, "TOOL_EXECUTION_COMPLETED", { execution_id: "diff-1", result: { ok: true, diagnostic: "diff --git a/src/add.py\n-old" } }, "EXECUTING", "EXECUTING"),
-  event(5, "VERIFICATION_SUCCEEDED", { run: { name: "test", ok: true, diagnostic: "旧轮次通过" } }, "VERIFYING", "VERIFYING"),
+  event(4, "TOOL_EXECUTION_COMPLETED", { execution_id: "diff-1", result: { ok: true, ...content("diff --git a/src/add.py\n-old") } }, "EXECUTING", "EXECUTING"),
+  event(5, "VERIFICATION_SUCCEEDED", { run: { name: "test", ok: true, failure_count: null, diagnostic: "旧轮次通过" }, verification: { name: "test", config_version: "v1", trust_fingerprint: "b".repeat(64), worktree_fingerprint: "c".repeat(64), required_checks: ["test"] } }, "VERIFYING", "VERIFYING"),
   event(6, "TOOL_EXECUTION_COMPLETED", { execution_id: "write-2", result: { ok: true, changed_paths: ["src/add.py"] } }, "EXECUTING", "EXECUTING"),
   event(7, "TOOL_EXECUTION_STARTED", { execution_id: "diff-2", action: { tool: "git_diff" } }, "EXECUTING", "EXECUTING"),
-  event(8, "TOOL_EXECUTION_COMPLETED", { execution_id: "diff-2", result: { ok: true, diagnostic: "diff --git a/src/add.py\n+new" } }, "EXECUTING", "EXECUTING"),
-  event(9, "VERIFICATION_SUCCEEDED", { run: { name: "test", ok: true, diagnostic: "第二轮通过" } }, "VERIFYING", "VERIFYING"),
-  event(10, "FINAL_SUMMARY_PROPOSED", { diagnostic: "第二轮最终摘要" }, "VERIFYING", "WAITING_FINAL_REVIEW"),
+  event(8, "TOOL_EXECUTION_COMPLETED", { execution_id: "diff-2", result: { ok: true, ...content("diff --git a/src/add.py\n+new") } }, "EXECUTING", "EXECUTING"),
+  event(9, "VERIFICATION_SUCCEEDED", { run: { name: "test", ok: true, failure_count: null, diagnostic: "第二轮通过" }, verification: { name: "test", config_version: "v1", trust_fingerprint: "b".repeat(64), worktree_fingerprint: "c".repeat(64), required_checks: ["test"] } }, "VERIFYING", "VERIFYING"),
+  event(10, "FINAL_SUMMARY_PROPOSED", content("第二轮最终摘要"), "VERIFYING", "WAITING_FINAL_REVIEW"),
 ];
 
 type ApiOptions = { events?: TaskEvent[]; connectProject?: HarnessApi["connectProject"]; getTask?: HarnessApi["getTask"]; approvePlan?: HarnessApi["approvePlan"] };
@@ -84,6 +86,48 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "批准计划" }));
     expect(await screen.findByText(/等待测试结果/)).toBeVisible();
     expect(screen.queryByRole("button", { name: "批准最终审查" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["空计划", content("")],
+    ["截断计划", content(`[OUTPUT_LIMIT bytes=5000 sha256=${"b".repeat(64)}]`)],
+    ["元数据不一致", { ...content("真实计划"), content_bytes: 1 }],
+  ])("%s 不可批准", async (_name, planPayload) => {
+    const user = userEvent.setup();
+    render(<App api={scriptedApi({ events: [event(1, "PLAN_PROPOSED", planPayload, "PLANNING", "WAITING_PLAN_APPROVAL")] })} />);
+    await createTrustedTask(user);
+    expect(screen.queryByRole("button", { name: "批准计划" })).not.toBeInTheDocument();
+    expect(screen.getByText(/计划内容不完整/)).toBeVisible();
+  });
+
+  it.each([
+    ["缺少当前 diff", taskEvents.filter((item) => item.event_type !== "TOOL_EXECUTION_COMPLETED")],
+    ["缺少当前最终摘要", taskEvents.filter((item) => item.event_type !== "FINAL_SUMMARY_PROPOSED")],
+    ["diff 已截断", taskEvents.map((item) => item.event_type === "TOOL_EXECUTION_COMPLETED" ? event(item.sequence, item.event_type, { execution_id: "diff-1", result: { ok: true, ...content(`[OUTPUT_LIMIT bytes=5000 sha256=${"b".repeat(64)}]`) } }, item.state_before, item.state_after) : item)],
+  ])("%s 时不可最终批准", async (_name, events) => {
+    const user = userEvent.setup();
+    render(<App api={scriptedApi({ events })} />);
+    await createTrustedTask(user);
+    await user.click(screen.getByRole("button", { name: "批准计划" }));
+    expect(screen.queryByRole("button", { name: "批准最终审查" })).not.toBeInTheDocument();
+    expect(screen.getByText(/终审证据不完整/)).toBeVisible();
+  });
+
+  it("非法事件会清空审批证据并在对账失败时禁用变更", async () => {
+    const user = userEvent.setup();
+    const api = scriptedApi({ getTask: vi.fn(async () => { throw new Error("get failed"); }) });
+    api.subscribeEvents = (_taskId, _after, listener) => {
+      taskEvents.forEach(listener.onEvent);
+      listener.onConnection("connected");
+      listener.onInvalidEvent?.();
+      return () => undefined;
+    };
+    render(<App api={api} />);
+    await createTrustedTask(user);
+    expect(await screen.findByText(/事件数据无效/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "批准计划" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "批准最终审查" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "生成计划" })).toBeDisabled();
   });
 
   it("切换项目会清空旧任务上下文", async () => {

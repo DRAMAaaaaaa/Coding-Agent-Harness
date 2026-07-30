@@ -855,3 +855,10 @@
 
 - **最终技术复审：** 独立复审覆盖 `b376716..df7c759`，确认命名 SSE、真实 TaskState/TaskEvent、计划审批、验证与 git diff、最终审查、危险范围、会话头、项目切换、失败收敛、忙碌态与辅助技术播报均与 Task 7 契约一致；结论为 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Technical Ready to merge Yes。
 - **过程与延期：** PLAN 已回填准确技术范围与审查结论，关闭原 M3；本 Task 无新增延期，也未改变既有延期条目。当前仍须由主控在过程提交后的最终 Head 运行全量测试、前端构建和静态检查，并执行整分支最终复审后才能本地合并；未联网、安装、merge 或 push。
+
+### 2026-07-31 — REWORK-MVP-3-TASK-8-FINAL-I1-I4-M1
+
+- **范围与技能：** 完整读取 Task 8 最终审查，使用 `systematic-debugging`、`test-driven-development` 与 `verification-before-completion`，仅关闭 I1— I4 和 M1；未联网、安装依赖、实现 Task 9、merge 或 push。
+- **RED 证据：** API 404/405 与治理 scope 的真实 Python 探针为 `2 failed`，证明 GET 静态 catch-all 改写合法 API 的 405，且原始 `src/../old.py`/大写 digest 未采用治理层规范形式；前端首轮为 `13 failed, 8 passed`，稳定复现空/截断/元数据错误计划仍可批准、缺少/截断 diff 或缺少 final summary 仍可终审、非法事件静默丢弃且旧审批证据可继续操作。
+- **GREEN 设计：** API 命名空间先基于真实 router match 区分 FULL/PARTIAL/NONE，再决定继续、405 或 404，静态托管不再消费 `/api`。计划审批要求完整、非空、非 `[OUTPUT_LIMIT]` 且 UTF-8 字节元数据一致；终审要求最新变更后的成功验证、严格 execution_id 配对的完整 git diff，以及晚于验证和 diff 的完整 final summary。TaskEvent 对信封及所消费 payload 做严格校验，失败即关闭源、清空审批证据、进入不可变更状态并调用权威 GET 对账；断线期间 mutation 同样禁用。治理事件复用 `normalized_delete_scope` 后再脱敏和限长，显示值仍不参与授权。
+- **限定验证：** 修复智能体运行 API + Agent 相关回归 `129 passed`；主控随后重跑直接相关 Python 用例 `23 passed` 与 Vitest `2 files / 21 passed`。Ruff、mypy（47 个源文件）、Web ESLint、TypeScript typecheck、Vite build 和差异检查均通过；本 Task 无新增延期，仍待独立最终复审与本地合并。

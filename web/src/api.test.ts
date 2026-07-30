@@ -54,6 +54,39 @@ describe("Browser API adapter", () => {
     expect(source.removeEventListener).toHaveBeenCalledWith("task-event", expect.any(Function));
   });
 
+  it.each([
+    ["错误 task_id", { ...event, task_id: "wrong-task" }],
+    ["非法 sequence", { ...event, sequence: 0 }],
+    ["非法 state", { ...event, state_after: "UNKNOWN" }],
+    ["非法时间", { ...event, occurred_at: "not-a-time" }],
+    ["缺少计划字段", { ...event, payload: { diagnostic: "真实计划" } }],
+    ["错误计划字段", { ...event, payload: { content_sha256: "bad", content_bytes: "12", diagnostic: "真实计划" } }],
+  ])("%s 会终止事件源并进入重连", (_name, invalidEvent) => {
+    let receive: ((event: MessageEvent<string>) => void) | undefined;
+    const source = {
+      onopen: null as ((event: Event) => void) | null,
+      onerror: null as ((event: Event) => void) | null,
+      addEventListener: vi.fn((_name: string, handler: (value: MessageEvent<string>) => void) => { receive = handler; }),
+      removeEventListener: vi.fn(),
+      close: vi.fn(),
+    };
+    const reconnect = vi.fn();
+    const invalid = vi.fn();
+    const received = vi.fn();
+    const connection = vi.fn();
+    const api = createBrowserApi({ eventSourceFactory: () => source, scheduleReconnect: reconnect });
+
+    api.subscribeEvents(taskId, 0, { onEvent: received, onConnection: connection, onInvalidEvent: invalid });
+    receive?.({ data: JSON.stringify(invalidEvent) } as MessageEvent<string>);
+
+    expect(received).not.toHaveBeenCalled();
+    expect(source.removeEventListener).toHaveBeenCalledWith("task-event", expect.any(Function));
+    expect(source.close).toHaveBeenCalledOnce();
+    expect(invalid).toHaveBeenCalledOnce();
+    expect(connection).toHaveBeenLastCalledWith("reconnecting");
+    expect(reconnect).toHaveBeenCalledOnce();
+  });
+
   it("为每个 mutation 使用同一会话和精确请求形状", async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response("Harness", { headers: { "X-Harness-Session": "session-1" } }))

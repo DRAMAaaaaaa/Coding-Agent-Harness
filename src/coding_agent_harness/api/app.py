@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Match
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from coding_agent_harness.api.dependencies import (
@@ -71,7 +72,8 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
             await database.close()
 
     app = FastAPI(lifespan=lifespan)
-    app.include_router(create_router(None, sessions))
+    api_router = create_router(None, sessions)
+    app.include_router(api_router)
 
     @app.middleware("http")
     async def require_trusted_host(
@@ -83,6 +85,31 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
                 status_code=status.HTTP_403_FORBIDDEN,
                 content=_error_body("UNTRUSTED_HOST", "请求 Host 不受信任"),
             )
+        if request.url.path == "/api" or request.url.path.startswith("/api/"):
+            matches = [
+                (route, route.matches(request.scope)[0])
+                for route in api_router.routes
+            ]
+            if not any(match is Match.FULL for _, match in matches):
+                allowed = sorted(
+                    {
+                        method
+                        for route, match in matches
+                        if match is Match.PARTIAL
+                        for method in (getattr(route, "methods", None) or ())
+                    }
+                )
+                response_status = (
+                    status.HTTP_405_METHOD_NOT_ALLOWED
+                    if allowed
+                    else status.HTTP_404_NOT_FOUND
+                )
+                headers = {"Allow": ", ".join(allowed)} if allowed else None
+                return JSONResponse(
+                    status_code=response_status,
+                    content=_error_body("REQUEST_REJECTED", "请求被拒绝"),
+                    headers=headers,
+                )
         return await call_next(request)
 
     @app.get("/")

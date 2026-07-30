@@ -129,6 +129,9 @@ async def test_static_webui_serves_built_assets_without_spa_fallback(
             asset = await client.get("/assets/app.js")
             missing = await client.get("/missing.js")
             traversal = await client.get("/%2E%2E/pyproject.toml")
+            wrong_method = await client.get("/api/projects")
+            unknown_get = await client.get("/api/not-a-route")
+            unknown_post = await client.post("/api/not-a-route")
 
     assert index.text == "<main>Harness UI</main>"
     assert index.headers["x-harness-session"]
@@ -138,3 +141,6 @@ async def test_static_webui_serves_built_assets_without_spa_fallback(
     }
     assert missing.status_code == 404
     assert traversal.status_code == 404
+    assert wrong_method.status_code == 405
+    assert unknown_get.status_code == 404
+    assert unknown_post.status_code == 404
