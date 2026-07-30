@@ -868,6 +868,12 @@
 - **最终独立复审：** 审查覆盖整分支 `b376716..ea146f1`，确认 API 404/405、完整计划与终审证据、非法 TaskEvent fail-closed，以及由真实 `ToolRegistry` / `PathGuard` worktree 根生成的只读治理范围均已关闭；结论为 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes。
 - **复审证据与边界：** 聚焦回归 `37 passed`，Ruff、mypy（47 个源文件）和差异检查通过；最终报告记录于 `.superpowers/sdd/task-8-final-review.md`。本 Task 无新增延期；未联网、安装依赖、实现 Task 9、merge 或 push，仍待主控合并前全量验证。
 
+### 2026-07-31 — MERGE-MVP-3-TASK-8
+
+- **本地集成：** `codex/webui` 以 `--ff-only` 从 `b376716` 快进合并到本地 `p1`，合并过程无冲突；技术 Head 为 `ea146f1`，最终审查记录 Head 为 `68946d3`。未 pull、未 push、未接触真实凭据。
+- **合并后新鲜验证：** 在 `p1` 运行一键全量门禁，得到 `706 passed, 15 skipped`；Ruff、mypy（47 个源文件）、Web ESLint、TypeScript typecheck、Vitest `2 files / 21 passed`、Vite 生产构建和 `pip check` 全部通过。
+- **交付与延期：** Task 8 已交付最小单页 WebUI、同源静态托管、项目/任务主路径、SSE 续传与 fail-closed、计划和终审完整证据门禁、危险治理范围只读展示及其确定性回归；本 Task 无新增延期。下一项为 MVP-4 Task 9 的离线三机制演示、E2E 与一键验收闭环。
+
 ### 2026-07-31 — REWORK-MVP-3-TASK-8-FINAL-M1-M2
 
 - **复审根因：** 首轮 M1 错误使用进程 `Path.cwd()`，而真实任务 worktree 根只由 `ToolRegistry` 的 `PathGuard(context.workspace_root)` 权威持有；服务 cwd 与目标 worktree 不同时，根内绝对路径会被错误显示为 `[INVALID_SCOPE]`。M2 是 PLAN 使用动态 `HEAD`，没有记录首轮返工精确范围。
