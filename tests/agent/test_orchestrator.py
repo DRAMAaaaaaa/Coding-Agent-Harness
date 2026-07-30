@@ -298,10 +298,23 @@ async def test_loop_persists_each_decision_and_blocks_dangerous_action(tmp_path)
         await orchestrator.run_until_wait(task.id)
         events = await EventStore(database).list_for_task(task.id)
         assert [event.sequence for event in events] == list(range(1, len(events) + 1))
-        assert any(event.event_type == "GOVERNANCE_BLOCKED" for event in events)
+        blocked = next(event for event in events if event.event_type == "GOVERNANCE_BLOCKED")
+        assert blocked.payload["normalized_scope"] == '{"expected_sha256":"0000000000000000000000000000000000000000000000000000000000000000","path":"old.py","tool":"delete_file"}'
         assert not any(event.event_type == "TOOL_EXECUTION_STARTED" for event in events)
     finally:
         await database.close()
+
+
+async def test_governance_scope_redacts_sensitive_action_path(harness) -> None:
+    orchestrator, _, _, _ = harness
+
+    scope = orchestrator._governance_scope({
+        "tool": "delete_file",
+        "arguments": {"path": "token=secret-value", "expected_sha256": "a" * 64},
+    })
+
+    assert "secret-value" not in scope
+    assert "[REDACTED]" in scope
 
 
 async def test_complete_requires_every_current_configured_check(tmp_path) -> None:

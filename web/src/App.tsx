@@ -1,160 +1,39 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
+import type { ConnectionState, HarnessApi, Task, TaskEvent, TaskState, Workspace } from "./types";
 
-import type { ConnectionState, HarnessApi, Task, TaskEvent, Workspace } from "./types";
-
-interface AppProps {
-  api: HarnessApi;
-}
-
-const STATUS: Record<string, string> = {
-  WAITING_PLAN_APPROVAL: "⏸ 等待计划批准",
-  EXECUTING: "↻ 正在执行",
-  WAITING_FINAL_APPROVAL: "✓ 等待最终审查",
-  WAITING_USER: "⚠ 等待用户处理",
-  COMPLETED: "✓ 已完成",
-};
-
-function statusLabel(state: string | undefined): string {
-  return state === undefined ? "○ 尚未创建任务" : (STATUS[state] ?? `● ${state}`);
-}
-
-function detail(payload: Record<string, unknown>, keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = payload[key];
-    if (typeof value === "string") return value;
-    if (Array.isArray(value) && value.every((item) => typeof item === "string")) return value.join(", ");
-  }
-  return undefined;
-}
+interface AppProps { api: HarnessApi; }
+const STATUS: Partial<Record<TaskState, string>> = { WAITING_PLAN_APPROVAL: "⏸ 等待计划批准", DECIDING: "↻ 等待运行", WAITING_ACTION_APPROVAL: "⚠ 等待危险动作处理", EXECUTING: "↻ 正在执行", WAITING_FINAL_REVIEW: "✓ 等待最终审查", WAITING_USER: "⚠ 等待用户处理", COMPLETED: "✓ 已完成" };
+const text = (value: unknown): string | undefined => typeof value === "string" ? value : undefined;
+const display = (value: unknown): string | undefined => typeof value === "string" || typeof value === "number" ? String(value) : undefined;
+const object = (value: unknown): Record<string, unknown> | undefined => typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 
 export function App({ api }: AppProps) {
-  const [projectPath, setProjectPath] = useState("");
-  const [requirement, setRequirement] = useState("");
-  const [workspace, setWorkspace] = useState<Workspace>();
-  const [task, setTask] = useState<Task>();
-  const [events, setEvents] = useState<TaskEvent[]>([]);
-  const [connection, setConnection] = useState<ConnectionState>("disconnected");
-  const [message, setMessage] = useState("请接入本地 Git 项目后建立信任。");
-  const lastSequence = useRef(0);
-  const taskId = task?.id;
+  const [projectPath, setProjectPath] = useState(""); const [requirement, setRequirement] = useState("");
+  const [workspace, setWorkspace] = useState<Workspace>(); const [task, setTask] = useState<Task>(); const [events, setEvents] = useState<TaskEvent[]>([]);
+  const [connection, setConnection] = useState<ConnectionState>("disconnected"); const [message, setMessage] = useState("请接入本地 Git 项目后建立信任。"); const [busy, setBusy] = useState<string>();
+  const lastSequence = useRef(0); const taskId = task?.id;
+  useEffect(() => { if (!taskId) return; lastSequence.current = 0; return api.subscribeEvents(taskId, 0, { onEvent: (next) => { if (next.sequence > lastSequence.current) { lastSequence.current = next.sequence; setEvents((current) => [...current, next]); } }, onConnection: setConnection }); }, [api, taskId]);
+  const run = async (key: string, action: () => Promise<void>, settleTaskId?: string): Promise<void> => { if (busy) return; setBusy(key); try { await action(); } catch { if (settleTaskId) { try { setTask(await api.getTask(settleTaskId)); } catch { /* fixed safe message below */ } } setMessage("无法完成此操作。请检查服务状态后重试。"); } finally { setBusy(undefined); } };
+  const connectProject = (form: FormEvent): void => { form.preventDefault(); void run("project", async () => { setTask(undefined); setEvents([]); lastSequence.current = 0; const created = await api.connectProject(projectPath); setWorkspace(created); setMessage("项目已接入，请审阅摘要并显式建立信任。"); }); };
+  const createTask = (form: FormEvent): void => { form.preventDefault(); if (!workspace) return; void run("task", async () => { const created = await api.createTask(workspace.id, requirement); setEvents([]); setTask(created); setMessage("计划已生成，等待计划事件到达。"); }); };
+  const plan = events.find((event) => event.event_type === "PLAN_PROPOSED"); const planDiagnostic = plan && text(plan.payload.diagnostic);
+  const verification = events.find((event) => event.event_type === "VERIFICATION_SUCCEEDED"); const verificationRun = verification && object(verification.payload.run); const verificationDiagnostic = verificationRun && text(verificationRun.diagnostic);
+  const starts = new Map(events.filter((event) => event.event_type === "TOOL_EXECUTION_STARTED").map((event) => [text(event.payload.execution_id), object(event.payload.action)]));
+  const diff = events.find((event) => event.event_type === "TOOL_EXECUTION_COMPLETED" && text(starts.get(text(event.payload.execution_id) ?? "")?.tool) === "git_diff"); const diffDiagnostic = diff && text(object(diff.payload.result)?.diagnostic);
+  const finalSummary = events.find((event) => event.event_type === "FINAL_SUMMARY_PROPOSED"); const finalDiagnostic = finalSummary && text(finalSummary.payload.diagnostic);
+  const approvals = Array.from(new Map(events.filter((event) => event.event_type === "GOVERNANCE_BLOCKED" || event.state_after === "WAITING_ACTION_APPROVAL").map((event) => { const reason = text(event.payload.reason_code) ?? "未提供原因"; const scope = text(event.payload.normalized_scope) ?? "未提供精确范围"; return [`${reason}:${scope}`, { reason, scope }]; })).values());
+  const status = task ? STATUS[task.state] ?? `● ${task.state}` : "○ 尚未创建任务"; const lastEvent = events.at(-1);
+  const showPlanApproval = task?.state === "WAITING_PLAN_APPROVAL" && planDiagnostic !== undefined;
+  const showRun = task?.state === "DECIDING";
+  const showFinalApproval = task?.state === "WAITING_FINAL_REVIEW" && verificationDiagnostic !== undefined;
 
-  useEffect(() => {
-    if (taskId === undefined) return;
-    lastSequence.current = 0;
-    return api.subscribeEvents(taskId, 0, {
-      onEvent: (event) => {
-        if (event.sequence > lastSequence.current) {
-          lastSequence.current = event.sequence;
-          setEvents((current) => [...current, event]);
-        }
-      },
-      onConnection: setConnection,
-    });
-  }, [api, taskId]);
-
-  const safely = async (operation: () => Promise<void>): Promise<void> => {
-    try {
-      await operation();
-    } catch {
-      setMessage("无法完成此操作。请检查服务状态后重试。");
-    }
-  };
-
-  const connectProject = (event: FormEvent): void => {
-    event.preventDefault();
-    void safely(async () => {
-      const created = await api.connectProject(projectPath);
-      setWorkspace(created);
-      setMessage("项目已接入，请审阅摘要并显式建立信任。");
-    });
-  };
-
-  const createTask = (event: FormEvent): void => {
-    event.preventDefault();
-    if (workspace === undefined) return;
-    void safely(async () => {
-      const created = await api.createTask(workspace.id, requirement);
-      setEvents([]);
-      setTask(created);
-      setMessage("计划已生成，等待您的批准。");
-    });
-  };
-
-  const verificationPassed = events.some((event) => event.event_type.includes("VERIFICATION_PASSED"));
-  const finalDiff = events.map((event) => detail(event.payload, ["diff_summary", "diff"]))
-    .find((value) => value !== undefined);
-  const pendingApprovals = events.filter((event) => event.event_type.includes("APPROVAL") || event.payload.reason_code !== undefined);
-
-  return (
-    <main className="app-shell">
-      <header>
-        <p className="eyebrow">本地 Coding Agent Harness</p>
-        <h1>受治理的编码任务工作台</h1>
-        <p className="status" aria-live="polite">{statusLabel(task?.state)} · SSE：{connection === "connected" ? "● 已连接" : connection === "reconnecting" ? "↻ 正在重连" : "○ 未连接"}</p>
-        <p className="message" role="status">{message}</p>
-      </header>
-
-      <section aria-labelledby="project-heading">
-        <h2 id="project-heading">项目接入</h2>
-        <form onSubmit={connectProject}>
-          <label htmlFor="project-path">项目路径</label>
-          <div className="inline-form">
-            <input id="project-path" value={projectPath} onChange={(event) => setProjectPath(event.target.value)} required />
-            <button type="submit">接入项目</button>
-          </div>
-        </form>
-        {workspace && <div className="summary" aria-live="polite">
-          <p>{workspace.languages.join(", ") || "未识别语言"} · {workspace.default_branch}</p>
-          <p>已跟踪 {workspace.repository?.tracked_count ?? 0} 项，测试 {workspace.repository?.test_count ?? 0} 项，未提交变更 {workspace.repository?.dirty_count ?? 0} 项。</p>
-          {workspace.repository?.test_paths?.length ? <p>测试位置：{workspace.repository.test_paths.join(", ")}</p> : null}
-          {!workspace.trusted && <button type="button" onClick={() => void safely(async () => {
-            setWorkspace(await api.trustProject(workspace));
-            setMessage("已建立当前项目配置的信任。");
-          })}>建立信任</button>}
-          {workspace.trusted && <p>✓ 当前项目已建立信任</p>}
-        </div>}
-      </section>
-
-      <section aria-labelledby="requirement-heading">
-        <h2 id="requirement-heading">需求输入</h2>
-        <form onSubmit={createTask}>
-          <label htmlFor="requirement">编码需求</label>
-          <textarea id="requirement" value={requirement} onChange={(event) => setRequirement(event.target.value)} required />
-          <button type="submit" disabled={!workspace?.trusted}>生成计划</button>
-        </form>
-      </section>
-
-      <section aria-labelledby="plan-heading">
-        <h2 id="plan-heading">计划审批</h2>
-        <p>{events.find((event) => event.event_type === "PLAN_PROPOSED") ? "已收到计划事件，请批准后运行。" : "尚未收到计划。"}</p>
-        <button type="button" disabled={task?.state !== "WAITING_PLAN_APPROVAL"} onClick={() => task && void safely(async () => {
-          await api.approvePlan(task.id);
-          setTask(await api.runTask(task.id));
-          setMessage("计划已批准，任务已触发运行。");
-        })}>批准计划</button>
-      </section>
-
-      <section aria-labelledby="timeline-heading">
-        <h2 id="timeline-heading">事件时间线</h2>
-        <p aria-live="polite">{connection === "reconnecting" ? "↻ 事件流断开，正在重连。" : "○ 事件按序号续传。"}</p>
-        <ol>{events.map((event) => <li key={event.sequence}><strong>#{event.sequence} {event.event_type}</strong>{detail(event.payload, ["summary", "reason_code"]) ? `：${detail(event.payload, ["summary", "reason_code"])}` : ""}</li>)}</ol>
-      </section>
-
-      <section aria-labelledby="approval-heading">
-        <h2 id="approval-heading">危险动作审批</h2>
-        {pendingApprovals.length === 0 ? <p>当前没有待审批危险动作。<span>后端尚无可提交操作</span>。</p> : pendingApprovals.map((event) => <article key={event.sequence} className="approval"><p>原因：{detail(event.payload, ["reason", "reason_code"]) ?? "事件未提供"}</p><p>精确范围：{detail(event.payload, ["scope", "paths", "path", "target"]) ?? "事件未提供"}</p><p>后端尚无可提交操作。</p></article>)}
-      </section>
-
-      <section aria-labelledby="review-heading">
-        <h2 id="review-heading">测试与最终审查</h2>
-        <p>{verificationPassed ? <>✓ <span>测试已通过</span></> : "○ 等待测试结果"}</p>
-        <button type="button" disabled={task?.state !== "WAITING_FINAL_APPROVAL"} onClick={() => task && void safely(async () => {
-          setTask(await api.approveFinal(task.id));
-          setMessage("已提交最终审查批准。");
-        })}>批准最终审查</button>
-        <h2>最终差异</h2>
-        <pre>{finalDiff ?? "尚无差异摘要。"}</pre>
-      </section>
-    </main>
-  );
+  return <main className="app-shell" aria-busy={busy !== undefined}>
+    <header><p className="eyebrow">本地 Coding Agent Harness</p><h1>受治理的编码任务工作台</h1><p className="status" aria-live="polite">{status} · SSE：{connection === "connected" ? "● 已连接" : connection === "reconnecting" ? "↻ 正在重连" : "○ 未连接"}</p><p className="message" role="status">{message}</p></header>
+    <section aria-labelledby="project-heading"><h2 id="project-heading">项目接入</h2><form onSubmit={connectProject}><label htmlFor="project-path">项目路径</label><div className="inline-form"><input id="project-path" value={projectPath} onChange={(event) => setProjectPath(event.target.value)} required /><button type="submit" disabled={busy !== undefined}>{busy === "project" ? "正在接入" : "接入项目"}</button></div></form>{workspace && <div className="summary" aria-live="polite"><p>{workspace.languages.join(", ") || "未识别语言"} · {workspace.default_branch}</p><p>已跟踪 {workspace.repository?.tracked_count ?? 0} 项，测试 {workspace.repository?.test_count ?? 0} 项，未提交变更 {workspace.repository?.dirty_count ?? 0} 项。</p>{workspace.repository?.test_paths?.length ? <p>测试位置：{workspace.repository.test_paths.join(", ")}</p> : null}{!workspace.trusted ? <button type="button" disabled={busy !== undefined} onClick={() => void run("trust", async () => { setWorkspace(await api.trustProject(workspace)); setMessage("已建立当前项目配置的信任。"); })}>{busy === "trust" ? "正在建立信任" : "建立信任"}</button> : <p>✓ 当前项目已建立信任</p>}</div>}</section>
+    <section aria-labelledby="requirement-heading"><h2 id="requirement-heading">需求输入</h2><form onSubmit={createTask}><label htmlFor="requirement">编码需求</label><textarea id="requirement" value={requirement} onChange={(event) => setRequirement(event.target.value)} required /><button type="submit" disabled={!workspace?.trusted || busy !== undefined}>{busy === "task" ? "正在生成" : "生成计划"}</button></form></section>
+    <section aria-labelledby="plan-heading"><h2 id="plan-heading">计划审批</h2>{planDiagnostic ? <><pre>{planDiagnostic}</pre><p>摘要：{text(plan?.payload.content_sha256) ?? "未提供"}（{display(plan?.payload.content_bytes) ?? "未提供"} bytes）</p></> : <p>尚未收到可审阅计划。</p>}{showPlanApproval && <button type="button" disabled={busy !== undefined} onClick={() => task && void run("approve-plan", async () => { const approved = await api.approvePlan(task.id); setTask(approved); setTask(await api.runTask(task.id)); setMessage("计划已批准，任务已触发运行。"); }, task.id)}>{busy === "approve-plan" ? "正在批准" : "批准计划"}</button>}{showRun && <button type="button" disabled={busy !== undefined} onClick={() => task && void run("run", async () => { setTask(await api.runTask(task.id)); }, task.id)}>{busy === "run" ? "正在运行" : "继续运行"}</button>}</section>
+    <section aria-labelledby="timeline-heading"><h2 id="timeline-heading">事件时间线</h2><p aria-live="polite">{connection === "reconnecting" ? "↻ 事件流断开，正在重连。" : `○ ${lastEvent ? `新事件 #${lastEvent.sequence} ${lastEvent.event_type}` : "事件按序号续传。"}`}</p><ol>{events.map((event) => <li key={event.sequence}><strong>#{event.sequence} {event.event_type}</strong></li>)}</ol></section>
+    <section aria-labelledby="approval-heading"><h2 id="approval-heading">危险动作审批</h2>{approvals.length === 0 ? <p>当前没有待审批危险动作。<span>后端尚无可提交操作</span>。</p> : <div role="alert">{approvals.map((approval) => <article key={`${approval.reason}:${approval.scope}`} className="approval"><p>原因：{approval.reason}</p><p>精确范围：{approval.scope}</p><p>后端尚无可提交操作。</p></article>)}</div>}</section>
+    <section aria-labelledby="review-heading"><h2 id="review-heading">测试与最终审查</h2><p>{verificationDiagnostic ? <>✓ <span>测试已通过</span>：<span>{verificationDiagnostic}</span></> : "○ 等待测试结果"}</p>{showFinalApproval && <button type="button" disabled={busy !== undefined} onClick={() => task && void run("approve-final", async () => { setTask(await api.approveFinal(task.id)); setMessage("已提交最终审查批准。"); }, task.id)}>{busy === "approve-final" ? "正在批准" : "批准最终审查"}</button>}<h2>最终差异</h2><pre>{diffDiagnostic ?? finalDiagnostic ?? "尚无差异摘要。"}</pre></section>
+  </main>;
 }

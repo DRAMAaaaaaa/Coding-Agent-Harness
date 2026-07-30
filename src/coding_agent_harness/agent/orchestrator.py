@@ -554,6 +554,13 @@ class AgentOrchestrator:
             return self._content_metadata(text)
         if event_type == "ACTION_PARSE_FAILED":
             return self._content_metadata(str(payload.get("raw", "")))
+        if event_type == "GOVERNANCE_BLOCKED":
+            action = payload.get("action")
+            return {
+                "action": self._action_metadata(action) if isinstance(action, dict) else {},
+                "reason_code": self._diagnostic(str(payload.get("reason_code", ""))),
+                "normalized_scope": self._governance_scope(action),
+            }
         safe: dict[str, JsonValue] = {}
         for key, value in payload.items():
             if key == "action" and isinstance(value, dict):
@@ -596,6 +603,21 @@ class AgentOrchestrator:
         if isinstance(content, str):
             summary.update(self._content_metadata(content))
         return summary
+
+    def _governance_scope(self, action: object) -> str:
+        if not isinstance(action, dict):
+            return "[INVALID_SCOPE]"
+        arguments = action.get("arguments")
+        if not isinstance(arguments, dict):
+            return "[INVALID_SCOPE]"
+        scope: dict[str, JsonValue] = {"tool": self._diagnostic(str(action.get("tool", "")))}
+        path = arguments.get("path")
+        if isinstance(path, str):
+            scope["path"] = self._diagnostic(path, limit=2_048)
+        digest = arguments.get("expected_sha256")
+        if isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest):
+            scope["expected_sha256"] = digest
+        return json.dumps(scope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
     def _result_metadata(self, result: dict[str, JsonValue]) -> dict[str, JsonValue]:
         output = result.get("output")
