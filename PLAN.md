@@ -169,7 +169,7 @@ class TaskOrchestrator:
 | 8 | 记忆筛选、存储与上下文 | 3、4 | 可与 7 并行 | `codex/memory` | 待执行 |
 | 9 | Agent 编排循环与机制演示 | 3—8 | 无 | `codex/orchestrator` | 待执行 |
 | 10 | 凭据生命周期 | 1、4 | 可与 3 或 8 并行 | `codex/credentials` | 待执行 |
-| MVP-3 Task 7 | 持久化 Workspace 与最小 REST/SSE | MVP-2 Task 6 | 独立 worktree | `codex/api` | 技术实现与主控验证完成，待唯一过程 Minor 复审后本地合并（受审范围 `340edfb..5f6ab5c`；最终 C1/I1 已复验关闭，Quality Approved；全量 `703 passed, 15 skipped`，Ruff、mypy、Web lint/typecheck、`pip check`、wheel/sdist 与 001/002/003 归档矩阵通过）；本 Task 无新增延期 |
+| MVP-3 Task 7 | 持久化 Workspace 与最小 REST/SSE | MVP-2 Task 6 | 独立 worktree | `codex/api` | 完成并已本地快进合并到 `p1`（技术/过程 Head `8fd5cde`；最终 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes；合并后全量 `703 passed, 15 skipped`，Ruff、mypy、Web lint/typecheck 通过，合并前同 Head 的 `pip check`、wheel/sdist 与 001/002/003 归档矩阵通过）；本 Task 无新增延期 |
 | 11 | FastAPI REST/SSE 与交付产物 | 5、9、10 | 无 | `codex/api` | 待执行（完整产品后续范围） |
 | 12 | React WebUI | 11 的接口契约 | 可在 API schema 冻结后与 11 后半段并行 | `codex/webui` | 待执行 |
 | 13 | 端到端测试与三机制演示 | 9、11、12 | 无 | `codex/e2e-demo` | 待执行 |

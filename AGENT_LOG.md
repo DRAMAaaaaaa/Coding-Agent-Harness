@@ -824,3 +824,9 @@
 - **最终审查返工：** 最终整分支审查实证发现 Workspace profile 可把敏感赋值写入 SQLite，以及计划 Provider 等待期间取消请求会让 Task 固定停在 `PLANNING`。提交 `5f6ab5c` 以写库前 fail-closed 敏感判定关闭前者，并通过合法状态机事件、取消收敛和幂等故障记录把后者恢复到 `WAITING_USER`；独立复验确认 C1/I1 均已关闭，核心 `5 passed`、相关回归 `109 passed`，Quality Approved。
 - **主控新鲜验证：** 首次直接执行 PowerShell 脚本被宿主执行策略拒绝；改用 `ExecutionPolicy Bypass` 后又因新进程未显式继承 worktree `PYTHONPATH` 而误导入主目录旧代码。确认根因后显式绑定 `PYTHONPATH` 到当前 `src`，最终 `scripts/test.ps1 -Mode All` 为 `703 passed, 15 skipped`，Ruff、mypy（47 个源文件）、Web ESLint 与 TypeScript 均通过；`pip check` 无破损依赖，wheel/sdist 无隔离构建成功，001/002/003 在两种归档中均各 1 份，`git diff --check 340edfb..HEAD` 通过。
 - **范围与延期：** PLAN 的 Task 7 受审范围更新为 `340edfb..5f6ab5c`，关闭最终复审指出的唯一过程 Minor。本 Task 未新增延期，也未改变既有延期条目；未联网、安装依赖、接触真实凭据、实现 WebUI、merge 或 push。当前只待对本次过程回填做最终复审后本地合并到 `p1`。
+
+### 2026-07-30 — MERGE-MVP-3-TASK-7-INTO-P1
+
+- **最终门禁：** 独立整分支复审覆盖 `340edfb..8fd5cde`，结论为 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes；敏感 Workspace profile 与计划取消恢复的最终 C1/I1 均以真实 SQLite/ASGI 探针关闭，唯一提交范围过程 Minor 也已回填并复审。
+- **本地合并：** 按用户既定选择，在主工作区把 `codex/api` 从 `340edfb` 快进到 `8fd5cde`；未 pull、未联网、未 push。合并后显式绑定主工作区 `src`，重新运行 `scripts/test.ps1 -Mode All`，得到 `703 passed, 15 skipped`，Ruff、mypy（47 个源文件）、Web ESLint 与 TypeScript 全部通过。
+- **分发与延期：** 合并前同一技术/过程 Head 的 `pip check` 无破损依赖，wheel/sdist 无隔离构建成功，001/002/003 在两种归档中均各 1 份。本 Task 无新增延期；Task 8 WebUI 仍为下一项未开始工作，不在本次合并中提前实现。
