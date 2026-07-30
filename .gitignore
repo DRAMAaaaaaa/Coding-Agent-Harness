@@ -47,6 +47,8 @@ node_modules/
 .vite/
 coverage/
 *.tsbuildinfo
+web/test-results/
+web/playwright-report/
 
 # IDE and editor state
 .idea/

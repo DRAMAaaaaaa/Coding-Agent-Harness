@@ -563,6 +563,30 @@ class AgentOrchestrator:
                 "reason_code": self._diagnostic(str(payload.get("reason_code", ""))),
                 "normalized_scope": self._governance_scope(action),
             }
+        if event_type == "FEEDBACK_RECORDED":
+            observation = payload.get("observation")
+            safe_observation: dict[str, JsonValue] = {}
+            if isinstance(observation, dict):
+                category = observation.get("category")
+                fingerprint = observation.get("fingerprint")
+                failure_count = observation.get("failure_count")
+                if isinstance(category, str):
+                    safe_observation["category"] = self._diagnostic(category, limit=128)
+                if isinstance(fingerprint, str) and re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+                    safe_observation["fingerprint"] = fingerprint
+                safe_observation["failure_count"] = (
+                    failure_count
+                    if isinstance(failure_count, int) and not isinstance(failure_count, bool)
+                    else None
+                )
+            output = payload.get("output")
+            return {
+                "observation": safe_observation,
+                "reason_code": self._diagnostic(str(payload.get("reason_code", "")), limit=1_024),
+                "diagnostic": self._diagnostic(output, limit=65_536)
+                if isinstance(output, str)
+                else "",
+            }
         safe: dict[str, JsonValue] = {}
         for key, value in payload.items():
             if key == "action" and isinstance(value, dict):

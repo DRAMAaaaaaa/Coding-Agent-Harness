@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Protocol
 from uuid import UUID
 
@@ -29,6 +30,10 @@ async def task_events(
     task_id: UUID,
     after: int,
     redactor: Redactor | None = None,
+    *,
+    follow: bool = False,
+    is_disconnected: Callable[[], Awaitable[bool]] | None = None,
+    poll_interval: float = 0.25,
 ) -> AsyncIterator[bytes]:
     sanitizer = redactor or Redactor()
     cursor = after
@@ -39,14 +44,20 @@ async def task_events(
             limit=MAX_EVENT_BATCH_SIZE,
         )
         if not batch:
-            return
+            if not follow:
+                return
+            if is_disconnected is not None and await is_disconnected():
+                return
+            yield b": keep-alive\n\n"
+            await asyncio.sleep(poll_interval)
+            continue
         for event in batch:
             payload = _encode_event(event, sanitizer)
             yield f"id: {event.sequence}\nevent: task-event\ndata: {payload}\n\n".encode(
                 "utf-8"
             )
         cursor = batch[-1].sequence
-        if len(batch) < MAX_EVENT_BATCH_SIZE:
+        if not follow and len(batch) < MAX_EVENT_BATCH_SIZE:
             return
 
 

@@ -1,0 +1,10 @@
+test:
+  - python
+  - -B
+  - -m
+  - unittest
+  - discover
+  - -s
+  - tests
+timeout: 30
+env_allowlist: []

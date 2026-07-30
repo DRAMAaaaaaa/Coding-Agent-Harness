@@ -263,7 +263,17 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
         active = dependencies or request.app.state.dependencies
         if await active.tasks.get(task_id) is None:
             raise _error(404, "TASK_NOT_FOUND", "任务不存在")
-        return StreamingResponse(task_events(active.event_store, task_id, after), media_type="text/event-stream")
+        follow = "text/event-stream" in request.headers.get("accept", "").casefold()
+        return StreamingResponse(
+            task_events(
+                active.event_store,
+                task_id,
+                after,
+                follow=follow,
+                is_disconnected=request.is_disconnected if follow else None,
+            ),
+            media_type="text/event-stream",
+        )
 
     @router.get("/api/tasks/{task_id}")
     async def get_task(request: Request, task_id: UUID) -> dict[str, object]:

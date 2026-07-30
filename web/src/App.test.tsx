@@ -97,7 +97,7 @@ describe("App", () => {
     render(<App api={scriptedApi({ events: [event(1, "PLAN_PROPOSED", planPayload, "PLANNING", "WAITING_PLAN_APPROVAL")] })} />);
     await createTrustedTask(user);
     expect(screen.queryByRole("button", { name: "批准计划" })).not.toBeInTheDocument();
-    expect(screen.getByText(/计划内容不完整/)).toBeVisible();
+    expect(await screen.findByText(/计划内容不完整/)).toBeVisible();
   });
 
   it.each([

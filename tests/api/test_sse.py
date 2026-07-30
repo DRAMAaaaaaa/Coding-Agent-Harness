@@ -106,6 +106,31 @@ async def test_sse_oversize_event_preserves_complete_envelope() -> None:
     }
 
 
+async def test_following_sse_keeps_connection_open_until_client_disconnects() -> None:
+    task_id = UUID("00000000-0000-0000-0000-000000000009")
+    reader = _StaticEventReader(())
+    checks = 0
+
+    async def disconnected() -> bool:
+        nonlocal checks
+        checks += 1
+        return checks > 1
+
+    chunks = [
+        chunk
+        async for chunk in task_events(
+            reader,
+            task_id,
+            after=0,
+            follow=True,
+            is_disconnected=disconnected,
+            poll_interval=0,
+        )
+    ]
+
+    assert chunks == [b": keep-alive\n\n"]
+
+
 class _StaticEventReader:
     def __init__(self, events: tuple[TaskEvent, ...]) -> None:
         self._events = events
