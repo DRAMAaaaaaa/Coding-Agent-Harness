@@ -863,6 +863,11 @@
 - **GREEN 设计：** API 命名空间先基于真实 router match 区分 FULL/PARTIAL/NONE，再决定继续、405 或 404，静态托管不再消费 `/api`。计划审批要求完整、非空、非 `[OUTPUT_LIMIT]` 且 UTF-8 字节元数据一致；终审要求最新变更后的成功验证、严格 execution_id 配对的完整 git diff，以及晚于验证和 diff 的完整 final summary。TaskEvent 对信封及所消费 payload 做严格校验，失败即关闭源、清空审批证据、进入不可变更状态并调用权威 GET 对账；断线期间 mutation 同样禁用。治理事件复用 `normalized_delete_scope` 后再脱敏和限长，显示值仍不参与授权。
 - **限定验证：** 修复智能体运行 API + Agent 相关回归 `129 passed`；主控随后重跑直接相关 Python 用例 `23 passed` 与 Vitest `2 files / 21 passed`。Ruff、mypy（47 个源文件）、Web ESLint、TypeScript typecheck、Vite build 和差异检查均通过；本 Task 无新增延期，仍待独立最终复审与本地合并。
 
+### 2026-07-31 — REVIEW-MVP-3-TASK-8-FINAL
+
+- **最终独立复审：** 审查覆盖整分支 `b376716..ea146f1`，确认 API 404/405、完整计划与终审证据、非法 TaskEvent fail-closed，以及由真实 `ToolRegistry` / `PathGuard` worktree 根生成的只读治理范围均已关闭；结论为 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes。
+- **复审证据与边界：** 聚焦回归 `37 passed`，Ruff、mypy（47 个源文件）和差异检查通过；最终报告记录于 `.superpowers/sdd/task-8-final-review.md`。本 Task 无新增延期；未联网、安装依赖、实现 Task 9、merge 或 push，仍待主控合并前全量验证。
+
 ### 2026-07-31 — REWORK-MVP-3-TASK-8-FINAL-M1-M2
 
 - **复审根因：** 首轮 M1 错误使用进程 `Path.cwd()`，而真实任务 worktree 根只由 `ToolRegistry` 的 `PathGuard(context.workspace_root)` 权威持有；服务 cwd 与目标 worktree 不同时，根内绝对路径会被错误显示为 `[INVALID_SCOPE]`。M2 是 PLAN 使用动态 `HEAD`，没有记录首轮返工精确范围。
