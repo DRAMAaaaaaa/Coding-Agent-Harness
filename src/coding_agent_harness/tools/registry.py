@@ -116,6 +116,27 @@ class ToolRegistry:
         except PathEscapeError:
             return None
 
+    def normalized_governance_scope(self, action: ToolAction) -> str | None:
+        """以注册表真实 worktree 根生成只读展示范围，不参与授权。"""
+
+        if action.tool != "delete_file":
+            return None
+        try:
+            request = _DeleteFile.model_validate(action.arguments)
+        except ValidationError:
+            return None
+        path = self._path(request.path)
+        if path is None:
+            return None
+        try:
+            return normalized_delete_scope(
+                self._guard.root,
+                path,
+                request.expected_sha256,
+            )
+        except ValueError:
+            return None
+
     async def _apply_patch(self, arguments: dict[str, Any]) -> ToolResult:
         try:
             request = _ApplyPatch.model_validate(arguments)

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 import json
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -13,7 +14,8 @@ from coding_agent_harness.storage.database import Database
 from coding_agent_harness.storage.event_store import EventStore
 from coding_agent_harness.storage.repositories import TaskRepository
 from coding_agent_harness.tools.models import ToolResult
-from coding_agent_harness.tools.models import VerificationEvidence
+from coding_agent_harness.tools.models import ToolContext, VerificationEvidence
+from coding_agent_harness.tools.registry import ToolRegistry
 
 
 class ScriptedTools:
@@ -281,7 +283,19 @@ async def test_read_only_action_keeps_successful_verification_fresh(tmp_path) ->
         await database.close()
 
 
-async def test_loop_persists_each_decision_and_blocks_dangerous_action(tmp_path) -> None:
+@pytest.mark.parametrize("absolute_path", [False, True])
+async def test_loop_persists_each_decision_and_blocks_dangerous_action(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    absolute_path: bool,
+) -> None:
+    worktree = tmp_path / "target-worktree"
+    worktree.mkdir()
+    (worktree / "src").mkdir()
+    other_cwd = tmp_path / "other-cwd"
+    other_cwd.mkdir()
+    monkeypatch.chdir(other_cwd)
+    requested_path = str(worktree / "src" / ".." / "old.py") if absolute_path else "src/../old.py"
     database = await Database.open(tmp_path / "dangerous.sqlite3")
     workspace_id = uuid4()
     await database.connection.execute("INSERT INTO workspaces (id) VALUES (?)", (str(workspace_id),))
@@ -290,8 +304,8 @@ async def test_loop_persists_each_decision_and_blocks_dangerous_action(tmp_path)
     task = await TaskRepository(database).create(
         Task(id=uuid4(), workspace_id=workspace_id, requirement="清理", state=TaskState.CREATED, step_budget=2, time_budget_seconds=60, created_at=now, deadline_at=now + timedelta(minutes=1))
     )
-    provider = ScriptedMockProvider(["计划", '{"kind":"tool","tool":"delete_file","arguments":{"path":"src/../old.py","expected_sha256":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},"idempotency_key":"delete"}'])
-    orchestrator = AgentOrchestrator(provider=provider, parser=ActionParser({"delete_file"}), tools=ScriptedTools([]), event_store=EventStore(database), tasks=TaskRepository(database))
+    provider = ScriptedMockProvider(["计划", json.dumps({"kind": "tool", "tool": "delete_file", "arguments": {"path": requested_path, "expected_sha256": "A" * 64}, "idempotency_key": "delete"})])
+    orchestrator = AgentOrchestrator(provider=provider, parser=ActionParser({"delete_file"}), tools=ToolRegistry(ToolContext(workspace_root=worktree)), event_store=EventStore(database), tasks=TaskRepository(database))
     try:
         await orchestrator.propose_plan(task.id)
         await orchestrator.approve_plan(task.id)
@@ -305,12 +319,17 @@ async def test_loop_persists_each_decision_and_blocks_dangerous_action(tmp_path)
         await database.close()
 
 
-async def test_governance_scope_redacts_sensitive_action_path(harness) -> None:
+async def test_governance_scope_redacts_sensitive_action_path(harness, tmp_path: Path) -> None:
     orchestrator, _, _, _ = harness
+    root = tmp_path / "scope-root"
+    root.mkdir()
+    orchestrator._tools = ToolRegistry(ToolContext(workspace_root=root))
 
     scope = orchestrator._governance_scope({
+        "kind": "tool",
         "tool": "delete_file",
         "arguments": {"path": "token=secret-value", "expected_sha256": "a" * 64},
+        "idempotency_key": "sensitive-scope",
     })
 
     assert "secret-value" not in scope

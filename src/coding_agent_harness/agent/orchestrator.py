@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 import hashlib
 import json
-from pathlib import Path
 import re
 from typing import Protocol
 from uuid import UUID
@@ -19,7 +18,6 @@ from coding_agent_harness.domain.models import Task
 from coding_agent_harness.feedback.engine import FeedbackEngine
 from coding_agent_harness.feedback.models import FailureCategory, FeedbackObservation, VerificationRun
 from coding_agent_harness.governance.redaction import Redactor
-from coding_agent_harness.governance.policy import normalized_delete_scope
 from coding_agent_harness.providers.base import LLMProvider, LLMRequest
 from coding_agent_harness.storage.event_store import EventStore
 from coding_agent_harness.storage.repositories import TaskRepository
@@ -34,6 +32,8 @@ _MAX_TOOL_OBSERVATION_MESSAGE_BYTES = 32 * 1024
 
 class ToolExecutor(Protocol):
     async def execute(self, action: ToolAction) -> ToolResult: ...
+
+    def normalized_governance_scope(self, action: ToolAction) -> str | None: ...
 
 
 class VerificationEvidenceSource(Protocol):
@@ -609,18 +609,15 @@ class AgentOrchestrator:
     def _governance_scope(self, action: object) -> str:
         if not isinstance(action, dict):
             return "[INVALID_SCOPE]"
-        arguments = action.get("arguments")
-        if not isinstance(arguments, dict):
+        normalizer = getattr(self._tools, "normalized_governance_scope", None)
+        if not callable(normalizer):
             return "[INVALID_SCOPE]"
-        tool = action.get("tool")
-        path = arguments.get("path")
-        digest = arguments.get("expected_sha256")
-        if tool != "delete_file" or not isinstance(path, str) or not isinstance(digest, str):
-            return "[INVALID_SCOPE]"
-        root = Path.cwd().resolve(strict=False)
         try:
-            normalized = normalized_delete_scope(root, root / path, digest)
-        except (OSError, ValueError):
+            parsed = ToolAction.model_validate(action)
+            normalized = normalizer(parsed)
+        except (OSError, TypeError, ValueError):
+            return "[INVALID_SCOPE]"
+        if not isinstance(normalized, str) or not normalized:
             return "[INVALID_SCOPE]"
         return self._diagnostic(normalized, limit=4_096)
 

@@ -862,3 +862,9 @@
 - **RED 证据：** API 404/405 与治理 scope 的真实 Python 探针为 `2 failed`，证明 GET 静态 catch-all 改写合法 API 的 405，且原始 `src/../old.py`/大写 digest 未采用治理层规范形式；前端首轮为 `13 failed, 8 passed`，稳定复现空/截断/元数据错误计划仍可批准、缺少/截断 diff 或缺少 final summary 仍可终审、非法事件静默丢弃且旧审批证据可继续操作。
 - **GREEN 设计：** API 命名空间先基于真实 router match 区分 FULL/PARTIAL/NONE，再决定继续、405 或 404，静态托管不再消费 `/api`。计划审批要求完整、非空、非 `[OUTPUT_LIMIT]` 且 UTF-8 字节元数据一致；终审要求最新变更后的成功验证、严格 execution_id 配对的完整 git diff，以及晚于验证和 diff 的完整 final summary。TaskEvent 对信封及所消费 payload 做严格校验，失败即关闭源、清空审批证据、进入不可变更状态并调用权威 GET 对账；断线期间 mutation 同样禁用。治理事件复用 `normalized_delete_scope` 后再脱敏和限长，显示值仍不参与授权。
 - **限定验证：** 修复智能体运行 API + Agent 相关回归 `129 passed`；主控随后重跑直接相关 Python 用例 `23 passed` 与 Vitest `2 files / 21 passed`。Ruff、mypy（47 个源文件）、Web ESLint、TypeScript typecheck、Vite build 和差异检查均通过；本 Task 无新增延期，仍待独立最终复审与本地合并。
+
+### 2026-07-31 — REWORK-MVP-3-TASK-8-FINAL-M1-M2
+
+- **复审根因：** 首轮 M1 错误使用进程 `Path.cwd()`，而真实任务 worktree 根只由 `ToolRegistry` 的 `PathGuard(context.workspace_root)` 权威持有；服务 cwd 与目标 worktree 不同时，根内绝对路径会被错误显示为 `[INVALID_SCOPE]`。M2 是 PLAN 使用动态 `HEAD`，没有记录首轮返工精确范围。
+- **RED → GREEN：** 参数化相对/绝对根内路径且强制 cwd 指向另一目录，首轮为 `1 failed, 2 passed`；GREEN 后两者均由 registry guard 规范为 worktree 相对 `old.py`，大写 digest casefold，敏感路径仍经 Redactor。聚焦 Agent + registry + delete approval 回归为 `22 passed`。
+- **接口与授权边界：** `ToolExecutor` 新增只读 `normalized_governance_scope`，真实 registry 以自身权威 guard/root 调用治理层唯一规范化函数；orchestrator 只将结果用于脱敏限长事件展示，既有 PolicyResult/ApprovalManager 消费链未改变。PLAN 已精确回填 `b376716..6bd9ba4`；无新增延期、联网、依赖安装、Task 9、merge 或 push。
