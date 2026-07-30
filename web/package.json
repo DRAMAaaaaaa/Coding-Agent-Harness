@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "build": "vite build"
   },
   "dependencies": {
     "react": "19.2.7",

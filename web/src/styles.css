@@ -1,0 +1,24 @@
+:root { color: #172033; background: #f5f7fb; font-family: Inter, "Microsoft YaHei", sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input, textarea { font: inherit; }
+button { cursor: pointer; border: 1px solid #1e4f91; border-radius: .35rem; background: #164a8a; color: #fff; padding: .55rem .8rem; }
+button:disabled { cursor: not-allowed; background: #667085; border-color: #667085; }
+input, textarea { width: 100%; border: 1px solid #98a2b3; border-radius: .35rem; padding: .55rem; }
+textarea { min-height: 5rem; resize: vertical; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #f79009; outline-offset: 2px; }
+.app-shell { max-width: 960px; margin: 0 auto; padding: 2rem 1rem 3rem; display: grid; gap: 1rem; }
+header, section { background: #fff; border: 1px solid #d0d5dd; border-radius: .6rem; padding: 1.1rem; }
+h1, h2, p { margin-top: 0; }
+h1 { margin-bottom: .5rem; }
+.eyebrow { color: #475467; font-weight: 700; font-size: .85rem; letter-spacing: .04em; }
+.status { font-weight: 700; }
+.message { color: #344054; }
+.inline-form { display: flex; gap: .65rem; align-items: end; }
+.inline-form input { flex: 1; }
+.summary, .approval { margin-top: .8rem; padding: .8rem; background: #eff8ff; border-left: 4px solid #2e90fa; }
+form { display: grid; gap: .55rem; }
+ol { margin-bottom: 0; padding-left: 1.4rem; }
+li { padding: .28rem 0; }
+pre { overflow-x: auto; white-space: pre-wrap; background: #101828; color: #f9fafb; padding: .8rem; border-radius: .35rem; }
+@media (max-width: 560px) { .app-shell { padding: 1rem .65rem; } .inline-form { align-items: stretch; flex-direction: column; } }

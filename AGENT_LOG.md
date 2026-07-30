@@ -830,3 +830,10 @@
 - **最终门禁：** 独立整分支复审覆盖 `340edfb..8fd5cde`，结论为 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes；敏感 Workspace profile 与计划取消恢复的最终 C1/I1 均以真实 SQLite/ASGI 探针关闭，唯一提交范围过程 Minor 也已回填并复审。
 - **本地合并：** 按用户既定选择，在主工作区把 `codex/api` 从 `340edfb` 快进到 `8fd5cde`；未 pull、未联网、未 push。合并后显式绑定主工作区 `src`，重新运行 `scripts/test.ps1 -Mode All`，得到 `703 passed, 15 skipped`，Ruff、mypy（47 个源文件）、Web ESLint 与 TypeScript 全部通过。
 - **分发与延期：** 合并前同一技术/过程 Head 的 `pip check` 无破损依赖，wheel/sdist 无隔离构建成功，001/002/003 在两种归档中均各 1 份。本 Task 无新增延期；Task 8 WebUI 仍为下一项未开始工作，不在本次合并中提前实现。
+
+### 2026-07-30 — IMPL-MVP-3-TASK-8-WEBUI
+
+- **范围与技能：** 在隔离 `codex/webui` worktree、基线 `b376716` 实现 MVP-3 Task 8；完整读取 `AGENTS.md`、Task brief、`SPEC.md` 4.10/验收、MVP 设计 4.4 和 Task 7 REST/SSE/API 测试，并使用 `test-driven-development`、`systematic-debugging`、`verification-before-completion`。未联网、安装依赖、实现 Task 9 E2E/Demo、真实 Provider、Docker/CI、merge 或 push。
+- **RED → GREEN：** 首个前端 RED 为 `npm.cmd --prefix web run test -- --run`：2 个测试套件因 `./App`、`./api` 缺失而失败（0 tests）；静态托管 RED 为 `.venv\\Scripts\\python.exe -m pytest tests/api/test_app.py -q` 的 `1 failed, 5 passed`，根因是缺少 `WEB_DIST`。GREEN 初检识别为 Vitest 配置类型、EventSource 回调签名、React effect 同步更新和缺失 build 脚本，不改变 API 契约；修正后前端 3 项测试与 API 静态托管测试均通过。
+- **实现事实：** React 单页以可注入 REST/SSE 适配器完成项目接入、仓库摘要、显式信任、需求创建、计划批准后触发运行、按 sequence 续传的事件时间线、测试/差异/最终批准。mutation 首次从同源 `/` 取得 `X-Harness-Session`，并统一随 JSON POST 发送；错误界面只显示固定安全文案，不显示后端 HTML 或 API Key/token。危险动作区域仅读取 Task 7 事件中的原因和精确范围，并明确现有后端没有可提交端点。FastAPI 在 `web/dist` 存在时服务首页和已存在资源，缺失构建时保留带 session 头的可诊断非 500 响应；未知/路径穿越资源为 404，且不回退到 index。
+- **新鲜验证：** `npm.cmd --prefix web run test -- --run` 为 `3 passed`；Web lint/typecheck/build 均通过（Vite 17 modules）；`tests/api` 为 `60 passed`；Ruff 为 `All checks passed!`，mypy 为 `Success: no issues found in 47 source files`；`git diff --check b376716..HEAD` 通过。无新增延期，尚未进行规约符合性审查或代码质量审查，未声明最终通过。

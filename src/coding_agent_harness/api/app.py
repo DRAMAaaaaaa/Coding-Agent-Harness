@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from coding_agent_harness.api.dependencies import (
     ApiDependencies, BlockingWorker, SafeBranchResolver, UnavailableTaskRunner,
@@ -25,6 +26,8 @@ from coding_agent_harness.storage.workspaces import WorkspaceRepository
 from coding_agent_harness.workspace.detector import ProjectDetector
 from coding_agent_harness.workspace.scanner import WorkspaceScanner
 from coding_agent_harness.workspace.git import SafeGit
+
+WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
 def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDependencies | None = None) -> FastAPI:
@@ -83,14 +86,32 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
         return await call_next(request)
 
     @app.get("/")
-    async def index() -> PlainTextResponse:
+    async def index() -> Response:
+        index_file = WEB_DIST / "index.html"
+        if index_file.is_file():
+            return FileResponse(
+                index_file,
+                headers={"Cache-Control": "no-store", "X-Harness-Session": sessions.token},
+            )
         return PlainTextResponse(
-            "Coding Agent Harness",
+            "Coding Agent Harness WebUI build not found. Run the web build before starting the service.",
             headers={
                 "Cache-Control": "no-store",
                 "X-Harness-Session": sessions.token,
             },
         )
+
+    @app.get("/{asset_path:path}", include_in_schema=False)
+    async def static_asset(asset_path: str) -> FileResponse:
+        dist_root = WEB_DIST.resolve(strict=False)
+        try:
+            target = (dist_root / asset_path).resolve(strict=True)
+            target.relative_to(dist_root)
+        except (OSError, RuntimeError, ValueError):
+            raise StarletteHTTPException(status_code=status.HTTP_404_NOT_FOUND) from None
+        if not target.is_file():
+            raise StarletteHTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        return FileResponse(target)
 
     @app.exception_handler(Exception)
     async def unexpected_error(_: Request, error: Exception) -> JSONResponse:

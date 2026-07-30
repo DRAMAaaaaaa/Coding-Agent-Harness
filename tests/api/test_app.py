@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import httpx
 
 import coding_agent_harness.api.app as app_module
 from coding_agent_harness.api.app import create_app
@@ -98,3 +99,42 @@ async def test_injected_database_remains_caller_owned(tmp_path: Path) -> None:
             await cursor.close()
     finally:
         await database.close()
+
+
+async def test_static_webui_serves_built_assets_without_spa_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dist = tmp_path / "dist"
+    assets = dist / "assets"
+    assets.mkdir(parents=True)
+    (dist / "index.html").write_text("<main>Harness UI</main>", encoding="utf-8")
+    (assets / "app.js").write_text("console.log('safe')", encoding="utf-8")
+    monkeypatch.setattr(app_module, "WEB_DIST", dist)
+    app = create_app(
+        settings=HarnessSettings(
+            state_root=tmp_path / "state",
+            database_path=tmp_path / "state" / "harness.db",
+            trusted_hosts=("testserver",),
+            trusted_origins=("http://testserver",),
+        )
+    )
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            index = await client.get("/")
+            asset = await client.get("/assets/app.js")
+            missing = await client.get("/missing.js")
+            traversal = await client.get("/%2E%2E/pyproject.toml")
+
+    assert index.text == "<main>Harness UI</main>"
+    assert index.headers["x-harness-session"]
+    assert asset.headers["content-type"].split(";", 1)[0] in {
+        "text/javascript",
+        "application/javascript",
+    }
+    assert missing.status_code == 404
+    assert traversal.status_code == 404
