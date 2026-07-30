@@ -838,6 +838,13 @@
 - **实现事实：** React 单页以可注入 REST/SSE 适配器完成项目接入、仓库摘要、显式信任、需求创建、计划批准后触发运行、按 sequence 续传的事件时间线、测试/差异/最终批准。mutation 首次从同源 `/` 取得 `X-Harness-Session`，并统一随 JSON POST 发送；错误界面只显示固定安全文案，不显示后端 HTML 或 API Key/token。危险动作区域仅读取 Task 7 事件中的原因和精确范围，并明确现有后端没有可提交端点。FastAPI 在 `web/dist` 存在时服务首页和已存在资源，缺失构建时保留带 session 头的可诊断非 500 响应；未知/路径穿越资源为 404，且不回退到 index。
 - **新鲜验证：** `npm.cmd --prefix web run test -- --run` 为 `3 passed`；Web lint/typecheck/build 均通过（Vite 17 modules）；`tests/api` 为 `60 passed`；Ruff 为 `All checks passed!`，mypy 为 `Success: no issues found in 47 source files`；`git diff --check b376716..HEAD` 通过。无新增延期，尚未进行规约符合性审查或代码质量审查，未声明最终通过。
 
+### 2026-07-30 — REWORK-MVP-3-TASK-8-FINAL-I1-I2
+
+- **范围与方法：** 仅处理 Task 8 独立复审剩余的 Important I1/I2；依据既有复审报告执行 `systematic-debugging`、`test-driven-development` 与 `verification-before-completion`。未处理 M3，未改后端、接口契约、E2E、Docker 或 CI，未联网、安装依赖、merge 或 push。
+- **RED → GREEN：** 先增加两轮“修改 → 验证 → git diff”事件夹具，以及新项目接入失败、mutation 与 GET 收敛双失败的前端用例。RED 时 4 项失败，分别证明首条 `.find()` 会显示旧轮次证据、旧验证可打开终审、失败接入会保留旧信任、双失败会保留旧任务控件。GREEN 后 Vitest 共 `8 passed`。
+- **实现事实：** UI 以 `sequence` 为主、`occurred_at` 为次选择最新计划、验证、git diff 与终结摘要；最新写入后的旧验证、旧 diff 和旧摘要不会参与显示或最终批准。接入项目开始时原子清空 workspace/task/events；任务 mutation 失败且 GET 收敛失败时清空 task/events、标记状态未知并禁用所有变更控件，只允许重新接入项目恢复可信上下文。
+- **新鲜验证：** `npm.cmd --prefix web run test -- --run` 为 `2 passed / 8 passed`；Web ESLint、TypeScript typecheck 与 Vite build 均通过（18 modules）；提交前将重新执行 `git diff --check`。无需机械重跑未触及的 Python 后端测试。
+
 ### 2026-07-30 — REWORK-MVP-3-TASK-8-REVIEW
 
 - **范围与技能：** 处理独立复审的 C1—C3、I1—I5、M1/M2；完整核对真实 Task 7 `TaskState`、`TaskEvent`、SSE 名称和编排事件 payload，使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development`、`verification-before-completion`。未实现 Task 9/E2E、新依赖、联网或危险审批提交端点；M3 提交哈希由主控后续过程提交处理。
