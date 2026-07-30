@@ -850,3 +850,8 @@
 - **范围与技能：** 处理独立复审的 C1—C3、I1—I5、M1/M2；完整核对真实 Task 7 `TaskState`、`TaskEvent`、SSE 名称和编排事件 payload，使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development`、`verification-before-completion`。未实现 Task 9/E2E、新依赖、联网或危险审批提交端点；M3 提交哈希由主控后续过程提交处理。
 - **RED → GREEN：** 前端 RED 为 `3 failed, 1 passed`：命名 `task-event` 未被消费、真实 `PLAN_PROPOSED`/`VERIFICATION_SUCCEEDED`/git diff 元数据不显示、切换项目保留旧上下文；Python RED 为 `1 failed, 15 passed`，`GOVERNANCE_BLOCKED` 缺少精确范围。GREEN 后前端契约/用户路径为 `4 passed`，agent + API 相关回归为 `77 passed`。
 - **实现事实：** SSE 适配器只注册 `task-event`、校验完整事件 JSON（task ID、sequence、事件、payload、前后状态、时间）后按 sequence 续传，并在关闭时移除监听且不重连。UI 使用完整 TaskState 联合类型和 `WAITING_FINAL_REVIEW`；仅在实际计划 diagnostic 到达后批准，仅以 `VERIFICATION_SUCCEEDED.run/verification` 展示验证，以匹配 `TOOL_EXECUTION_STARTED` 的 `git_diff` 与完成事件 result diagnostic 展示差异。切换项目原子清空 task/events；mutation 保存每一步服务端状态、失败后 GET 收敛，并有忙碌防重入和 live 摘要。治理阻断事件加入由权威 delete action 的 tool/path/digest 形成、经既有 Redactor 脱敏的 `normalized_scope`；测试证明正常 scope 精确且敏感 path 不泄露。
+
+### 2026-07-30 — CLOSE-MVP-3-TASK-8-TECHNICAL-GATE
+
+- **最终技术复审：** 独立复审覆盖 `b376716..df7c759`，确认命名 SSE、真实 TaskState/TaskEvent、计划审批、验证与 git diff、最终审查、危险范围、会话头、项目切换、失败收敛、忙碌态与辅助技术播报均与 Task 7 契约一致；结论为 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Technical Ready to merge Yes。
+- **过程与延期：** PLAN 已回填准确技术范围与审查结论，关闭原 M3；本 Task 无新增延期，也未改变既有延期条目。当前仍须由主控在过程提交后的最终 Head 运行全量测试、前端构建和静态检查，并执行整分支最终复审后才能本地合并；未联网、安装、merge 或 push。
