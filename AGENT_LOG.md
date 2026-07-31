@@ -886,3 +886,9 @@
 - **RED 与根因：** 首轮 demo 为 `4 failed`，证明模块/脚本不存在且旧 PowerShell 在 `.venv` 缺失时以 0 假阳性退出；Playwright 因服务缺失失败。实现后确定性停止仍耗尽 Mock 脚本，追踪发现 `FEEDBACK_RECORDED.observation` 被通用工具观察脱敏分支改写，落盘丢失 category/fingerprint，修复专用最小元数据边界后机制测试转绿。浏览器首轮停在禁用的计划按钮，根因是一次性 SSE 与断线 fail-closed 冲突；保留 UI 安全门禁并让真实 `Accept: text/event-stream` 连接持续心跳，普通测试读取仍保持有限。`make test-unit` 首轮的三个表象失败统一来自 pytest 未固定当前 worktree 源码/正式测试根，固定 `pythonpath/testpaths` 后聚焦转绿。
 - **实现事实：** `mechanism_demo.py` 以真实 Scripted Mock、AgentOrchestrator、事件、治理与反馈分别证明危险删除零工具调用、失败反馈进入下一请求并改变动作、相同指纹第二轮进入 `WAITING_USER`；stdout 仅有三行 PASS。`serve_demo.py` 只绑定随机 localhost，使用固定 Git identity 的临时 fixture、临时 SQLite、真实 LocalTaskRunner/隔离 worktree、ToolRegistry、离线 unittest、git diff 和 WebUI，终审后关闭服务、恢复并释放工作树；Playwright 用本机 Edge 跑通 REST/SSE 主路径并复验 fixture HEAD/clean 状态与 state/worktree 删除。
 - **入口与验证：** Makefile 直接使用跨平台 `PYTHON/NPM`，PowerShell 提供 `Unit|E2E|All|Demo` 等价模式；两套入口均 fail closed，`MVP-ISSUE-016` 据回归关闭。两次独立 demo 输出完全一致；最终补齐 npm 缺失动态回归后，机制/入口/SSE 聚焦为 `11 passed`。提交前新鲜 `mingw32-make test` 退出 0：Python `713 passed, 15 skipped`、Vitest `2 files / 21 passed`、Playwright `1 passed (6.5s)`，Ruff、mypy（48 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过；同一 Head 的 `pip check` 与差异检查也通过。当前仍待技术提交后的独立规约/质量审查；本 Task 无新增延期。
+
+### 2026-07-31 — REWORK-MVP-4-TASK-9-SPEC-I1-M1
+
+- **独立规约首审：** 对 `843bf02..1f9afc5` 的结论为 Spec No、Critical / Important / Minor 为 `0 / 1 / 1`；唯一 Important 是 Playwright 收尾的裸 Git 继承用户/system 配置，Minor 是 PLAN 未记录技术哈希。其余三机制、真实浏览器链、临时资源回收、四入口、SSE 和无延期均已证明符合。
+- **RED → GREEN：** E2E 把测试进程 HOME 指向含畸形 `.gitconfig` 的隔离目录后，原 `git rev-parse` 以 128 失败；修复后所有收尾 Git 命令统一使用独立空 HOME、`GIT_CONFIG_NOSYSTEM=1`、禁交互和最小运行环境，同一恶意配置不再生效，真实 Playwright `1 passed (6.7s)`，TypeScript typecheck 与差异检查通过。
+- **提交与边界：** 规约修复提交为 `29b9caa`，PLAN 已记录技术提交 `1f9afc5` 和最终返工范围 `843bf02..29b9caa`。未联网、下载、接触真实用户仓库/凭据、扩展 Task 10、merge 或 push；本 Task 无新增延期，待规约复审与质量审查。
