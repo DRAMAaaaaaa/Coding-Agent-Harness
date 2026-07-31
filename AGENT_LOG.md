@@ -929,3 +929,9 @@
 - **整分支最终复审：** 独立审查覆盖 `843bf02..e473a61`，确认清理协程取消时 live server 的现场保留、任务结束后二次清理、POSIX 进程组和 Windows 进程树回收，以及此前三机制、E2E、SSE、四入口与 Git 配置隔离均已关闭；结论为 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready merge Yes。
 - **主控一键验证：** 连续两次 `mingw32-make demo` 输出完全一致且仅含三项 PASS；`mingw32-make test` 退出 0，得到 Python `721 passed, 15 skipped`、Vitest `2 files / 21 passed`、Playwright `3 passed, 1 skipped`（仅 POSIX 真实父子进程组测试在 Windows 跳过），Ruff、mypy（48 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过；`pip check` 无破损依赖，整范围差异检查通过。
 - **范围与延期：** Task 9 技术范围为 `843bf02..e473a61`，`MVP-ISSUE-016` 已关闭，本 Task 无新增延期；未联网、安装依赖、接触凭据、实现 Task 10、merge 或 push。当前仅待本地快进合并到 `p1`。
+
+### 2026-07-31 — MERGE-MVP-4-TASK-9
+
+- **本地集成：** `codex/e2e-demo` 以 `--ff-only` 从 `843bf02` 快进合并到本地 `p1`，过程无冲突；技术范围为 `843bf02..e473a61`，最终过程 Head 为 `8014304`。未 pull、未 push、未接触真实凭据。
+- **合并后新鲜验证：** 在 `p1` 运行 `mingw32-make demo`，固定输出三项 PASS；`mingw32-make test` 退出 0，得到 Python `721 passed, 15 skipped`、Vitest `2 files / 21 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy（48 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过，`pip check` 无破损依赖。
+- **交付与延期：** Task 9 已交付真实离线三机制演示、localhost 临时服务、生产 WebUI 浏览器 E2E、持续安全 SSE、异常/取消安全清理、Windows/POSIX 进程树回收和四个一键入口；`MVP-ISSUE-016` 已关闭，本 Task 无新增延期。下一项为 MVP-4 Task 10（Docker、双 CI 与最终交付文档）。
