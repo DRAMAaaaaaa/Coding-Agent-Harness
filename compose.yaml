@@ -8,7 +8,7 @@ services:
     environment:
       HARNESS_LLM_PROVIDER: mock
     volumes:
-      - "./examples/python_demo:/app/examples/python_demo:ro"
+      - "./examples/python_demo:/workspace/project:ro"
       - "harness-state:/state"
     read_only: true
     tmpfs:

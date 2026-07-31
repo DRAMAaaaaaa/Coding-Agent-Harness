@@ -15,7 +15,7 @@ npm.cmd --prefix web run build
 
 ```powershell
 docker build -t coding-agent-harness:mvp .
-docker run --rm -p 127.0.0.1:8000:8000 -v harness-state:/state coding-agent-harness:mvp
+docker run --rm -p 127.0.0.1:8000:8000 -v "${PWD}/examples/python_demo:/workspace/project:ro" -v "harness-state:/state" coding-agent-harness:mvp
 ```
 
 推荐的完整本地配置为：
@@ -24,7 +24,7 @@ docker run --rm -p 127.0.0.1:8000:8000 -v harness-state:/state coding-agent-harn
 docker compose up --build
 ```
 
-Compose 将 `examples/python_demo` 只读挂载到镜像内演示项目位置，并把 `/state` 放入独立命名卷；不会挂载整个用户主目录。WebUI 仅发布到 localhost。容器默认 Scripted Mock，不读取 API Key；完成最终批准后退出。
+Compose 将 `examples/python_demo` 只读挂载到专用 `/workspace/project`，并把 `/state` 放入独立命名卷；不会挂载整个用户主目录。镜像不 COPY 或内置运行项目，CMD 显式读取该挂载点；缺失、不可解析或非目录项目源会在复制/初始化前 fail closed，且不会删除源。WebUI 仅发布到 localhost。容器默认 Scripted Mock，不读取 API Key；完成最终批准后退出。
 
 首次构建需要从镜像仓库和包仓库下载基础镜像及依赖。该网络动作应由用户在可信环境中显式执行，不是 Harness Agent 的网络工具能力。
 

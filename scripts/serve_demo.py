@@ -86,9 +86,19 @@ def _run_git(root: Path, *arguments: str) -> str:
     return result.stdout.decode("utf-8").strip()
 
 
-def _create_fixture(runtime_root: Path) -> tuple[Path, str]:
+def _create_fixture(
+    runtime_root: Path,
+    project_source: Path | None = None,
+) -> tuple[Path, str]:
+    source = project_source or ROOT / "examples" / "python_demo"
+    try:
+        source = source.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise ValueError("演示项目源必须是现有目录") from None
+    if not source.is_dir():
+        raise ValueError("演示项目源必须是现有目录")
     fixture = runtime_root / "fixture"
-    shutil.copytree(ROOT / "examples" / "python_demo", fixture)
+    shutil.copytree(source, fixture, symlinks=True)
     _run_git(fixture, "init", "-b", "main")
     _run_git(fixture, "config", "user.name", "Harness Demo")
     _run_git(fixture, "config", "user.email", "harness@example.invalid")
@@ -234,6 +244,7 @@ async def _serve(
     *,
     bind_host: str = "127.0.0.1",
     bind_port: int = 0,
+    project_source: Path | None = None,
 ) -> int:
     state_root = runtime_root / "state"
     database: Database | None = None
@@ -244,7 +255,11 @@ async def _serve(
     result = 1
     primary_error: BaseException | None = None
     try:
-        fixture, initial_head = _create_fixture(runtime_root)
+        fixture, initial_head = (
+            _create_fixture(runtime_root)
+            if project_source is None
+            else _create_fixture(runtime_root, project_source)
+        )
         database = await Database.open(state_root / "harness.db")
         listener, port = (
             _reserve_local_socket()
@@ -357,6 +372,7 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--max-seconds", type=float, default=120.0)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=0)
+    parser.add_argument("--project-source", type=Path)
     return parser.parse_args()
 
 
@@ -375,6 +391,7 @@ def main() -> int:
                 arguments.max_seconds,
                 bind_host=arguments.host,
                 bind_port=arguments.port,
+                project_source=arguments.project_source,
             )
         )
     with TemporaryDirectory(prefix="harness-web-demo-") as directory:
@@ -385,6 +402,7 @@ def main() -> int:
                 arguments.max_seconds,
                 bind_host=arguments.host,
                 bind_port=arguments.port,
+                project_source=arguments.project_source,
             )
         )
 

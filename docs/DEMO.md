@@ -28,4 +28,4 @@ PASS deterministic_stop
 
 ## Docker 演示
 
-执行 `docker compose up --build` 后访问 `http://127.0.0.1:8000`。Compose 只读挂载示例并使用独立 state 卷。若 Docker daemon 不可用，保留失败证据并在另一台可用机器复跑，不得把静态配置测试描述成容器冷启动已经通过。
+执行 `docker compose up --build` 后访问 `http://127.0.0.1:8000`。Compose 把示例只读挂载到专用 `/workspace/project` 并使用独立 state 卷；镜像本身没有可回退的内置项目。若 Docker daemon 不可用，保留失败证据并在另一台可用机器复跑，不得把静态配置测试描述成容器冷启动已经通过。

@@ -39,6 +39,8 @@ def test_docker_runtime_is_non_root_and_exposes_only_web_port() -> None:
     assert "EXPOSE 8000" in dockerfile
     assert "EXPOSE 8000 8080" not in dockerfile
     assert "scripts/serve_demo.py" in dockerfile
+    assert '"--project-source", "/workspace/project"' in dockerfile
+    assert "COPY examples/" not in dockerfile
 
 
 def test_compose_is_local_mock_with_explicit_mounts() -> None:
@@ -47,7 +49,12 @@ def test_compose_is_local_mock_with_explicit_mounts() -> None:
     assert service["ports"] == ["127.0.0.1:8000:8000"]  # type: ignore[index]
     assert service["environment"]["HARNESS_LLM_PROVIDER"] == "mock"  # type: ignore[index]
     volumes = service["volumes"]  # type: ignore[index]
-    assert any("examples/python_demo" in mount and mount.endswith(":ro") for mount in volumes)
+    assert any(
+        "examples/python_demo" in mount
+        and mount.endswith(":/workspace/project:ro")
+        for mount in volumes
+    )
+    assert all("/app/examples" not in mount for mount in volumes)
     assert any("harness-state" in mount for mount in volumes)
 
 
@@ -64,11 +71,43 @@ def test_demo_server_accepts_explicit_container_bind(
         "0.0.0.0",
         "--port",
         "8000",
+        "--project-source",
+        "/workspace/project",
     ]
     monkeypatch.setattr(sys, "argv", values)
     arguments = serve_demo._arguments()
     assert arguments.host == "0.0.0.0"
     assert arguments.port == 8000
+    assert arguments.project_source == Path("/workspace/project")
+
+
+@pytest.mark.parametrize("kind", ["missing", "file"])
+def test_project_source_must_be_an_existing_directory_without_deleting_it(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    source = tmp_path / "project-source"
+    if kind == "file":
+        source.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="演示项目源必须是现有目录"):
+        serve_demo._create_fixture(tmp_path / "runtime", source)
+
+    assert not (tmp_path / "runtime" / "fixture").exists()
+    if kind == "file":
+        assert source.read_text(encoding="utf-8") == "keep"
+
+
+def test_fixture_is_copied_from_the_explicit_project_source(tmp_path: Path) -> None:
+    source = tmp_path / "project-source"
+    source.mkdir()
+    marker = source / "mounted-project.txt"
+    marker.write_text("source-only", encoding="utf-8")
+
+    fixture, _ = serve_demo._create_fixture(tmp_path / "runtime", source)
+
+    assert (fixture / marker.name).read_text(encoding="utf-8") == "source-only"
+    assert marker.read_text(encoding="utf-8") == "source-only"
 
 
 def test_explicit_runtime_parent_can_be_reused_across_starts(
@@ -158,6 +197,11 @@ def test_readme_documents_real_mvp_commands_and_limits() -> None:
         assert command in readme
     assert "真实 DeepSeek/Qwen 调用尚未实现" in readme
     assert "公网部署尚未验收" in readme
+    docker_runs = [line for line in readme.splitlines() if line.startswith("docker run ")]
+    assert any(
+        ":/workspace/project:ro" in line and ":/state" in line
+        for line in docker_runs
+    )
 
 
 def test_delivery_docs_and_env_use_safe_placeholders() -> None:
@@ -167,6 +211,13 @@ def test_delivery_docs_and_env_use_safe_placeholders() -> None:
     environment = (ROOT / ".env.example").read_text(encoding="utf-8")
     assert all(term in security for term in ("state_root", "同一 UID", "不确定副作用"))
     assert all(term in deployment for term in ("只读", "localhost", "公网部署尚未验收"))
+    deployment_runs = [
+        line for line in deployment.splitlines() if line.startswith("docker run ")
+    ]
+    assert any(
+        ":/workspace/project:ro" in line and ":/state" in line
+        for line in deployment_runs
+    )
     assert all(term in demo for term in ("Scripted Mock", "make demo", "不访问网络"))
     assert "HARNESS_LLM_PROVIDER=mock" in environment
     assert "HARNESS_LLM_API_KEY=<" in environment

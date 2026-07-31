@@ -66,12 +66,12 @@ Windows 可使用 `mingw32-make`，或运行 `powershell -File scripts/test.ps1 
 
 ```powershell
 docker build -t coding-agent-harness:mvp .
-docker run --rm -p 127.0.0.1:8000:8000 -v harness-state:/state coding-agent-harness:mvp
+docker run --rm -p 127.0.0.1:8000:8000 -v "${PWD}/examples/python_demo:/workspace/project:ro" -v "harness-state:/state" coding-agent-harness:mvp
 # 或同时显式挂载只读示例项目
 docker compose up --build
 ```
 
-访问 `http://127.0.0.1:8000`。镜像用 Node/Python 多阶段构建并以非 root `harness` 用户运行；Compose 只把 localhost 端口、只读 `examples/python_demo` 和独立 state 卷暴露给容器。默认运行 Scripted Mock 演示，不需要 Key，完成最终批准后容器正常退出。不要把用户主目录、真实 `.env` 或凭据目录挂入容器。
+访问 `http://127.0.0.1:8000`。镜像用 Node/Python 多阶段构建并以非 root `harness` 用户运行；镜像不内置运行项目，容器 CMD 要求 `/workspace/project` 是显式挂载的现有目录。Compose 只把 localhost 端口、只读 `examples/python_demo` 和独立 state 卷暴露给容器。默认运行 Scripted Mock 演示，不需要 Key，完成最终批准后容器正常退出。缺少项目挂载或挂载目标不是目录时启动会 fail closed，不会删除宿主源。不要把用户主目录、真实 `.env` 或凭据目录挂入容器。
 
 ## 目录结构
 
