@@ -62,7 +62,7 @@ describe("App", () => {
     expect(await screen.findByText("修复 add 的真实计划")).toBeVisible();
     expect(screen.getByText("1 passed")).toBeVisible();
     expect(screen.getByText("diff --git a/src/add.py")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "批准计划" }));
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
     await user.click(await screen.findByRole("button", { name: "批准最终审查" }));
     expect(api.approveFinal).toHaveBeenCalledWith(taskId);
   });
@@ -75,7 +75,7 @@ describe("App", () => {
     expect(screen.getByText(/diff --git a\/src\/add\.py\s+\+new/)).toBeVisible();
     expect(screen.queryByText("旧轮次通过")).not.toBeInTheDocument();
     expect(screen.queryByText(/diff --git a\/src\/add\.py\s+-old/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "批准计划" }));
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
     expect(await screen.findByRole("button", { name: "批准最终审查" })).toBeVisible();
   });
 
@@ -83,7 +83,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App api={scriptedApi({ events: latestTaskEvents.filter((item) => item.sequence !== 9) })} />);
     await createTrustedTask(user);
-    await user.click(screen.getByRole("button", { name: "批准计划" }));
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
     expect(await screen.findByText(/等待测试结果/)).toBeVisible();
     expect(screen.queryByRole("button", { name: "批准最终审查" })).not.toBeInTheDocument();
   });
@@ -108,7 +108,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App api={scriptedApi({ events })} />);
     await createTrustedTask(user);
-    await user.click(screen.getByRole("button", { name: "批准计划" }));
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
     expect(screen.queryByRole("button", { name: "批准最终审查" })).not.toBeInTheDocument();
     expect(screen.getByText(/终审证据不完整/)).toBeVisible();
   });

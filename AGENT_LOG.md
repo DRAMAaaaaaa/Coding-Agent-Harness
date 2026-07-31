@@ -953,5 +953,5 @@
 
 - **根因与范围：** 仅处理质量审查 I1，并在测试层收紧 M1；`.github/workflows/ci.yml` 的 `git grep ... || true` 将无匹配 `1` 与扫描错误 `>1` 一并吞掉，导致 required secret gate fail-open。未联网、安装依赖、修改 Docker/产品功能、merge 或 push。
 - **RED → GREEN：** 新增行为测试首轮为 `4 failed`，原因是独立扫描器尚不存在；实现 `scripts/secret_scan.py` 后，`rc=2` 必须失败、`rc=1` 成功、已知路径与完整 SHA-256 假值成功、未知命中只输出文件名且失败均已通过。实现后发现 Git ERE 不支持 Python 的 `(?:...)`，补充兼容性 RED 为 `1 failed, 4 passed`，改用独立 Git ERE 后转绿。
-- **质量收紧与证据：** Docker 断言改为解析有效指令并验证最终 `USER`、唯一 `EXPOSE`、完整 `CMD`；Compose 与 CI run 命令改为结构化/精确断言。聚焦 distribution 与扫描器共 `17 passed`，本地扫描通过；全量门禁与提交待本轮后续记录。无新增延期。
+- **质量收紧与证据：** Docker 断言改为解析有效指令并验证最终 `USER`、唯一 `EXPOSE`、完整 `CMD`；Compose 与 CI run 命令改为结构化/精确断言。聚焦 distribution 与扫描器共 `17 passed`，本地扫描通过；质量 I1 返工提交为 `f902512`，规约 I1 返工提交为 `ea61388`。独立规约复审 Spec Yes、质量复审 Approved，Critical / Important / Minor 为 `0 / 0 / 0`；等待最终复审及整分支全量门禁，无新增延期。
 - **安全清理：** 真实扫描发现一个受版本控制的 Task 7 过程报告中含测试式字符串；该报告不是测试夹具，已替换为不命中规则的中文脱敏描述，未输出或记录原值。allowlist 仅保留三条测试夹具路径，新增集合断言防止过程文档再次进入例外。
