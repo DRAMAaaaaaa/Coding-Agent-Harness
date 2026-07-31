@@ -923,3 +923,9 @@
 - **唯一剩余问题：** 整分支最终复审确认 POSIX 进程组已关闭，但 `_cleanup_resources` 自身在 `_stop_server` 首段等待中取消时，通用 `BaseException` 分支仍会继续破坏性清理。本轮使用 `receiving-code-review`、`test-driven-development` 与 `verification-before-completion`，未扩展其他范围。
 - **RED → GREEN：** 新测试以长超时启动 live server task 和 cleanup task，确认进入首次 `asyncio.wait` 后取消 cleanup；RED 稳定显示 server 仍 live 而 listener/database/router 已清理、state root 已删除。GREEN 后，`_stop_server` 的任何异常返回都先检查 server task；只要仍 live 就立即聚合原异常与专用仍运行根因并保留全部现场，只有 task 已 done 才记录异常后继续清理。手动结束 server 后第二次 cleanup 完整成功。
 - **新鲜证据：** 服务清理/SSE 聚焦 `11 passed`，Ruff 通过，mypy 检查 48 个源文件通过，差异检查待提交前执行。未联网、修改 Web/POSIX/Windows 进程控制、进入 Task 10、merge 或 push；无新增延期。
+
+### 2026-07-31 — REVIEW-AND-VERIFY-MVP-4-TASK-9-FINAL
+
+- **整分支最终复审：** 独立审查覆盖 `843bf02..e473a61`，确认清理协程取消时 live server 的现场保留、任务结束后二次清理、POSIX 进程组和 Windows 进程树回收，以及此前三机制、E2E、SSE、四入口与 Git 配置隔离均已关闭；结论为 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready merge Yes。
+- **主控一键验证：** 连续两次 `mingw32-make demo` 输出完全一致且仅含三项 PASS；`mingw32-make test` 退出 0，得到 Python `721 passed, 15 skipped`、Vitest `2 files / 21 passed`、Playwright `3 passed, 1 skipped`（仅 POSIX 真实父子进程组测试在 Windows 跳过），Ruff、mypy（48 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过；`pip check` 无破损依赖，整范围差异检查通过。
+- **范围与延期：** Task 9 技术范围为 `843bf02..e473a61`，`MVP-ISSUE-016` 已关闭，本 Task 无新增延期；未联网、安装依赖、接触凭据、实现 Task 10、merge 或 push。当前仅待本地快进合并到 `p1`。
