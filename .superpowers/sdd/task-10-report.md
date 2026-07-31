@@ -50,3 +50,5 @@
 首次合并前全量测试发现 Web 正向用例在异步计划事件到达前同步查找按钮的竞态；`ba01cd7` 只把相关正向查询改为异步等待，不修改生产 Web，完整 Web 测试连续三轮均为 `21 passed`。最终独立复审覆盖 `5e08b07..ba01cd7`，结论为 Spec Yes、Quality Approved、Critical / Important / Minor `0 / 0 / 0`、Ready to merge Yes。
 
 主控在 `ba01cd7` 上重新运行 `mingw32-make test`，得到 Python `739 passed, 15 skipped`、Vitest `21 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy、Web lint/typecheck/build 全部通过；`make demo` 三项 PASS，`pip check`、本地秘密扫描、Compose 解析与差异检查通过。Docker daemon 未运行，因此动态镜像验证仍按事实保留为环境未验收项；Task 10 无新增延期，待本地快进合并到 `p1`。
+
+本地 `p1` 已以 `--ff-only` 合并到 Task 关闭 Head `d01796d`。合并后重新运行相同门禁，`make test` 仍为 Python `739 passed, 15 skipped`、Vitest `21 passed`、Playwright `3 passed, 1 skipped`，其余静态、构建、demo、依赖、秘密扫描与 Compose 门禁均通过；未 push。

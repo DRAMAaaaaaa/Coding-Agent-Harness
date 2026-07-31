@@ -962,3 +962,9 @@
 - **最终独立复审：** 受审范围 `5e08b07..ba01cd7` 的最终结论为 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes；确认规约显式项目挂载 I1、秘密扫描 fail-open I1、结构化交付测试 M1 和测试竞态均已关闭。
 - **主控新鲜证据：** 修复后 `mingw32-make test` 退出 0，Python `739 passed, 15 skipped`、Vitest `21 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy（48 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过；`mingw32-make demo` 固定三项 PASS，`pip check`、本地秘密扫描、Compose 解析和整范围差异检查通过。
 - **范围与限制：** Task 10 无新增延期，未联网、安装依赖、接触真实凭据、实现真实 Provider、发布镜像、部署公网服务或 push。Docker 客户端存在但 daemon 未运行，因此动态镜像构建、容器内机制、非 root 身份和 WebUI health 仍如实记录为环境未验收；当前仅待本地快进合并到 `p1`。
+
+### 2026-08-01 — MERGE-MVP-4-TASK-10
+
+- **本地集成：** `codex/distribution` 以 `--ff-only` 从 `5e08b07` 快进合并到本地 `p1`，无冲突；Task 最终关闭 Head 为 `d01796d`。未 pull、未 push、未接触真实凭据。
+- **合并后新鲜验证：** 在 `p1` 运行 `mingw32-make test` 退出 0，Python `739 passed, 15 skipped`、Vitest `21 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy（48 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过；`mingw32-make demo` 固定三项 PASS，`pip check`、本地秘密扫描和 Compose 解析通过。
+- **最终交付：** MVP 已具备 WebUI→计划审批→自有 Agent 循环→代码修改→确定性反馈→最终审查→代码/文档交付的本地 Mock 完整路径，以及 Docker/Compose、GitHub Actions、GitLab `unit-test` 和一键验收。真实 DeepSeek/Qwen 产品接线、凭据生命周期、公网部署和 Docker 动态镜像验收仍按文档与既有延期台账明确披露；Task 10 无新增延期。
