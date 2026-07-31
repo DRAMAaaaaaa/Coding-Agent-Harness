@@ -905,3 +905,9 @@
 - **复审核实：** 使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 与 `verification-before-completion`处理二次质量复审 I1/I2。核实 `wait_for(to_thread(...))` 只取消 asyncio wrapper、不停止 Git 线程；也核实 Windows `child.kill()` 可先结束父进程并绕过进程树终止。
 - **RED → GREEN：** 阻塞 router 超过软超时后，旧实现的 cleanup task 已返回且 state root 被删除，线程仍在后台；Windows 注入测试显示旧实现未调用 tree terminator。GREEN 后慢 router 必须真实结束并观察结果后才关闭数据库/删除状态目录，软超时作为聚合诊断保留；外层取消也会继续 join，不留后台线程。Windows 从首次终止即使用有界 `taskkill /PID /T`，未退出再升级 `/F`；POSIX 保留 SIGTERM → SIGKILL。
 - **新鲜验证：** Python 聚焦 `9 passed`，Ruff、mypy（48 个源文件）、Web ESLint/typecheck 通过；Playwright 全量为 `3 passed (6.8s)`，同时覆盖真实浏览器主路径、POSIX 升级和 Windows 进程树升级。未联网、安装依赖、进入 Task 10、merge 或 push；本 Task 无新增延期。
+
+### 2026-07-31 — REVIEW-MVP-4-TASK-9-DOUBLE-GATE
+
+- **规约门禁：** 最终规约复审确认真实三机制、localhost 临时服务、REST/SSE/WebUI 浏览器主路径、Git 配置隔离、四个一键入口、`MVP-ISSUE-016` 与无延期要求；结论为 Spec Yes、Critical / Important / Minor 为 `0 / 0 / 0`。
+- **质量门禁：** 两轮质量返工关闭异常安全清理、后台 Git 线程 join、Windows 进程树终止和 SSE 心跳开销；最终复审覆盖至技术 Head `f7ae618`，结论为 Quality Approved、Critical / Important / Minor 为 `0 / 0 / 0`，Ready merge Yes。
+- **当前状态：** Task 9 技术范围为 `843bf02..f7ae618`，无新增延期；仍待整分支最终复审、主控新鲜 `make test` 与本地快进合并。未联网、安装依赖、实现 Task 10、merge 或 push。
