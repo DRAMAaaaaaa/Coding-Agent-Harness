@@ -172,7 +172,7 @@ class TaskOrchestrator:
 | MVP-3 Task 7 | 持久化 Workspace 与最小 REST/SSE | MVP-2 Task 6 | 独立 worktree | `codex/api` | 完成并已本地快进合并到 `p1`（技术/过程 Head `8fd5cde`；最终 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes；合并后全量 `703 passed, 15 skipped`，Ruff、mypy、Web lint/typecheck 通过，合并前同 Head 的 `pip check`、wheel/sdist 与 001/002/003 归档矩阵通过）；本 Task 无新增延期 |
 | MVP-3 Task 8 | 最小单页 WebUI 与同源静态托管 | MVP-3 Task 7 | 独立 worktree | `codex/webui` | 完成并已本地快进合并到 `p1`（最终技术 Head `ea146f1`，过程 Head `68946d3`；Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes；合并后 `706 passed, 15 skipped`、Vitest `21 passed`，Ruff、mypy、Web lint/typecheck、Vite build 与 `pip check` 通过）；本 Task 无新增延期 |
 | MVP-4 Task 9 | 三机制演示、真实浏览器 E2E 与一键验收 | MVP-3 Task 8 | 独立 worktree | `codex/e2e-demo` | 完成并已本地快进合并到 `p1`（技术范围 `843bf02..e473a61`，过程 Head `8014304`；Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready merge Yes）；合并后 `make test` 为 `721 passed, 15 skipped`、Vitest `21 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy、Web lint/typecheck/build 与 `pip check` 通过，`make demo` 三项 PASS；`MVP-ISSUE-016` 已关闭，本 Task 无新增延期 |
-| MVP-4 Task 10 | Docker、双 CI 与最终交付文档 | MVP-4 Task 9 | 独立 worktree | `codex/distribution` | 技术提交 `783f835`，规约 I1 返工提交 `ea61388`，质量 I1 返工提交 `f902512`；返工后的独立规约复审为 Spec Yes、质量复审为 Approved，Critical / Important / Minor 均为 `0 / 0 / 0`。此前全量 `make test` 为 `730 passed, 15 skipped`、Vitest `21 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy、Web lint/typecheck/build 与 `pip check` 通过；Docker daemon 未运行，动态镜像验收按事实阻塞；无新增延期。等待最终复审及整分支全量门禁，不伪造完成状态 |
+| MVP-4 Task 10 | Docker、双 CI 与最终交付文档 | MVP-4 Task 9 | 独立 worktree | `codex/distribution` | 完成，待本地快进合并到 `p1`。提交范围 `5e08b07..ba01cd7`：技术提交 `783f835`，规约 I1 返工 `ea61388`，质量 I1 返工 `f902512`，测试同步与过程闭环 `ba01cd7`；最终复审为 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes。主控新鲜 `make test` 为 `739 passed, 15 skipped`、Vitest `21 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy、Web lint/typecheck/build、`pip check`、秘密扫描、Compose 解析和 `make demo` 三项 PASS 均通过；Docker daemon 未运行，动态镜像验收按事实保留为环境未验收项；本 Task 无新增延期 |
 | 11 | FastAPI REST/SSE 与交付产物 | 5、9、10 | 无 | `codex/api` | 待执行（完整产品后续范围） |
 | 12 | React WebUI | 11 的接口契约 | 可在 API schema 冻结后与 11 后半段并行 | `codex/webui` | 待执行 |
 | 13 | 端到端测试与三机制演示 | 9、11、12 | 无 | `codex/e2e-demo` | 待执行 |
@@ -1761,13 +1761,19 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 
 ## 实施期间的状态维护规则
 
-### 2026-08-01 — Task 10 质量 I1 返工（已完成，等待最终复审）
+### 2026-08-01 — Task 10 质量 I1 返工（已完成）
 
 - 范围：仅修复 GitHub 秘密扫描对 `git grep` 错误码的 fail-open，并以结构化交付契约收紧质量审查 M1。
 - 预期 RED：缺失扫描器入口时四项行为测试失败；Git ERE 使用 Python 非捕获分组时兼容性测试失败。
 - 验证：扫描器/全部 distribution、Ruff、mypy、`make demo`、Compose 解析、差异检查与本地扫描。
 - 提交：规约 I1 返工为 `ea61388`，质量 I1 返工为 `f902512`；独立规约复审 Spec Yes、质量复审 Approved，Critical / Important / Minor 为 `0 / 0 / 0`。
 - 安全清理：过程报告中的测试式字符串必须脱敏，不得把过程文档加入秘密扫描 allowlist；测试锁定 allowlist 仅为三个测试夹具路径。
+
+### 2026-08-01 — MVP Task 10 最终门禁
+
+- 最终受审范围：`5e08b07..ba01cd7`；独立最终复审结论为 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes。
+- 合并前新鲜证据：`mingw32-make test` 退出 0，Python `739 passed, 15 skipped`、Vitest `21 passed`、Playwright `3 passed, 1 skipped`；Ruff、mypy、Web lint/typecheck/build、`pip check`、本地秘密扫描、Compose 解析、整范围差异检查与 `make demo` 三项 PASS 均通过。
+- 首次最终 `make test` 暴露 Web 测试在异步计划事件到达前同步查询按钮的竞态；`ba01cd7` 仅把正向查询改为异步等待，完整 Web 测试连续三轮 `21 passed`，没有修改生产 Web。Docker daemon 未运行，未伪造镜像构建、非 root 身份或冷启动通过；本 Task 无新增延期。
 
 1. 每个 Task 开始时把表格状态改为“进行中（worktree/智能体）”。
 2. 每个 Task 通过两阶段评审后改为“完成（提交哈希）”；失败或返工如实记录。

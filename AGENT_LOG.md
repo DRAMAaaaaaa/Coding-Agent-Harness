@@ -955,3 +955,10 @@
 - **RED → GREEN：** 新增行为测试首轮为 `4 failed`，原因是独立扫描器尚不存在；实现 `scripts/secret_scan.py` 后，`rc=2` 必须失败、`rc=1` 成功、已知路径与完整 SHA-256 假值成功、未知命中只输出文件名且失败均已通过。实现后发现 Git ERE 不支持 Python 的 `(?:...)`，补充兼容性 RED 为 `1 failed, 4 passed`，改用独立 Git ERE 后转绿。
 - **质量收紧与证据：** Docker 断言改为解析有效指令并验证最终 `USER`、唯一 `EXPOSE`、完整 `CMD`；Compose 与 CI run 命令改为结构化/精确断言。聚焦 distribution 与扫描器共 `17 passed`，本地扫描通过；质量 I1 返工提交为 `f902512`，规约 I1 返工提交为 `ea61388`。独立规约复审 Spec Yes、质量复审 Approved，Critical / Important / Minor 为 `0 / 0 / 0`；等待最终复审及整分支全量门禁，无新增延期。
 - **安全清理：** 真实扫描发现一个受版本控制的 Task 7 过程报告中含测试式字符串；该报告不是测试夹具，已替换为不命中规则的中文脱敏描述，未输出或记录原值。allowlist 仅保留三条测试夹具路径，新增集合断言防止过程文档再次进入例外。
+
+### 2026-08-01 — REVIEW-AND-VERIFY-MVP-4-TASK-10-FINAL
+
+- **测试竞态关闭：** 主控首次合并前 `mingw32-make test` 的 Python、Ruff 与 mypy 阶段通过，但 Vitest 偶发在计划事件异步到达前同步查询“批准计划”按钮；聚焦单文件通过、完整 Web 测试连续第二轮复现失败。`ba01cd7` 只把四个正向用例改为 `await findByRole`，不修改生产 Web、负向断言、超时或添加 sleep；App 聚焦 `13 passed`，完整 Web 测试连续三轮均为 `21 passed`，lint/typecheck 通过。
+- **最终独立复审：** 受审范围 `5e08b07..ba01cd7` 的最终结论为 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes；确认规约显式项目挂载 I1、秘密扫描 fail-open I1、结构化交付测试 M1 和测试竞态均已关闭。
+- **主控新鲜证据：** 修复后 `mingw32-make test` 退出 0，Python `739 passed, 15 skipped`、Vitest `21 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy（48 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过；`mingw32-make demo` 固定三项 PASS，`pip check`、本地秘密扫描、Compose 解析和整范围差异检查通过。
+- **范围与限制：** Task 10 无新增延期，未联网、安装依赖、接触真实凭据、实现真实 Provider、发布镜像、部署公网服务或 push。Docker 客户端存在但 daemon 未运行，因此动态镜像构建、容器内机制、非 root 身份和 WebUI health 仍如实记录为环境未验收；当前仅待本地快进合并到 `p1`。
