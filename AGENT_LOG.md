@@ -935,3 +935,10 @@
 - **本地集成：** `codex/e2e-demo` 以 `--ff-only` 从 `843bf02` 快进合并到本地 `p1`，过程无冲突；技术范围为 `843bf02..e473a61`，最终过程 Head 为 `8014304`。未 pull、未 push、未接触真实凭据。
 - **合并后新鲜验证：** 在 `p1` 运行 `mingw32-make demo`，固定输出三项 PASS；`mingw32-make test` 退出 0，得到 Python `721 passed, 15 skipped`、Vitest `2 files / 21 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy（48 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过，`pip check` 无破损依赖。
 - **交付与延期：** Task 9 已交付真实离线三机制演示、localhost 临时服务、生产 WebUI 浏览器 E2E、持续安全 SSE、异常/取消安全清理、Windows/POSIX 进程树回收和四个一键入口；`MVP-ISSUE-016` 已关闭，本 Task 无新增延期。下一项为 MVP-4 Task 10（Docker、双 CI 与最终交付文档）。
+
+### 2026-07-31 — IMPL-MVP-4-TASK-10-DISTRIBUTION
+
+- **范围与技能：** 在隔离 `codex/distribution` worktree、基线 `5e08b07` 实现最小 MVP Task 10，使用 `test-driven-development`、`systematic-debugging` 与 `verification-before-completion`。交付多阶段非 root Docker、localhost Compose、GitHub push/PR CI、GitLab `unit-test`、中文 README/安全/部署/演示文档和语义契约测试；未联网、安装依赖、调用真实 Provider、接触凭据、push、发布镜像、部署公网服务或扩展旧完整 Task 14。
+- **RED → GREEN：** 首轮交付契约稳定 `7 failed`，证明 Docker/双 CI/文档缺失；显式容器 host/port 参数单测先因 argparse 拒绝失败；Compose 可重复启动测试先以 `FileExistsError` 失败。GREEN 后每次在独立 state 父目录创建唯一 `session-*`，不复用或自动删除旧审计现场。首轮完整 E2E 暴露 `TemporaryDirectory` 过早删除 fixture 导致收尾 Git 128；新增保留会话行为 RED 后改用唯一持久会话目录，交付/清理聚焦 `16 passed`、Playwright `3 passed, 1 skipped`。秘密扫描仅命中三个明确假值；CI 继续扫描全部文件，只按 `(文件路径, 完整匹配值 SHA-256)` 精确 allowlist，未知命中仍只输出文件名并 fail closed，契约测试明确拒绝整测试文件排除。
+- **实现事实：** 镜像由 Node 24 前端、Python wheel 与最终 Python 3.11 runtime 三阶段组成，以 UID/GID 10001 的 `harness` 运行；Compose 仅发布 `127.0.0.1:8000`、只读挂载示例并使用独立 state 卷，默认 Scripted Mock。文档明确真实 DeepSeek/Qwen 产品接线、凭据生命周期、GHCR/多架构和公网部署均未实现/未验收，`.env.example` 的 Key 字段只是不会被 MVP 消费的占位值。
+- **新鲜验证与阻塞：** `mingw32-make demo` 固定三项 PASS；最终 `mingw32-make test` 退出 0，Python `730 passed, 15 skipped`、Vitest `21 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy（48 个源文件）、Web ESLint/typecheck 和 Vite build 通过；`docker compose config --quiet`、`pip check` 通过。Docker 客户端为 `29.1.3`，但连接 `docker_engine` 管道失败且 daemon 未运行，因此未伪造 `docker build/run/health` 动态通过；须在 daemon 可用环境复跑。本 Task 无新增延期，仍待独立规约、质量和最终审查。

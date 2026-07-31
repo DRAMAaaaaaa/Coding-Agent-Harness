@@ -9,7 +9,7 @@ import shutil
 import socket
 import subprocess
 import sys
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkdtemp
 from typing import Callable, Protocol
 
 
@@ -98,10 +98,13 @@ def _create_fixture(runtime_root: Path) -> tuple[Path, str]:
     return fixture, _run_git(fixture, "rev-parse", "HEAD")
 
 
-def _reserve_local_socket() -> tuple[socket.socket, int]:
+def _reserve_local_socket(
+    host: str = "127.0.0.1",
+    port: int = 0,
+) -> tuple[socket.socket, int]:
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    listener.bind(("127.0.0.1", 0))
+    listener.bind((host, port))
     listener.listen(128)
     return listener, int(listener.getsockname()[1])
 
@@ -224,7 +227,14 @@ async def _cleanup_resources(
         raise BaseExceptionGroup(f"演示服务清理失败: {summaries}", errors)
 
 
-async def _serve(runtime_root: Path, ready_file: Path, max_seconds: float) -> int:
+async def _serve(
+    runtime_root: Path,
+    ready_file: Path,
+    max_seconds: float,
+    *,
+    bind_host: str = "127.0.0.1",
+    bind_port: int = 0,
+) -> int:
     state_root = runtime_root / "state"
     database: Database | None = None
     listener: socket.socket | None = None
@@ -236,7 +246,11 @@ async def _serve(runtime_root: Path, ready_file: Path, max_seconds: float) -> in
     try:
         fixture, initial_head = _create_fixture(runtime_root)
         database = await Database.open(state_root / "harness.db")
-        listener, port = _reserve_local_socket()
+        listener, port = (
+            _reserve_local_socket()
+            if bind_host == "127.0.0.1" and bind_port == 0
+            else _reserve_local_socket(bind_host, bind_port)
+        )
         completed = asyncio.Event()
         workspaces = WorkspaceRepository(database)
         tasks = TaskRepository(database)
@@ -251,12 +265,15 @@ async def _serve(runtime_root: Path, ready_file: Path, max_seconds: float) -> in
             on_completed=completed.set,
         )
         settings = HarnessSettings(
-            bind_host="127.0.0.1",
+            bind_host=bind_host,
             bind_port=port,
             state_root=state_root,
             database_path=state_root / "harness.db",
-            trusted_hosts=(f"127.0.0.1:{port}",),
-            trusted_origins=(f"http://127.0.0.1:{port}",),
+            trusted_hosts=(f"127.0.0.1:{port}", f"localhost:{port}"),
+            trusted_origins=(
+                f"http://127.0.0.1:{port}",
+                f"http://localhost:{port}",
+            ),
         )
         dependencies = ApiDependencies(
             workspaces=workspaces,
@@ -280,7 +297,7 @@ async def _serve(runtime_root: Path, ready_file: Path, max_seconds: float) -> in
         server = uvicorn.Server(
             uvicorn.Config(
                 create_app(settings=settings, dependencies=dependencies),
-                host="127.0.0.1",
+                host=bind_host,
                 port=port,
                 log_level="error",
                 access_log=False,
@@ -338,19 +355,38 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--ready-file", type=Path, required=True)
     parser.add_argument("--runtime-root", type=Path)
     parser.add_argument("--max-seconds", type=float, default=120.0)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=0)
     return parser.parse_args()
 
 
 def main() -> int:
     arguments = _arguments()
-    if arguments.max_seconds <= 0:
+    if arguments.max_seconds <= 0 or not 0 <= arguments.port <= 65_535:
         return 2
     if arguments.runtime_root is not None:
-        runtime_root = arguments.runtime_root.resolve(strict=False)
-        runtime_root.mkdir(parents=True, exist_ok=False)
-        return asyncio.run(_serve(runtime_root, arguments.ready_file, arguments.max_seconds))
+        runtime_parent = arguments.runtime_root.resolve(strict=False)
+        runtime_parent.mkdir(parents=True, exist_ok=True)
+        runtime_root = Path(mkdtemp(prefix="session-", dir=runtime_parent))
+        return asyncio.run(
+            _serve(
+                runtime_root,
+                arguments.ready_file,
+                arguments.max_seconds,
+                bind_host=arguments.host,
+                bind_port=arguments.port,
+            )
+        )
     with TemporaryDirectory(prefix="harness-web-demo-") as directory:
-        return asyncio.run(_serve(Path(directory), arguments.ready_file, arguments.max_seconds))
+        return asyncio.run(
+            _serve(
+                Path(directory),
+                arguments.ready_file,
+                arguments.max_seconds,
+                bind_host=arguments.host,
+                bind_port=arguments.port,
+            )
+        )
 
 
 if __name__ == "__main__":
