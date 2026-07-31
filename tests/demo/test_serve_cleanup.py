@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+import threading
 
 import pytest
 
@@ -136,6 +137,46 @@ async def test_cleanup_cancels_server_that_ignores_graceful_exit(tmp_path: Path)
     assert server_task.done()
     assert cancelled.is_set()
     assert listener.closed and database.closed and router.cleaned
+    assert not state_root.exists()
+
+
+async def test_cleanup_joins_slow_router_before_deleting_state_root(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    entered = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    class _BlockingRouter:
+        def cleanup(self) -> None:
+            entered.set()
+            release.wait()
+            finished.set()
+
+    cleanup_task = asyncio.create_task(
+        serve_demo._cleanup_resources(
+            server=None,
+            server_task=None,
+            listener=None,
+            router=_BlockingRouter(),
+            database=None,
+            state_root=state_root,
+            timeout=0.01,
+        )
+    )
+    await asyncio.wait_for(asyncio.to_thread(entered.wait), timeout=1)
+    try:
+        await asyncio.sleep(0.02)
+        assert not cleanup_task.done()
+        assert state_root.exists()
+        assert not finished.is_set()
+    finally:
+        release.set()
+    with pytest.raises(BaseExceptionGroup, match="router cleanup exceeded"):
+        await asyncio.wait_for(cleanup_task, timeout=1)
+    assert finished.is_set()
     assert not state_root.exists()
 
 

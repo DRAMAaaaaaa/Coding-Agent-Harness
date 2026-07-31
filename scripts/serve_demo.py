@@ -10,7 +10,7 @@ import socket
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
-from typing import Protocol
+from typing import Callable, Protocol
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -154,6 +154,37 @@ async def _cleanup_resources(
         except BaseException as error:
             errors.append(error)
 
+    async def join_thread(operation: Callable[[], object], *, label: str) -> None:
+        task = asyncio.create_task(asyncio.to_thread(operation))
+        wait_error: BaseException | None = None
+        try:
+            done, _ = await asyncio.wait({task}, timeout=timeout)
+            if not done:
+                errors.append(TimeoutError(f"{label} exceeded {timeout} seconds"))
+        except BaseException as error:
+            wait_error = error
+        result_observed = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError as error:
+                if task.cancelled():
+                    errors.append(error)
+                    result_observed = True
+                    break
+                errors.append(error)
+            except BaseException as error:
+                errors.append(error)
+                result_observed = True
+                break
+        if not result_observed:
+            try:
+                task.result()
+            except BaseException as error:
+                errors.append(error)
+        if wait_error is not None:
+            errors.append(wait_error)
+
     try:
         await _stop_server(server, server_task, timeout=timeout)
     except BaseException as error:
@@ -164,11 +195,14 @@ async def _cleanup_resources(
         except BaseException as error:
             errors.append(error)
     if router is not None:
-        await attempt(asyncio.to_thread(router.cleanup))
+        await join_thread(router.cleanup, label="router cleanup")
     if database is not None:
         await attempt(database.close())
     if state_root.exists():
-        await attempt(asyncio.to_thread(shutil.rmtree, state_root, False))
+        await join_thread(
+            lambda: shutil.rmtree(state_root, ignore_errors=False),
+            label="state cleanup",
+        )
     if errors:
         summaries = "; ".join(str(error) or type(error).__name__ for error in errors)
         raise BaseExceptionGroup(f"演示服务清理失败: {summaries}", errors)

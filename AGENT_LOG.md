@@ -899,3 +899,9 @@
 - **RED → GREEN：** Python 首轮 `3 failed, 3 passed`，复现 router 异常阻断清理、服务取消超时与 SSE 心跳过频；Playwright 以缺失 helper 的模块导入失败复现子进程回收缺口。GREEN 后启动前异常、ready 后取消、router 失败和不响应优雅退出四类清理回归及 SSE 虚拟时钟共 `8 passed`，强制终止 helper 为 `1 passed`。
 - **实现事实：** 服务从首个资源取得起统一进入异常安全清理，Uvicorn 优雅/强制停止共享有界预算，listener、router、database 和状态目录均独立尝试并聚合根因；Git worktree 清理经线程边界和 10 秒 runner 超时。Playwright 在正常/异常路径共用 `terminateAndWait`，Windows 以有界 `taskkill /T /F`、POSIX 以 `SIGKILL` 升级，确认退出后才删除 scratch。SSE 改为 1 秒轮询、15 秒心跳，读取前后检查断开，有限模式不变。
 - **新鲜验证：** Ruff、mypy（48 个源文件）、Web ESLint 和 TypeScript typecheck 通过；Playwright 全量 `2 passed (6.7s)`。本 Task 无新增延期，待独立质量复审。
+
+### 2026-07-31 — REWORK-MVP-4-TASK-9-QUALITY-ROUND-2
+
+- **复审核实：** 使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 与 `verification-before-completion`处理二次质量复审 I1/I2。核实 `wait_for(to_thread(...))` 只取消 asyncio wrapper、不停止 Git 线程；也核实 Windows `child.kill()` 可先结束父进程并绕过进程树终止。
+- **RED → GREEN：** 阻塞 router 超过软超时后，旧实现的 cleanup task 已返回且 state root 被删除，线程仍在后台；Windows 注入测试显示旧实现未调用 tree terminator。GREEN 后慢 router 必须真实结束并观察结果后才关闭数据库/删除状态目录，软超时作为聚合诊断保留；外层取消也会继续 join，不留后台线程。Windows 从首次终止即使用有界 `taskkill /PID /T`，未退出再升级 `/F`；POSIX 保留 SIGTERM → SIGKILL。
+- **新鲜验证：** Python 聚焦 `9 passed`，Ruff、mypy（48 个源文件）、Web ESLint/typecheck 通过；Playwright 全量为 `3 passed (6.8s)`，同时覆盖真实浏览器主路径、POSIX 升级和 Windows 进程树升级。未联网、安装依赖、进入 Task 10、merge 或 push；本 Task 无新增延期。
