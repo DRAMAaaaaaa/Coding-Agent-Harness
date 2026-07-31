@@ -911,3 +911,9 @@
 - **规约门禁：** 最终规约复审确认真实三机制、localhost 临时服务、REST/SSE/WebUI 浏览器主路径、Git 配置隔离、四个一键入口、`MVP-ISSUE-016` 与无延期要求；结论为 Spec Yes、Critical / Important / Minor 为 `0 / 0 / 0`。
 - **质量门禁：** 两轮质量返工关闭异常安全清理、后台 Git 线程 join、Windows 进程树终止和 SSE 心跳开销；最终复审覆盖至技术 Head `f7ae618`，结论为 Quality Approved、Critical / Important / Minor 为 `0 / 0 / 0`，Ready merge Yes。
 - **当前状态：** Task 9 技术范围为 `843bf02..f7ae618`，无新增延期；仍待整分支最终复审、主控新鲜 `make test` 与本地快进合并。未联网、安装依赖、实现 Task 10、merge 或 push。
+
+### 2026-07-31 — REWORK-MVP-4-TASK-9-FINAL-I1-I2
+
+- **最终审查核实：** 使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 与 `verification-before-completion`，仅处理整分支最终审查 I1/I2。真正吞掉 `CancelledError` 的服务 RED 证明旧流程会在 server task 仍 live 时关闭数据库、清理 router 并删除 state root；POSIX 进程组 seam RED 证明旧 helper 只终止父 PID。
+- **GREEN 边界：** `_stop_server` 两段有界预算后若 task 仍存活，`_cleanup_resources` 立即聚合报错并保留 listener、router/worktree、database 和 state root；任务真实结束后可第二次清理并完整回收。POSIX 演示子进程以 detached 独立组启动，helper 对负 PGID 发 SIGTERM，同时等待父进程与整组消失，必要时升级 SIGKILL；父进程先退出不再导致提前返回。Windows `/T` → `/F` 保持不变。
+- **新鲜验证：** 服务清理/SSE 聚焦 `10 passed`；Ruff、mypy（48 个源文件）、Web ESLint/typecheck 通过；Windows 上 Playwright 全量 `3 passed, 1 skipped (6.5s)`，skip 项是只在 POSIX 执行的真实 Node 父子进程组测试，其 POSIX 组信号和父进程先退出语义同时有可注入确定性测试。未联网、进入 Task 10、merge 或 push；无新增延期。

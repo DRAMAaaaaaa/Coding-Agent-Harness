@@ -171,7 +171,7 @@ class TaskOrchestrator:
 | 10 | 凭据生命周期 | 1、4 | 可与 3 或 8 并行 | `codex/credentials` | 待执行 |
 | MVP-3 Task 7 | 持久化 Workspace 与最小 REST/SSE | MVP-2 Task 6 | 独立 worktree | `codex/api` | 完成并已本地快进合并到 `p1`（技术/过程 Head `8fd5cde`；最终 Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes；合并后全量 `703 passed, 15 skipped`，Ruff、mypy、Web lint/typecheck 通过，合并前同 Head 的 `pip check`、wheel/sdist 与 001/002/003 归档矩阵通过）；本 Task 无新增延期 |
 | MVP-3 Task 8 | 最小单页 WebUI 与同源静态托管 | MVP-3 Task 7 | 独立 worktree | `codex/webui` | 完成并已本地快进合并到 `p1`（最终技术 Head `ea146f1`，过程 Head `68946d3`；Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready to merge Yes；合并后 `706 passed, 15 skipped`、Vitest `21 passed`，Ruff、mypy、Web lint/typecheck、Vite build 与 `pip check` 通过）；本 Task 无新增延期 |
-| MVP-4 Task 9 | 三机制演示、真实浏览器 E2E 与一键验收 | MVP-3 Task 8 | 独立 worktree | `codex/e2e-demo` | 技术实现与独立规约/质量双审完成（整范围 `843bf02..f7ae618`；Spec Yes、Quality Approved，Critical / Important / Minor 为 `0 / 0 / 0`，Ready merge Yes）；Python 全量 `713 passed, 15 skipped`、Vitest `21 passed`、Playwright `3 passed`，Ruff、mypy、Web lint/typecheck/build 与 `pip check` 通过；`MVP-ISSUE-016` 已关闭，本 Task 无新增延期，待整分支最终复审、主控全量验证与本地合并 |
+| MVP-4 Task 9 | 三机制演示、真实浏览器 E2E 与一键验收 | MVP-3 Task 8 | 独立 worktree | `codex/e2e-demo` | 整分支最终审查 I1/I2 返工已完成，待独立复审、主控全量验证与本地合并；当前最终审查 Head `e5daa2b`，返工提交待回填；Python 聚焦 `10 passed`，Windows 上 Playwright `3 passed, 1 skipped`（POSIX 真实父子进程用例仅在 POSIX 执行），Ruff、mypy、Web lint/typecheck 通过；`MVP-ISSUE-016` 已关闭，本 Task 无新增延期 |
 | 11 | FastAPI REST/SSE 与交付产物 | 5、9、10 | 无 | `codex/api` | 待执行（完整产品后续范围） |
 | 12 | React WebUI | 11 的接口契约 | 可在 API schema 冻结后与 11 后半段并行 | `codex/webui` | 待执行 |
 | 13 | 端到端测试与三机制演示 | 9、11、12 | 无 | `codex/e2e-demo` | 待执行 |

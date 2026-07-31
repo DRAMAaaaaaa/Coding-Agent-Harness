@@ -140,6 +140,62 @@ async def test_cleanup_cancels_server_that_ignores_graceful_exit(tmp_path: Path)
     assert not state_root.exists()
 
 
+async def test_cleanup_preserves_resources_while_server_swallows_cancellation(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    server = _Server()
+    release = asyncio.Event()
+    cancellation_swallowed = asyncio.Event()
+
+    async def uncooperative_server() -> None:
+        while not release.is_set():
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                cancellation_swallowed.set()
+
+    server_task = asyncio.create_task(uncooperative_server())
+    listener = _Listener()
+    database = _Database()
+    router = _Router()
+    try:
+        with pytest.raises(BaseExceptionGroup) as captured:
+            await asyncio.wait_for(
+                serve_demo._cleanup_resources(
+                    server=server,
+                    server_task=server_task,
+                    listener=listener,
+                    router=router,
+                    database=database,
+                    state_root=state_root,
+                    timeout=0.02,
+                ),
+                timeout=1,
+            )
+        assert cancellation_swallowed.is_set()
+        assert not server_task.done()
+        assert not listener.closed and not database.closed and not router.cleaned
+        assert state_root.exists()
+        assert "server task is still running" in str(captured.value)
+    finally:
+        release.set()
+        await asyncio.wait_for(server_task, timeout=1)
+
+    await serve_demo._cleanup_resources(
+        server=server,
+        server_task=server_task,
+        listener=listener,
+        router=router,
+        database=database,
+        state_root=state_root,
+        timeout=0.1,
+    )
+    assert listener.closed and database.closed and router.cleaned
+    assert not state_root.exists()
+
+
 async def test_cleanup_joins_slow_router_before_deleting_state_root(
     tmp_path: Path,
 ) -> None:

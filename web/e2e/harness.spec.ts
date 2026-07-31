@@ -66,6 +66,7 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
     "scripts/serve_demo.py", "--ready-file", readyFile, "--runtime-root", runtimeRoot,
   ], {
     cwd: repoRoot,
+    detached: process.platform !== "win32",
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, PYTHONPATH: path.join(repoRoot, "src") },
   });

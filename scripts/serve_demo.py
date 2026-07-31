@@ -56,6 +56,10 @@ class _DatabaseLike(Protocol):
     async def close(self) -> None: ...
 
 
+class _ServerStillRunningError(TimeoutError):
+    pass
+
+
 def _git_environment(home: Path) -> dict[str, str]:
     environment = {
         "PATH": os.environ.get("PATH", ""),
@@ -129,7 +133,7 @@ async def _stop_server(
         server_task.cancel()
         done, _ = await asyncio.wait({server_task}, timeout=forced_timeout)
     if not done:
-        raise TimeoutError("演示服务在取消后仍未停止")
+        raise _ServerStillRunningError("server task is still running after cancellation")
     if server_task.cancelled():
         return
     server_task.result()
@@ -187,6 +191,10 @@ async def _cleanup_resources(
 
     try:
         await _stop_server(server, server_task, timeout=timeout)
+    except _ServerStillRunningError as error:
+        raise BaseExceptionGroup(
+            f"演示服务仍在运行，保留清理现场: {error}", [error]
+        ) from error
     except BaseException as error:
         errors.append(error)
     if listener is not None:
