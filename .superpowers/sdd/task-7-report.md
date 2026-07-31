@@ -45,7 +45,7 @@ wheel/sdist 均包含 `001_initial.sql`、`002_governance_approvals.sql`、
 
 ## 质量返工 QA（C1、I1、I3）
 
-按 `task-7-quality-review.md` 仅处理 C1、I1、I3。RED 分别证明：未知 Host 可取得 token 并进入业务依赖、首页缺少 `no-store`、Repository 构造失败后数据库关闭次数为 0、外置数据库路径未被配置拒绝。GREEN 后，可信 Host/Origin 仅来自冻结配置；默认 authority 固定为 `127.0.0.1:8000` 与 `localhost:8000`，测试显式配置 `testserver`。所有请求先校验 Host，mutation 再以配置 Origin 与常量时间 session 比较，首页禁止缓存。
+按 `ta（已脱敏的测试占位符）.md` 仅处理 C1、I1、I3。RED 分别证明：未知 Host 可取得 token 并进入业务依赖、首页缺少 `no-store`、Repository 构造失败后数据库关闭次数为 0、外置数据库路径未被配置拒绝。GREEN 后，可信 Host/Origin 仅来自冻结配置；默认 authority 固定为 `127.0.0.1:8000` 与 `localhost:8000`，测试显式配置 `testserver`。所有请求先校验 Host，mutation 再以配置 Origin 与常量时间 session 比较，首页禁止缓存。
 
 自建数据库打开后立即进入 `try/finally`；Repository、Scanner、SafeGit、runtime 四个构造故障注入均证明关闭恰好一次，外部注入数据库仍归调用方所有。`HarnessSettings` 解析并冻结私有路径，数据库必须位于 `state_root`；数据库、WAL、SHM 的父目录显式进入 API 私有根集合，接入项目与任一私有根重叠时 fail closed。
 

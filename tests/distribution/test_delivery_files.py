@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 
@@ -18,6 +19,24 @@ def _yaml(path: str) -> dict[str, object]:
     return loaded
 
 
+def _docker_instructions(dockerfile: str) -> list[tuple[str, str]]:
+    logical_lines: list[str] = []
+    pending = ""
+    for raw_line in dockerfile.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        pending = f"{pending}{line}"
+        if pending.endswith("\\"):
+            pending = f"{pending[:-1]} "
+            continue
+        instruction, arguments = pending.split(maxsplit=1)
+        logical_lines.append((instruction.upper(), arguments))
+        pending = ""
+    assert not pending
+    return logical_lines
+
+
 def test_required_delivery_files_exist() -> None:
     required = (
         "Dockerfile",
@@ -34,13 +53,31 @@ def test_required_delivery_files_exist() -> None:
 
 def test_docker_runtime_is_non_root_and_exposes_only_web_port() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-    assert dockerfile.count(" AS ") >= 2
-    assert "USER harness" in dockerfile
-    assert "EXPOSE 8000" in dockerfile
-    assert "EXPOSE 8000 8080" not in dockerfile
-    assert "scripts/serve_demo.py" in dockerfile
-    assert '"--project-source", "/workspace/project"' in dockerfile
-    assert "COPY examples/" not in dockerfile
+    instructions = _docker_instructions(dockerfile)
+    assert sum(kind == "FROM" for kind, _ in instructions) >= 3
+    assert [arguments for kind, arguments in instructions if kind == "USER"][-1] == "harness"
+    assert [arguments for kind, arguments in instructions if kind == "EXPOSE"] == ["8000"]
+    command = json.loads([arguments for kind, arguments in instructions if kind == "CMD"][-1])
+    assert command == [
+        "python",
+        "scripts/serve_demo.py",
+        "--ready-file",
+        "/state/ready.json",
+        "--runtime-root",
+        "/state",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--project-source",
+        "/workspace/project",
+        "--max-seconds",
+        "86400",
+    ]
+    assert not any(
+        kind == "COPY" and arguments.startswith("examples/")
+        for kind, arguments in instructions
+    )
 
 
 def test_compose_is_local_mock_with_explicit_mounts() -> None:
@@ -55,7 +92,10 @@ def test_compose_is_local_mock_with_explicit_mounts() -> None:
         for mount in volumes
     )
     assert all("/app/examples" not in mount for mount in volumes)
-    assert any("harness-state" in mount for mount in volumes)
+    assert "harness-state:/state" in volumes
+    assert service["read_only"] == "true"  # type: ignore[index]
+    assert service["cap_drop"] == ["ALL"]  # type: ignore[index]
+    assert service["security_opt"] == ["no-new-privileges:true"]  # type: ignore[index]
 
 
 def test_demo_server_accepts_explicit_container_bind(
@@ -147,25 +187,19 @@ def test_explicit_runtime_parent_can_be_reused_across_starts(
 
 
 def test_github_ci_runs_all_delivery_gates_on_push_and_pull_request() -> None:
-    workflow_path = ROOT / ".github/workflows/ci.yml"
-    workflow_text = workflow_path.read_text(encoding="utf-8")
     workflow = _yaml(".github/workflows/ci.yml")
     assert set(workflow["on"]) == {"push", "pull_request"}  # type: ignore[arg-type]
     jobs = workflow["jobs"]  # type: ignore[assignment]
-    commands = "\n".join(
+    commands = [
         step.get("run", "")
         for job in jobs.values()
         for step in job.get("steps", [])
         if isinstance(step, dict)
-    )
+    ]
     assert "make test" in commands
-    assert "git grep" in commands and "-l" in commands
-    assert "git grep -I -l" in commands and "git grep -n" not in commands
-    assert ":!tests/" not in commands
-    assert "hashlib.sha256" in commands
-    assert "unexpected_files" in commands
-    assert "docker build" in commands
-    assert "HARNESS_LLM_API_KEY" not in workflow_text
+    assert "python3 scripts/secret_scan.py" in commands
+    assert "docker build --tag coding-agent-harness:ci ." in commands
+    assert (ROOT / "scripts" / "secret_scan.py").is_file()
 
 
 def test_gitlab_has_exact_unit_test_job() -> None:

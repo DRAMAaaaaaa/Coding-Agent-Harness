@@ -40,47 +40,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: 扫描疑似秘密（仅输出文件名）
-        shell: bash
-        run: |
-          set -eu
-          key_prefix='sk-'
-          pattern="${key_prefix}[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY"
-          candidate_files="$(git grep -I -l -E "$pattern" -- . || true)"
-          CANDIDATE_FILES="$candidate_files" python - <<'PY'
-          import hashlib
-          import os
-          from pathlib import Path
-          import re
-
-          pattern = re.compile(
-              r"(?:sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|"
-              r"BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY)"
-          )
-          allowed = {
-              (
-                  "tests/agent/test_orchestrator.py",
-                  "573da6fd127efb9e9d07de2d30783788373e365fa5abe86c541064f326aebfad",
-              ),
-              (
-                  "tests/api/test_tasks.py",
-                  "0d771ce522997a102ba556a91cf3c1ba66a05c1fa33871f8e59669204e541e8d",
-              ),
-              (
-                  "tests/governance/test_redaction.py",
-                  "573da6fd127efb9e9d07de2d30783788373e365fa5abe86c541064f326aebfad",
-              ),
-          }
-          unexpected_files: set[str] = set()
-          for filename in os.environ.get("CANDIDATE_FILES", "").splitlines():
-              path = Path(filename)
-              for match in pattern.finditer(path.read_text(encoding="utf-8", errors="replace")):
-                  digest = hashlib.sha256(match.group(0).encode("utf-8")).hexdigest()
-                  if (path.as_posix(), digest) not in allowed:
-                      unexpected_files.add(path.as_posix())
-          if unexpected_files:
-              print("\n".join(sorted(unexpected_files)))
-              raise SystemExit(1)
-          PY
+        run: python3 scripts/secret_scan.py
 
   docker-build:
     runs-on: ubuntu-24.04

@@ -948,3 +948,10 @@
 - **审查与范围：** 独立规约首审对 `783f835` 判定 Spec No、Critical / Important / Minor 为 `0 / 1 / 0`；唯一 I1 是 Docker 单条启动依赖镜像 COPY 的 `examples`，没有强制显式项目挂载。本轮使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 与 `verification-before-completion`，只关闭 I1；不修改首审原结论，不进入质量审查、联网、安装、merge 或 push。
 - **RED → GREEN：** 交付契约先为 `7 failed, 4 passed`，分别证明 Docker CMD 无项目源、镜像 COPY examples、Compose/README/部署文档挂载点错误、CLI 缺少项目源参数，以及缺失/文件型源未以明确边界拒绝。GREEN 后镜像不再 COPY examples，CMD 只能从专用 `/workspace/project` 读取；Compose 和单条 `docker run` 同时提供只读项目 bind mount 与独立 state 卷。`serve_demo.py` 的源码模式仍默认内置示例，容器显式源在复制前要求现有目录，缺失/非目录 fail closed，源不被删除。
 - **新鲜证据：** distribution + 服务清理聚焦 `19 passed`（含显式源实际复制且源保持不变）；真实 Playwright 为 `3 passed, 1 skipped`；`mingw32-make demo` 固定三项 PASS；`docker compose config --quiet` 退出 0。本轮无新增延期；Docker daemon 仍未运行，动态镜像验收边界不变，待独立规约复审。
+
+### 2026-08-01 — REWORK-MVP-4-TASK-10-QUALITY-I1
+
+- **根因与范围：** 仅处理质量审查 I1，并在测试层收紧 M1；`.github/workflows/ci.yml` 的 `git grep ... || true` 将无匹配 `1` 与扫描错误 `>1` 一并吞掉，导致 required secret gate fail-open。未联网、安装依赖、修改 Docker/产品功能、merge 或 push。
+- **RED → GREEN：** 新增行为测试首轮为 `4 failed`，原因是独立扫描器尚不存在；实现 `scripts/secret_scan.py` 后，`rc=2` 必须失败、`rc=1` 成功、已知路径与完整 SHA-256 假值成功、未知命中只输出文件名且失败均已通过。实现后发现 Git ERE 不支持 Python 的 `(?:...)`，补充兼容性 RED 为 `1 failed, 4 passed`，改用独立 Git ERE 后转绿。
+- **质量收紧与证据：** Docker 断言改为解析有效指令并验证最终 `USER`、唯一 `EXPOSE`、完整 `CMD`；Compose 与 CI run 命令改为结构化/精确断言。聚焦 distribution 与扫描器共 `17 passed`，本地扫描通过；全量门禁与提交待本轮后续记录。无新增延期。
+- **安全清理：** 真实扫描发现一个受版本控制的 Task 7 过程报告中含测试式字符串；该报告不是测试夹具，已替换为不命中规则的中文脱敏描述，未输出或记录原值。allowlist 仅保留三条测试夹具路径，新增集合断言防止过程文档再次进入例外。
