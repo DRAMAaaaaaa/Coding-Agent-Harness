@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { terminateAndWait } from "./processControl";
+
 interface ReadyInfo {
   url: string;
   fixture: string;
@@ -103,10 +105,8 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
     else process.env.HOME = previousHome;
     if (previousUserProfile === undefined) delete process.env.USERPROFILE;
     else process.env.USERPROFILE = previousUserProfile;
-    if (child.exitCode === null) {
-      child.stdin?.end();
-      child.kill();
-    }
+    child.stdin?.end();
+    await terminateAndWait(child);
     await rm(scratch, { recursive: true, force: true });
   }
 });

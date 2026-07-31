@@ -407,13 +407,21 @@ class DemoOrchestratorRouter:
             self._on_completed()
         return completed
 
-    async def cleanup(self) -> None:
+    def cleanup(self, *, timeout_seconds: float = 10.0) -> None:
         for task_id, workspace in tuple(self._workspaces_by_task.items()):
             worktree = task_worktree_path(self._state_root, workspace.id, task_id)
             demo_file = worktree / "demo.py"
             if demo_file.is_file():
                 demo_file.write_text("VALUE = 1\n", encoding="utf-8", newline="\n")
-            manager = WorktreeManager(workspace, self._state_root)
+            cleanup_git = SafeGit(
+                self._state_root,
+                runner=SubprocessGitRunner(timeout_seconds=timeout_seconds),
+            )
+            manager = WorktreeManager(
+                workspace,
+                self._state_root,
+                safe_git=cleanup_git,
+            )
             manager.release(task_id)
 
 

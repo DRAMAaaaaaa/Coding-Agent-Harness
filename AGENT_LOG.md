@@ -892,3 +892,10 @@
 - **独立规约首审：** 对 `843bf02..1f9afc5` 的结论为 Spec No、Critical / Important / Minor 为 `0 / 1 / 1`；唯一 Important 是 Playwright 收尾的裸 Git 继承用户/system 配置，Minor 是 PLAN 未记录技术哈希。其余三机制、真实浏览器链、临时资源回收、四入口、SSE 和无延期均已证明符合。
 - **RED → GREEN：** E2E 把测试进程 HOME 指向含畸形 `.gitconfig` 的隔离目录后，原 `git rev-parse` 以 128 失败；修复后所有收尾 Git 命令统一使用独立空 HOME、`GIT_CONFIG_NOSYSTEM=1`、禁交互和最小运行环境，同一恶意配置不再生效，真实 Playwright `1 passed (6.7s)`，TypeScript typecheck 与差异检查通过。
 - **提交与边界：** 规约修复提交为 `29b9caa`，PLAN 已记录技术提交 `1f9afc5` 和最终返工范围 `843bf02..29b9caa`。未联网、下载、接触真实用户仓库/凭据、扩展 Task 10、merge 或 push；本 Task 无新增延期，待规约复审与质量审查。
+
+### 2026-07-31 — REWORK-MVP-4-TASK-9-QUALITY-I1-I2-M1
+
+- **范围与方法：** 完整读取 Task 9 质量审查，使用 `systematic-debugging`、`test-driven-development` 与 `verification-before-completion`，仅关闭 I1/I2/M1；未联网、安装依赖、实现 Task 10、merge 或 push。
+- **RED → GREEN：** Python 首轮 `3 failed, 3 passed`，复现 router 异常阻断清理、服务取消超时与 SSE 心跳过频；Playwright 以缺失 helper 的模块导入失败复现子进程回收缺口。GREEN 后启动前异常、ready 后取消、router 失败和不响应优雅退出四类清理回归及 SSE 虚拟时钟共 `8 passed`，强制终止 helper 为 `1 passed`。
+- **实现事实：** 服务从首个资源取得起统一进入异常安全清理，Uvicorn 优雅/强制停止共享有界预算，listener、router、database 和状态目录均独立尝试并聚合根因；Git worktree 清理经线程边界和 10 秒 runner 超时。Playwright 在正常/异常路径共用 `terminateAndWait`，Windows 以有界 `taskkill /T /F`、POSIX 以 `SIGKILL` 升级，确认退出后才删除 scratch。SSE 改为 1 秒轮询、15 秒心跳，读取前后检查断开，有限模式不变。
+- **新鲜验证：** Ruff、mypy（48 个源文件）、Web ESLint 和 TypeScript typecheck 通过；Playwright 全量 `2 passed (6.7s)`。本 Task 无新增延期，待独立质量复审。

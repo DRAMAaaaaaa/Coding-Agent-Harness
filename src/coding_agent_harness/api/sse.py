@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Protocol
 from uuid import UUID
@@ -33,11 +34,17 @@ async def task_events(
     *,
     follow: bool = False,
     is_disconnected: Callable[[], Awaitable[bool]] | None = None,
-    poll_interval: float = 0.25,
+    poll_interval: float = 1.0,
+    heartbeat_interval: float = 15.0,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> AsyncIterator[bytes]:
     sanitizer = redactor or Redactor()
     cursor = after
+    last_heartbeat = monotonic()
     while True:
+        if follow and is_disconnected is not None and await is_disconnected():
+            return
         batch = await store.list_batch_for_task(
             task_id,
             after=cursor,
@@ -46,10 +53,11 @@ async def task_events(
         if not batch:
             if not follow:
                 return
-            if is_disconnected is not None and await is_disconnected():
-                return
-            yield b": keep-alive\n\n"
-            await asyncio.sleep(poll_interval)
+            now = monotonic()
+            if now - last_heartbeat >= heartbeat_interval:
+                yield b": keep-alive\n\n"
+                last_heartbeat = now
+            await sleep(poll_interval)
             continue
         for event in batch:
             payload = _encode_event(event, sanitizer)
@@ -57,6 +65,8 @@ async def task_events(
                 "utf-8"
             )
         cursor = batch[-1].sequence
+        if follow and is_disconnected is not None and await is_disconnected():
+            return
         if not follow and len(batch) < MAX_EVENT_BATCH_SIZE:
             return
 
