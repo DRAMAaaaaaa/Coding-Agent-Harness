@@ -917,3 +917,9 @@
 - **最终审查核实：** 使用 `receiving-code-review`、`systematic-debugging`、`test-driven-development` 与 `verification-before-completion`，仅处理整分支最终审查 I1/I2。真正吞掉 `CancelledError` 的服务 RED 证明旧流程会在 server task 仍 live 时关闭数据库、清理 router 并删除 state root；POSIX 进程组 seam RED 证明旧 helper 只终止父 PID。
 - **GREEN 边界：** `_stop_server` 两段有界预算后若 task 仍存活，`_cleanup_resources` 立即聚合报错并保留 listener、router/worktree、database 和 state root；任务真实结束后可第二次清理并完整回收。POSIX 演示子进程以 detached 独立组启动，helper 对负 PGID 发 SIGTERM，同时等待父进程与整组消失，必要时升级 SIGKILL；父进程先退出不再导致提前返回。Windows `/T` → `/F` 保持不变。
 - **新鲜验证：** 服务清理/SSE 聚焦 `10 passed`；Ruff、mypy（48 个源文件）、Web ESLint/typecheck 通过；Windows 上 Playwright 全量 `3 passed, 1 skipped (6.5s)`，skip 项是只在 POSIX 执行的真实 Node 父子进程组测试，其 POSIX 组信号和父进程先退出语义同时有可注入确定性测试。未联网、进入 Task 10、merge 或 push；无新增延期。
+
+### 2026-07-31 — REWORK-MVP-4-TASK-9-FINAL-CANCELLATION-WINDOW
+
+- **唯一剩余问题：** 整分支最终复审确认 POSIX 进程组已关闭，但 `_cleanup_resources` 自身在 `_stop_server` 首段等待中取消时，通用 `BaseException` 分支仍会继续破坏性清理。本轮使用 `receiving-code-review`、`test-driven-development` 与 `verification-before-completion`，未扩展其他范围。
+- **RED → GREEN：** 新测试以长超时启动 live server task 和 cleanup task，确认进入首次 `asyncio.wait` 后取消 cleanup；RED 稳定显示 server 仍 live 而 listener/database/router 已清理、state root 已删除。GREEN 后，`_stop_server` 的任何异常返回都先检查 server task；只要仍 live 就立即聚合原异常与专用仍运行根因并保留全部现场，只有 task 已 done 才记录异常后继续清理。手动结束 server 后第二次 cleanup 完整成功。
+- **新鲜证据：** 服务清理/SSE 聚焦 `11 passed`，Ruff 通过，mypy 检查 48 个源文件通过，差异检查待提交前执行。未联网、修改 Web/POSIX/Windows 进程控制、进入 Task 10、merge 或 push；无新增延期。

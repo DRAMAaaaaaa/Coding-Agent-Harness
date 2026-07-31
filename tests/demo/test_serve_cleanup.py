@@ -196,6 +196,67 @@ async def test_cleanup_preserves_resources_while_server_swallows_cancellation(
     assert not state_root.exists()
 
 
+async def test_cancelling_cleanup_during_server_wait_preserves_live_resources(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    server = _Server()
+    release = asyncio.Event()
+    wait_entered = asyncio.Event()
+    original_wait = asyncio.wait
+
+    async def observed_wait(*args: object, **kwargs: object) -> object:
+        wait_entered.set()
+        return await original_wait(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(serve_demo.asyncio, "wait", observed_wait)
+
+    async def live_server() -> None:
+        await release.wait()
+
+    server_task = asyncio.create_task(live_server())
+    listener = _Listener()
+    database = _Database()
+    router = _Router()
+    cleanup_task = asyncio.create_task(
+        serve_demo._cleanup_resources(
+            server=server,
+            server_task=server_task,
+            listener=listener,
+            router=router,
+            database=database,
+            state_root=state_root,
+            timeout=10,
+        )
+    )
+    await asyncio.wait_for(wait_entered.wait(), timeout=1)
+    cleanup_task.cancel()
+    try:
+        with pytest.raises(BaseExceptionGroup) as captured:
+            await asyncio.wait_for(cleanup_task, timeout=1)
+        assert not server_task.done()
+        assert not listener.closed and not database.closed and not router.cleaned
+        assert state_root.exists()
+        assert "server task is still running" in str(captured.value)
+    finally:
+        release.set()
+        await asyncio.wait_for(server_task, timeout=1)
+
+    await serve_demo._cleanup_resources(
+        server=server,
+        server_task=server_task,
+        listener=listener,
+        router=router,
+        database=database,
+        state_root=state_root,
+        timeout=0.1,
+    )
+    assert listener.closed and database.closed and router.cleaned
+    assert not state_root.exists()
+
+
 async def test_cleanup_joins_slow_router_before_deleting_state_root(
     tmp_path: Path,
 ) -> None:

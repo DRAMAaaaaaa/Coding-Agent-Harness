@@ -191,11 +191,19 @@ async def _cleanup_resources(
 
     try:
         await _stop_server(server, server_task, timeout=timeout)
-    except _ServerStillRunningError as error:
-        raise BaseExceptionGroup(
-            f"演示服务仍在运行，保留清理现场: {error}", [error]
-        ) from error
     except BaseException as error:
+        if server_task is not None and not server_task.done():
+            still_running = _ServerStillRunningError(
+                "server task is still running after cleanup interruption"
+            )
+            causes = (
+                [error]
+                if isinstance(error, _ServerStillRunningError)
+                else [error, still_running]
+            )
+            raise BaseExceptionGroup(
+                f"演示服务仍在运行，保留清理现场: {still_running}", causes
+            ) from error
         errors.append(error)
     if listener is not None:
         try:
