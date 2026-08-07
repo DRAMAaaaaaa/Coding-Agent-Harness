@@ -1,0 +1,24 @@
+# Task 5 实施报告
+
+## 已完成
+
+- 增加 migration 007、项目经验卡模型、仓储与审批服务。
+- 仅接受已完成任务的 `FINAL_SUMMARY_PROPOSED`，每个来源任务唯一；空值、NUL、超过 2048 UTF-8 字节及任意 Redactor 命中均整体拒绝。
+- 最新卡查询固定为 `approved_at DESC, id ASC`；运行时把最新卡作为带 ID、不可信且有界的 system context 注入，并写入幂等 `PROJECT_LEARNING_APPLIED` 事件。
+- 增加批准及最新经验 API；IntentProjector 可将已应用经验 ID 关联到最终交付卡。
+- 增加中文延期、README、DEMO、SECURITY 和过程记录。
+
+## 验证证据
+
+- 聚焦：`pytest tests/learning/test_cards.py tests/storage/test_migration_007.py tests/api/test_learning.py tests/agent/test_runtime.py -q`，12 passed。
+- Ruff：通过；mypy：通过；Web lint、typecheck、Vitest（26 passed）及 Vite build：通过。
+- `mingw32-make demo`：三个机制均 PASS；`secret_scan.py` 与 `pip check`：通过。
+
+## 当前状态
+
+实现完成，待独立规约符合性与代码质量复审。已为同名测试模块建立测试包命名空间，并将全部历史迁移契约连续升级到 v7；未来数据库版本 v8 仍被拒绝。真实 Provider 联网未执行。
+
+## 最新验证
+
+- `mingw32-make test` 的 Python 阶段：810 passed，15 skipped；Ruff、mypy 通过。随后 Web 门禁独立验证：Vitest 28 passed，ESLint、TypeScript、Vite build 通过；Playwright 3 passed，1 skipped（Windows 跳过 POSIX 真实进程组场景）。这些是分段证据，不表述为同一次完整 `make test` 全绿。
+- 本轮聚焦：12 passed；`mingw32-make demo` 三项机制均 PASS；`secret_scan.py`、`pip check`、`git diff --check` 均退出 0。
