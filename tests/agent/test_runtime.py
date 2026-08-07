@@ -106,6 +106,34 @@ async def test_runtime_router_replays_failed_feedback_through_stubbed_provider(t
     assert len(requests) == 2
 
 
+@pytest.mark.asyncio
+async def test_runtime_failure_does_not_build_provider_and_persists_waiting_user(tmp_path: Path) -> None:
+    app = create_app(settings=HarnessSettings(
+        state_root=tmp_path / "state", database_path=tmp_path / "state" / "harness.db",
+        trusted_hosts=("testserver",), trusted_origins=("http://testserver",),
+    ))
+    async with app.router.lifespan_context(app):
+        active = app.state.dependencies
+        active.provider_registry = _FailingRegistry()
+        workspace_id = uuid4()
+        await active.event_store._database.connection.execute("INSERT INTO workspaces (id) VALUES (?)", (str(workspace_id),))  # type: ignore[attr-defined]
+        await active.event_store._database.connection.commit()  # type: ignore[attr-defined]
+        task = await active.tasks.create(Task(id=uuid4(), workspace_id=workspace_id, requirement="fix",
+            state=TaskState.CREATED, step_budget=1, time_budget_seconds=1,
+            created_at=datetime.now(UTC), deadline_at=None))
+        final = await RuntimeOrchestratorRouter(active).record_runtime_failure(task.id, "RUNTIME_FAILURE")
+        events = await active.event_store.list_for_task(task.id)
+
+    assert final.state is TaskState.WAITING_USER
+    assert events[-1].event_type == "USER_INPUT_REQUIRED"
+    assert events[-1].payload == {"reason_code": "RUNTIME_FAILURE"}
+
+
+class _FailingRegistry:
+    async def build_for_task(self, task: object) -> object:
+        raise AssertionError("runtime failure must not build a provider")
+
+
 class _FailingVerificationTools:
     async def execute(self, action: object) -> ToolResult:
         return ToolResult(ok=False, code="VERIFICATION_FAILED", output="1 failed")

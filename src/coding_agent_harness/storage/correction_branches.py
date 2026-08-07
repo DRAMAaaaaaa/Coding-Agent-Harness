@@ -43,6 +43,7 @@ class CorrectionBranchRepository:
         patch_sha256: str,
         patch_bytes: int,
         checkpoint_file_name: str,
+        child_task_id: UUID,
     ) -> tuple[StoredCorrectionBranch, bool]:
         """原子预留唯一记录；返回值的 bool 指示是否拥有后续副作用。"""
         created_at = datetime.now(UTC)
@@ -53,9 +54,9 @@ class CorrectionBranchRepository:
                     """INSERT INTO correction_branches
                     (id, workspace_id, parent_task_id, source_event_sequence, child_task_id,
                      status, base_commit, patch_sha256, patch_bytes, checkpoint_file_name, created_at)
-                    VALUES (?, ?, ?, ?, NULL, 'CREATING', ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, 'CREATING', ?, ?, ?, ?, ?)
                     ON CONFLICT(parent_task_id, source_event_sequence) DO NOTHING""",
-                    (str(branch_id), str(workspace_id), str(parent_task_id), source_event_sequence,
+                    (str(branch_id), str(workspace_id), str(parent_task_id), source_event_sequence, str(child_task_id),
                      base_commit, patch_sha256, patch_bytes, checkpoint_file_name, created_at.isoformat()),
                 )
                 owner = cursor.rowcount == 1

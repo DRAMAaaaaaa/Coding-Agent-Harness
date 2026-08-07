@@ -93,7 +93,12 @@ def write_checkpoint(
             0o600,
         )
         try:
-            os.write(descriptor, patch)
+            offset = 0
+            while offset < len(patch):
+                written = os.write(descriptor, patch[offset:])
+                if written <= 0:
+                    raise OSError("checkpoint short write")
+                offset += written
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
@@ -114,6 +119,6 @@ def _unsafe_status(raw: bytes) -> bool:
         if len(record) < 3 or record[2:3] != b" ":
             return True
         code = record[:2]
-        if b"?" in code or b"R" in code or b"C" in code:
+        if code not in {b" M", b"M ", b" D", b"D "}:
             return True
     return False

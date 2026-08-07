@@ -1086,3 +1086,10 @@
 - **实现边界：** Repository 先原子预留唯一失败节点记录，父 worktree 冻结后才写检查点和创建子任务；失败时标记不确定并仅在没有子 writer 时尝试恢复父租约。禁止从子任务继续纠正；比较仅读取任务状态、最近验证摘要和父/子 diff。API 与 WebUI 仅在失败卡提供“从此纠正”和并排比较，不提供通用时间线或多级回放。
 - **当前验证：** Python 聚焦 `71 passed, 1 skipped`，Ruff 通过，mypy `66` 个源文件通过，Web TypeScript 通过；仍待本 Task 的完整 lint、构建、秘密扫描、差异检查及规约/质量复审后提交。
 - **提交：** 初始实现提交为 `bc46400`（`feat: 提供单级纠正分支`）；提交后保持“实现完成，待审”，未 push 或合并。
+
+### 2026-08-07 — CL3 Task 4 定向审查返工
+
+- **范围与 RED：** 仅处理 I1— I4。新增 RED 证明 Provider 失败时 runtime failure 错误进入 `_for()`；porcelain `A` 与 `UU` 被错误接受；短写只持久化前缀；以及 child UUID 不能在 reservation 前持久化。未实施多级回放或 Task 5。
+- **最小修复：** runtime failure 改用只依赖 TaskRepository/EventStore 的本地编排器；检查点只白名单已跟踪的修改/删除状态，并循环写满全部 bytes；005 的 nullable child ID 取消外键以允许先于 child Task 原子预留，重复调用复用该 ID，READY 更新失败后进入 UNCERTAIN 且保留关联。
+- **延期：** M1（检查点额外边界矩阵）与 M2（分支并发、取消、真实失败矩阵）按成本策略登记为未扩展范围；本轮只补 I 修复必需的最小行为测试。
+- **验证：** 聚焦 Python `33 passed`，Ruff 与 mypy（66 个源文件）通过；待 Web 和最终安全/差异门禁后复审、提交。

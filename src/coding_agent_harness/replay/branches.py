@@ -76,9 +76,10 @@ class CorrectionBranchService:
         )
         import hashlib
         branch_id = uuid4()
+        child_task_id = uuid4()
         branch, owner = await self._branches.reserve(
             branch_id, parent.workspace_id, parent.id, source_event_sequence, base_commit,
-            hashlib.sha256(patch).hexdigest(), len(patch), f"{branch_id}.patch",
+            hashlib.sha256(patch).hexdigest(), len(patch), f"{branch_id}.patch", child_task_id,
         )
         if not owner:
             if branch.status == "CREATING":
@@ -91,7 +92,7 @@ class CorrectionBranchService:
             frozen = True
             await self._worker.run(write_checkpoint, self._state_root, branch.id, parent.id, source_event_sequence, base_commit, patch)
             child = await self._runner.create(
-                workspace.workspace, uuid4(), f"{parent.requirement}\n\n纠正：{sanitized}",
+                workspace.workspace, child_task_id, f"{parent.requirement}\n\n纠正：{sanitized}",
                 provider_profile_id=parent.provider_profile_id,
                 provider_profile_version=parent.provider_profile_version,
                 llm_api_authorized_at=parent.llm_api_authorized_at,

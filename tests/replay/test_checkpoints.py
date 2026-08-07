@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from coding_agent_harness.replay.checkpoints import CheckpointError, create_checkpoint
+from coding_agent_harness.replay.checkpoints import CheckpointError, _unsafe_status, create_checkpoint, write_checkpoint
 
 
 def _git(root: Path, *args: str) -> bytes:
@@ -47,3 +47,26 @@ def test_create_checkpoint_rejects_unsafe_changes(tmp_path: Path, change: str) -
 
     with pytest.raises(CheckpointError):
         create_checkpoint(root, tmp_path / "state", uuid4(), uuid4(), 7)
+
+
+@pytest.mark.parametrize("status", [b"A  new.py\0", b"UU a.txt\0"])
+def test_checkpoint_porcelain_rejects_added_and_conflicted_entries(status: bytes) -> None:
+    assert _unsafe_status(status)
+
+
+def test_write_checkpoint_retries_short_writes_until_complete(monkeypatch, tmp_path: Path) -> None:
+    import coding_agent_harness.replay.checkpoints as checkpoints
+
+    real_write = checkpoints.os.write
+    calls = 0
+    def short_write(fd: int, data: bytes) -> int:
+        nonlocal calls
+        calls += 1
+        return real_write(fd, data[:2])
+
+    monkeypatch.setattr(checkpoints.os, "write", short_write)
+    patch = b"abcdef"
+    checkpoint = write_checkpoint(tmp_path, uuid4(), uuid4(), 7, "a" * 40, patch)
+
+    assert calls == 3
+    assert (tmp_path / "checkpoints" / checkpoint.file_name).read_bytes() == patch

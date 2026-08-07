@@ -20,10 +20,10 @@ async def test_reserve_is_idempotent_and_only_first_caller_is_owner(tmp_path) ->
         repository = CorrectionBranchRepository(database)
         branch_id = uuid4()
         first, first_owner = await repository.reserve(
-            branch_id, workspace_id, task_id, 7, "a" * 40, "b" * 64, 12, f"{branch_id}.patch"
+            branch_id, workspace_id, task_id, 7, "a" * 40, "b" * 64, 12, f"{branch_id}.patch", uuid4()
         )
         second, second_owner = await repository.reserve(
-            uuid4(), workspace_id, task_id, 7, "a" * 40, "b" * 64, 12, f"{branch_id}.patch"
+            uuid4(), workspace_id, task_id, 7, "a" * 40, "b" * 64, 12, f"{branch_id}.patch", uuid4()
         )
         assert first.id == second.id
         assert (first_owner, second_owner) == (True, False)

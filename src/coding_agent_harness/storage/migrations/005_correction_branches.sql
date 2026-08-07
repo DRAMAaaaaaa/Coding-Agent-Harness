@@ -3,7 +3,7 @@ CREATE TABLE correction_branches (
     workspace_id TEXT NOT NULL REFERENCES workspaces(id),
     parent_task_id TEXT NOT NULL REFERENCES tasks(id),
     source_event_sequence INTEGER NOT NULL CHECK (source_event_sequence > 0),
-    child_task_id TEXT REFERENCES tasks(id),
+    child_task_id TEXT,
     status TEXT NOT NULL CHECK (status IN ('CREATING','READY','UNCERTAIN')),
     base_commit TEXT NOT NULL,
     patch_sha256 TEXT NOT NULL,

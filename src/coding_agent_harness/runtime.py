@@ -17,9 +17,25 @@ from coding_agent_harness.tools.models import ToolContext
 from coding_agent_harness.tools.registry import ToolRegistry
 from coding_agent_harness.workspace.git import SafeGit
 from coding_agent_harness.workspace.worktrees import WorktreeManager
+from coding_agent_harness.providers.base import LLMRequest, LLMResponse
+from coding_agent_harness.domain.actions import ToolAction
+from coding_agent_harness.tools.models import ToolResult
 
 
 _ALLOWED_TOOLS = ("read_file", "search", "apply_patch", "run_verification", "git_status", "git_diff")
+
+
+class _UnavailableProvider:
+    async def complete(self, request: LLMRequest) -> LLMResponse:
+        raise RuntimeUnavailableError("运行时失败路径不得调用 Provider")
+
+
+class _UnavailableTools:
+    async def execute(self, action: ToolAction) -> ToolResult:
+        raise RuntimeUnavailableError("运行时失败路径不得执行工具")
+
+    def normalized_governance_scope(self, action: ToolAction) -> str | None:
+        return None
 
 
 class RuntimeOrchestratorRouter(OrchestratorPort):
@@ -38,7 +54,12 @@ class RuntimeOrchestratorRouter(OrchestratorPort):
         return await (await self._for(task_id)).propose_plan(task_id)
 
     async def record_runtime_failure(self, task_id: UUID, reason_code: str) -> Task:
-        return await (await self._for(task_id)).record_runtime_failure(task_id, reason_code)
+        # 此路径必须在 Provider 不可用时仍可落盘，不能调用 _for()。
+        local = AgentOrchestrator(
+            provider=_UnavailableProvider(), parser=ActionParser(()), tools=_UnavailableTools(),
+            event_store=self._dependencies.event_store, tasks=self._dependencies.tasks,
+        )
+        return await local.record_runtime_failure(task_id, reason_code)
 
     async def approve_plan(self, task_id: UUID) -> Task:
         return await (await self._for(task_id)).approve_plan(task_id)
