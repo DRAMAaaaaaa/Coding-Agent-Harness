@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
+from typing import cast
 from uuid import UUID, uuid4
 
 from coding_agent_harness.agent.orchestrator import AgentOrchestrator
@@ -16,6 +18,8 @@ from coding_agent_harness.agent.parser import ActionParser
 from coding_agent_harness.domain.actions import TaskState, ToolAction
 from coding_agent_harness.domain.models import Task
 from coding_agent_harness.providers.mock import ScriptedMockProvider
+from coding_agent_harness.providers.registry import ProviderRegistry
+from coding_agent_harness.learning.cards import ProjectLearningService
 from coding_agent_harness.storage.database import Database
 from coding_agent_harness.storage.event_store import EventStore
 from coding_agent_harness.storage.repositories import TaskRepository
@@ -40,6 +44,35 @@ from coding_agent_harness.workspace.processes import (
     SubprocessGitRunner,
 )
 from coding_agent_harness.workspace.worktrees import WorktreeManager
+
+
+class DemoProviderRegistry:
+    """按任务返回隔离的离线脚本，并保留父任务的问答上下文。"""
+
+    def __init__(self, initial: ScriptedMockProvider) -> None:
+        self._initial = initial
+        self._providers: dict[UUID, ScriptedMockProvider] = {}
+        self._initial_task: UUID | None = None
+        self._learning_tasks: set[UUID] = set()
+
+    def mark_learning(self, task_id: UUID) -> None:
+        self._learning_tasks.add(task_id)
+
+    async def build_for_task(self, task: Task) -> ScriptedMockProvider:
+        provider = self._providers.get(task.id)
+        if provider is not None:
+            return provider
+        if task.id in self._learning_tasks:
+            provider = ScriptedMockProvider(learning_demo_script())
+        elif "纠正：" in task.requirement:
+            provider = ScriptedMockProvider(correction_demo_script())
+        elif self._initial_task is None:
+            self._initial_task = task.id
+            provider = self._initial
+        else:
+            provider = ScriptedMockProvider(demo_script())
+        self._providers[task.id] = provider
+        return provider
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,13 +345,16 @@ class DemoOrchestratorRouter:
         workspaces: WorkspaceRepository,
         event_store: EventStore,
         state_root: Path,
+        project_learning: ProjectLearningService | None = None,
         on_completed: Callable[[], None] | None = None,
     ) -> None:
         self._provider = provider
+        self._providers = DemoProviderRegistry(provider)
         self._tasks = tasks
         self._workspaces = workspaces
         self._event_store = event_store
         self._state_root = state_root
+        self._project_learning = project_learning
         self._on_completed = on_completed
         self._orchestrators: dict[UUID, AgentOrchestrator] = {}
         self._workspaces_by_task: dict[UUID, Workspace] = {}
@@ -378,12 +414,19 @@ class DemoOrchestratorRouter:
                 ),
             )
         )
+        learning = None
+        if self._project_learning is not None:
+            learning = await self._project_learning.latest_for_workspace(task.workspace_id)
+            if learning is not None:
+                self._providers.mark_learning(task.id)
         orchestrator = AgentOrchestrator(
-            provider=self._provider,
+            provider=await self._providers.build_for_task(task),
             parser=ActionParser(("apply_patch", "run_verification", "git_diff")),
             tools=tools,
             event_store=self._event_store,
             tasks=self._tasks,
+            pause_on_verification_failure=True,
+            project_learning=learning,
         )
         self._orchestrators[task_id] = orchestrator
         self._workspaces_by_task[task_id] = workspace
@@ -403,9 +446,22 @@ class DemoOrchestratorRouter:
 
     async def approve_final(self, task_id: UUID) -> Task:
         completed = await (await self._for(task_id)).approve_final(task_id)
+        workspace = self._workspaces_by_task.pop(task_id, None)
+        if workspace is not None:
+            await asyncio.to_thread(
+                WorktreeManager(workspace, self._state_root).freeze,
+                task_id,
+            )
         if self._on_completed is not None:
             self._on_completed()
         return completed
+
+    async def provider_for_task(self, task: Task) -> ScriptedMockProvider:
+        return await self._providers.build_for_task(task)
+
+    @property
+    def provider_registry(self) -> ProviderRegistry:
+        return cast(ProviderRegistry, self._providers)
 
     def cleanup(self, *, timeout_seconds: float = 10.0) -> None:
         for task_id, workspace in tuple(self._workspaces_by_task.items()):
@@ -431,8 +487,21 @@ def demo_script() -> list[str]:
     initial_digest = digest_bytes(b"VALUE = 1\n")
     return [
         "先验证失败，再修改并重新验证，最后展示差异。",
+        '{"kind":"tool","tool":"apply_patch","arguments":{"path":"demo.py",'
+        f'"expected_sha256":"{initial_digest}","content":"VALUE = 3\\n"}},'
+        '"idempotency_key":"e2e-wrong-fix"}',
         '{"kind":"tool","tool":"run_verification","arguments":{"name":"test"},'
         '"idempotency_key":"e2e-verify-before"}',
+        "VALUE 仍为 1，因此验证失败。",
+    ]
+
+
+def correction_demo_script() -> list[str]:
+    """纠正分支只消费自己的脚本，不会重放父任务的失败问答。"""
+
+    initial_digest = digest_bytes(b"VALUE = 3\n")
+    return [
+        "纠正分支：将 VALUE 改为 2 后重新验证。",
         '{"kind":"tool","tool":"apply_patch","arguments":{"path":"demo.py",'
         f'"expected_sha256":"{initial_digest}","content":"VALUE = 2\\n"}},'
         '"idempotency_key":"e2e-fix"}',
@@ -440,6 +509,16 @@ def demo_script() -> list[str]:
         '"idempotency_key":"e2e-verify-after"}',
         '{"kind":"tool","tool":"git_diff","arguments":{},"idempotency_key":"e2e-diff"}',
         '{"kind":"complete","summary":"VALUE 已修改为 2，离线测试通过，差异已生成。"}',
+    ]
+
+
+def learning_demo_script() -> list[str]:
+    """已应用经验的下一任务以可观察的首个验证动作开始。"""
+
+    return [
+        "已应用项目经验，先运行验证。",
+        '{"kind":"tool","tool":"run_verification","arguments":{"name":"test"},'
+        '"idempotency_key":"learning-first-verification"}',
     ]
 
 

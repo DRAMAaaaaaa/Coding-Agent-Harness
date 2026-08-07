@@ -34,6 +34,9 @@ from coding_agent_harness.storage.repositories import TaskRepository  # noqa: E4
 from coding_agent_harness.storage.workspaces import WorkspaceRepository  # noqa: E402
 from coding_agent_harness.storage.project_learning import ProjectLearningRepository  # noqa: E402
 from coding_agent_harness.learning.cards import ProjectLearningService  # noqa: E402
+from coding_agent_harness.learning.questions import QuestionService  # noqa: E402
+from coding_agent_harness.replay.branches import CorrectionBranchService  # noqa: E402
+from coding_agent_harness.storage.correction_branches import CorrectionBranchRepository  # noqa: E402
 from coding_agent_harness.workspace.detector import ProjectDetector  # noqa: E402
 from coding_agent_harness.workspace.git import SafeGit  # noqa: E402
 from coding_agent_harness.workspace.scanner import WorkspaceScanner  # noqa: E402
@@ -101,6 +104,8 @@ def _create_fixture(
         raise ValueError("演示项目源必须是现有目录")
     fixture = runtime_root / "fixture"
     shutil.copytree(source, fixture, symlinks=True)
+    # 演示验证会生成 Python 缓存；忽略它以保持纠正检查点只包含受控文本改动。
+    (fixture / ".gitignore").write_text("__pycache__/\n", encoding="utf-8", newline="\n")
     _run_git(fixture, "init", "-b", "main")
     _run_git(fixture, "config", "user.name", "Harness Demo")
     _run_git(fixture, "config", "user.email", "harness@example.invalid")
@@ -273,13 +278,16 @@ async def _serve(
         tasks = TaskRepository(database)
         event_store = EventStore(database)
         worker = BlockingWorker()
+        project_learning = ProjectLearningService(
+            ProjectLearningRepository(database), tasks, event_store,
+        )
         router = DemoOrchestratorRouter(
             provider=ScriptedMockProvider(demo_script()),
             tasks=tasks,
             workspaces=workspaces,
             event_store=event_store,
             state_root=state_root,
-            on_completed=completed.set,
+            project_learning=project_learning,
         )
         settings = HarnessSettings(
             bind_host=bind_host,
@@ -292,6 +300,9 @@ async def _serve(
                 f"http://localhost:{port}",
             ),
         )
+        task_runner = LocalTaskRunner(
+            tasks, state_root, step_budget=8, time_budget_seconds=120, worker=worker,
+        )
         dependencies = ApiDependencies(
             workspaces=workspaces,
             tasks=tasks,
@@ -301,18 +312,19 @@ async def _serve(
             state_root=state_root,
             private_roots=settings.private_state_roots(),
             orchestrator_factory=lambda: router,
-            task_runner=LocalTaskRunner(
-                tasks,
-                state_root,
-                step_budget=8,
-                time_budget_seconds=120,
-                worker=worker,
-            ),
+            task_runner=task_runner,
             branch_resolver=SafeBranchResolver(SafeGit(state_root)),
             worker=worker,
-            project_learning=ProjectLearningService(
-                ProjectLearningRepository(database), tasks, event_store,
+            provider_registry=router.provider_registry,
+            question_service=QuestionService(
+                tasks, event_store, provider_for_task=router.provider_for_task,
             ),
+            correction_branches=CorrectionBranchService(
+                branches=CorrectionBranchRepository(database), tasks=tasks,
+                events=event_store, workspaces=workspaces, runner=task_runner,
+                providers=router.provider_registry, state_root=state_root, worker=worker,
+            ),
+            project_learning=project_learning,
         )
         server = uvicorn.Server(
             uvicorn.Config(

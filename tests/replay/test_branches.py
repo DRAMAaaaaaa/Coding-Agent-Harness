@@ -85,6 +85,37 @@ class _Runner:
 
 
 @pytest.mark.asyncio
+async def test_branch_captures_checkpoint_with_verified_parent_worktree(monkeypatch, tmp_path: Path) -> None:
+    parent_id, workspace_id, branch_id = uuid4(), uuid4(), uuid4()
+    parent = Task(id=parent_id, workspace_id=workspace_id, requirement="fix", state=TaskState.WAITING_USER,
+                  step_budget=1, time_budget_seconds=1, created_at=datetime.now(UTC), deadline_at=None)
+    profile = type("Profile", (), {"git_root": tmp_path})()
+    workspace = type("Workspace", (), {"id": workspace_id, "workspace": profile})()
+    stored = StoredCorrectionBranch(branch_id, workspace_id, parent_id, 7, None, "CREATING", "a" * 40,
+                                    "b" * 64, 12, f"{branch_id}.patch", datetime.now(UTC))
+    trusted: list[tuple[Path, Path]] = []
+
+    class _SafeGit:
+        def __init__(self, _state_root: Path) -> None: pass
+        def trust_linked_worktree(self, root: Path, git_root: Path) -> None:
+            trusted.append((root, git_root))
+
+    captured: list[object] = []
+    monkeypatch.setattr(branch_module, "SafeGit", _SafeGit)
+    monkeypatch.setattr(branch_module, "WorktreeManager", _NoopManager)
+    monkeypatch.setattr(branch_module, "capture_patch", lambda *args: (captured.extend(args), ("a" * 40, b"patch"))[1])
+    monkeypatch.setattr(branch_module, "write_checkpoint", lambda *args: None)
+    service = CorrectionBranchService(branches=_Branches(stored), tasks=_Tasks(parent), events=_Events(),
+        workspaces=_Workspaces(workspace), runner=_SuccessRunner(), providers=_Providers(), state_root=tmp_path / "state", worker=_Worker())
+
+    await service.create(parent_id, 7, "retry")
+
+    expected_root = tmp_path / "state" / "worktrees" / str(workspace_id) / str(parent_id)
+    assert trusted == [(expected_root, tmp_path)]
+    assert captured[3].__class__ is _SafeGit
+
+
+@pytest.mark.asyncio
 async def test_branch_failure_restores_parent_writer_after_reservation(monkeypatch, tmp_path: Path) -> None:
     parent_id, workspace_id, branch_id = uuid4(), uuid4(), uuid4()
     parent = Task(id=parent_id, workspace_id=workspace_id, requirement="fix", state=TaskState.WAITING_USER,
@@ -104,6 +135,7 @@ async def test_branch_failure_restores_parent_writer_after_reservation(monkeypat
             calls.append("restore")
 
     monkeypatch.setattr(branch_module, "WorktreeManager", _Manager)
+    monkeypatch.setattr(branch_module, "SafeGit", lambda _root: type("Git", (), {"trust_linked_worktree": lambda *_: None})())
     monkeypatch.setattr(branch_module, "capture_patch", lambda *args: ("a" * 40, b"patch"))
     monkeypatch.setattr(branch_module, "write_checkpoint", lambda *args: calls.append("checkpoint"))
     service = CorrectionBranchService(branches=repository, tasks=_Tasks(parent), events=_Events(),
@@ -128,6 +160,7 @@ async def test_branch_keeps_reserved_child_id_when_ready_update_fails(monkeypatc
     runner = _SuccessRunner()
     repository.fail_ready = True
     monkeypatch.setattr(branch_module, "WorktreeManager", _NoopManager)
+    monkeypatch.setattr(branch_module, "SafeGit", lambda _root: type("Git", (), {"trust_linked_worktree": lambda *_: None})())
     monkeypatch.setattr(branch_module, "capture_patch", lambda *args: ("a" * 40, b"patch"))
     monkeypatch.setattr(branch_module, "write_checkpoint", lambda *args: None)
     service = CorrectionBranchService(branches=repository, tasks=_Tasks(parent), events=_Events(),
@@ -138,6 +171,50 @@ async def test_branch_keeps_reserved_child_id_when_ready_update_fails(monkeypatc
 
     assert repository.branch.status == "UNCERTAIN"
     assert repository.branch.child_task_id == runner.created_id
+
+
+@pytest.mark.asyncio
+async def test_comparison_verifies_child_linked_worktree_before_reading_diff(monkeypatch, tmp_path: Path) -> None:
+    parent_id, child_id, workspace_id, branch_id = uuid4(), uuid4(), uuid4(), uuid4()
+    parent = Task(id=parent_id, workspace_id=workspace_id, requirement="parent", state=TaskState.WAITING_USER,
+                  step_budget=1, time_budget_seconds=1, created_at=datetime.now(UTC), deadline_at=None)
+    child = Task(id=child_id, workspace_id=workspace_id, requirement="child", state=TaskState.CREATED,
+                 step_budget=1, time_budget_seconds=1, created_at=datetime.now(UTC), deadline_at=None)
+    branch = StoredCorrectionBranch(branch_id, workspace_id, parent_id, 7, child_id, "READY", "a" * 40,
+                                    "b" * 64, 12, f"{branch_id}.patch", datetime.now(UTC))
+    (tmp_path / "state" / "checkpoints").mkdir(parents=True)
+    (tmp_path / "state" / "checkpoints" / branch.checkpoint_file_name).write_text("patch", encoding="utf-8")
+    trusted: list[tuple[Path, Path]] = []
+    observed: list[tuple[Path, list[str]]] = []
+
+    class _SafeGit:
+        def __init__(self, _state_root: Path) -> None: pass
+        def trust_linked_worktree(self, root: Path, git_root: Path) -> None:
+            trusted.append((root, git_root))
+        def run(self, root: Path, arguments: list[str]) -> object:
+            observed.append((root, arguments))
+            return type("Result", (), {"returncode": 0, "stdout": b"diff"})()
+
+    class _BranchesForComparison:
+        async def get(self, requested: UUID) -> StoredCorrectionBranch | None:
+            return branch if requested == branch_id else None
+
+    class _TasksForComparison:
+        async def get(self, requested: UUID) -> Task | None:
+            return {parent_id: parent, child_id: child}.get(requested)
+
+    profile = type("Profile", (), {"git_root": tmp_path / "repository"})()
+    workspace = type("Workspace", (), {"workspace": profile})()
+    monkeypatch.setattr(branch_module, "SafeGit", _SafeGit)
+    service = CorrectionBranchService(branches=_BranchesForComparison(), tasks=_TasksForComparison(), events=_Events(),
+        workspaces=_Workspaces(workspace), runner=_SuccessRunner(), providers=_Providers(), state_root=tmp_path / "state", worker=_Worker())
+
+    comparison = await service.compare(branch_id)
+
+    expected_root = tmp_path / "state" / "worktrees" / str(workspace_id) / str(child_id)
+    assert comparison.child_diff == "diff"
+    assert trusted == [(expected_root, tmp_path / "repository")]
+    assert observed == [(expected_root, ["diff", "--no-ext-diff", "--no-color", "HEAD", "--"])]
 
 
 class _NoopManager:

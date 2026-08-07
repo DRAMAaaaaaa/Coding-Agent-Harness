@@ -1115,3 +1115,9 @@
 - 补齐 WebUI 最终交付卡的可编辑经验批准、下一任务经验 ID/文本展示及浏览器 API；离线 Playwright 主路径通过，不使用真实 Key 或网络。
 - 全量收集曾暴露同名 `test_registry` 模块缓存；以 tests/providers/tools 包命名空间修复。迁移契约同步至 v7、future v8 拒绝；lifecycle 在构造失败时仅关闭已初始化资源且不遮蔽原异常。
 - 当前状态：实现完成，待独立复审。验证事实：Python 810 passed/15 skipped 与 Ruff/mypy；Web Vitest 28 passed、lint/typecheck/build；Playwright 3 passed/1 skipped；本轮聚焦 12 passed、demo 三项 PASS、secret scan/pip check/diff check 均通过。完整一键门禁尚需在同一次最终重跑中记录，未宣称已合并或已 push。
+
+# 2026-08-07 Task 5 C1 终审 writer 释放调试
+
+- 使用 `systematic-debugging`、`test-driven-development` 与 `verification-before-completion`。真实 Playwright 首先稳定复现：子任务终审和经验批准显示完成，但创建下一任务失败。
+- 新增 Python/API 行为回归 `tests/demo/test_router.py`。RED 显示 `DemoOrchestratorRouter.approve_final()` 在完成事件之后调用未导入的 `asyncio`，抛出 `NameError`；这保留活动 writer，不能安全继续。
+- 修复不删除 marker 或 worktree：终审后以 `WorktreeManager.freeze()` 验证身份/注册并释放唯一 writer 租约，保留 child 分支、diff 与父冻结现场；Runtime 采用相同规则。聚焦 Python `5 passed`，Playwright 旗舰路径 `1 passed`。未联网、未安装依赖、未使用真实凭据、未 push；等待规约和质量复审及最终完整门禁。

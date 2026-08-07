@@ -43,12 +43,13 @@ def capture_patch(
     worktree: str | Path,
     state_root: str | Path,
     source_event_sequence: int,
+    git: SafeGit | None = None,
 ) -> tuple[str, bytes]:
     """只读捕获可恢复 patch；在唯一分支预留前不写入状态目录。"""
     if source_event_sequence <= 0:
         raise CheckpointError("检查点事件序号无效")
     root = Path(worktree).resolve(strict=True)
-    git = SafeGit(state_root)
+    git = git or SafeGit(state_root)
     status = git.run(root, ["status", "--porcelain=v1", "-z"])
     if status.returncode != 0 or _unsafe_status(status.stdout):
         raise CheckpointError("检查点只允许已跟踪且未重命名的改动")

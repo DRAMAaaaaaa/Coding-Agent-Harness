@@ -22,3 +22,9 @@
 
 - `mingw32-make test` 的 Python 阶段：810 passed，15 skipped；Ruff、mypy 通过。随后 Web 门禁独立验证：Vitest 28 passed，ESLint、TypeScript、Vite build 通过；Playwright 3 passed，1 skipped（Windows 跳过 POSIX 真实进程组场景）。这些是分段证据，不表述为同一次完整 `make test` 全绿。
 - 本轮聚焦：12 passed；`mingw32-make demo` 三项机制均 PASS；`secret_scan.py`、`pip check`、`git diff --check` 均退出 0。
+
+## 终审后 writer 释放修复（待复审）
+
+- RED：真实 Playwright 旗舰路径在“批准经验→下一任务”后失败；Python/API 回归进一步精确复现，终审先写入 `FINAL_REVIEW_APPROVED`，Demo 随后因缺少 `asyncio` 导入而在释放阶段抛出 `NameError`。任务虽已完成，`.active` writer 租约未安全处理，下一任务不能创建。
+- GREEN：终审后不再重置或删除子 worktree；使用 `WorktreeManager.freeze(task_id)` 先验证 linked-worktree 身份与注册，再写入私有 frozen marker 并原子释放 `.active`。子分支和 diff 现场保留，父冻结现场不变；生产 Runtime 同样遵循该时机。
+- 证据：新增 `tests/demo/test_router.py` 验证终审后 child 的 frozen marker、注册 worktree、未提交 diff 均保留，且下一任务可创建；聚焦 Python 为 `5 passed`，真实 Playwright 旗舰路径为 `1 passed`，并可观察到 `PROJECT_LEARNING_APPLIED`、经验 ID/文本与先验证的 Mock 动作。

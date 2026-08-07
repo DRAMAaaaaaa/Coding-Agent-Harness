@@ -78,7 +78,15 @@ class RuntimeOrchestratorRouter(OrchestratorPort):
         return await (await self._for(task_id)).run_until_wait(task_id)
 
     async def approve_final(self, task_id: UUID) -> Task:
-        return await (await self._for(task_id)).approve_final(task_id)
+        completed = await (await self._for(task_id)).approve_final(task_id)
+        workspace = await self._dependencies.workspaces.get(completed.workspace_id)
+        if workspace is None:
+            raise KeyError("Workspace 不存在")
+        await self._dependencies.worker.run(
+            WorktreeManager(workspace.workspace, self._dependencies.state_root).freeze,
+            task_id,
+        )
+        return completed
 
     async def _for(self, task_id: UUID) -> AgentOrchestrator:
         dependencies = self._dependencies

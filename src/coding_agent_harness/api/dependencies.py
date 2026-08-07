@@ -192,10 +192,11 @@ class LocalTaskRunner:
         prepared_requirement = self._tasks.prepare_requirement(requirement)
 
         def create_worktree() -> WorktreeManager:
-            manager = WorktreeManager(workspace, self._state_root)
+            git = SafeGit(self._state_root)
+            manager = WorktreeManager(workspace, self._state_root, safe_git=git)
             created = manager.create(task_id, base_commit)
             if initial_patch is not None:
-                result = SafeGit(self._state_root).run(
+                result = git.run(
                     created.path,
                     ["apply", "--whitespace=nowarn", "-"],
                     stdin=initial_patch,

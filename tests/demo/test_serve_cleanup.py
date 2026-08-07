@@ -33,11 +33,20 @@ class _Router:
     def __init__(self, *, fail: bool = False) -> None:
         self.cleaned = False
         self._fail = fail
+        self.provider_registry = _Providers()
+
+    async def provider_for_task(self, task: object) -> object:
+        return await self.provider_registry.build_for_task(task)
 
     def cleanup(self) -> None:
         self.cleaned = True
         if self._fail:
             raise RuntimeError("router cleanup failed")
+
+
+class _Providers:
+    async def build_for_task(self, task: object) -> object:
+        raise AssertionError("serve cleanup stub must not build a provider")
 
 
 class _DemoServer:

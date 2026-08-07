@@ -244,8 +244,8 @@ async def test_task_storage_compensation_owner_change_is_uncertain_and_preserves
     created_task_ids: list[UUID] = []
 
     class OwnershipChangingManager:
-        def __init__(self, workspace: object, state_root: object) -> None:
-            self._delegate = real_manager(workspace, state_root)  # type: ignore[arg-type]
+        def __init__(self, workspace: object, state_root: object, *, safe_git: object) -> None:
+            self._delegate = real_manager(workspace, state_root, safe_git=safe_git)  # type: ignore[arg-type]
             self._state_root = Path(state_root)  # type: ignore[arg-type]
 
         def create(self, task_id: UUID, base_commit: str) -> None:
@@ -495,7 +495,7 @@ async def test_cancelled_worktree_creation_settles_and_persists_owner(
     observed_release: list[bool] = []
 
     class BlockingWorktreeManager:
-        def __init__(self, workspace: object, state_root: object) -> None:
+        def __init__(self, workspace: object, state_root: object, *, safe_git: object) -> None:
             pass
 
         def create(self, task_id: UUID, base_commit: str) -> None:
@@ -528,6 +528,42 @@ async def test_cancelled_worktree_creation_settles_and_persists_owner(
     assert completed.is_set()
     assert observed_release == [True]
     assert (await active.tasks.get(task_id)) is not None
+
+
+async def test_initial_patch_reuses_the_safe_git_that_created_and_trusted_worktree(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, workspace_id = await _trusted_workspace(client, tmp_path / "initial-patch-safe-git")
+    active = client._transport.app.state.dependencies  # type: ignore[attr-defined]
+    stored = await active.workspaces.get(UUID(workspace_id))
+    assert stored is not None
+    observed: dict[str, object] = {}
+
+    class SafeGitForPatch:
+        def __init__(self, state_root: Path) -> None:
+            observed["git"] = self
+
+        def run(self, root: Path, arguments: list[str], *, stdin: bytes | None = None) -> object:
+            observed["run"] = (self, root, arguments, stdin)
+            return type("Result", (), {"returncode": 0})()
+
+    class WorktreeManagerForPatch:
+        def __init__(self, workspace: object, state_root: Path, *, safe_git: object) -> None:
+            observed["manager_git"] = safe_git
+
+        def create(self, task_id: UUID, base_commit: str) -> object:
+            return type("Created", (), {"path": tmp_path / "created-worktree"})()
+
+    monkeypatch.setattr("coding_agent_harness.api.dependencies.SafeGit", SafeGitForPatch)
+    monkeypatch.setattr("coding_agent_harness.api.dependencies.WorktreeManager", WorktreeManagerForPatch)
+    runner = LocalTaskRunner(active.tasks, active.state_root, step_budget=8, time_budget_seconds=300, worker=active.worker)
+
+    await runner.create(stored.workspace, UUID("12345678-1234-5678-1234-567812345678"), "恢复检查点", initial_patch=b"patch")
+
+    assert observed["manager_git"] is observed["git"]
+    assert observed["run"] == (observed["git"], tmp_path / "created-worktree", ["apply", "--whitespace=nowarn", "-"], b"patch")
 
 
 async def test_cancelled_plan_request_recovers_same_task_after_restart(

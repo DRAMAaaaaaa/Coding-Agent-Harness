@@ -71,8 +71,10 @@ class CorrectionBranchService:
         # 授权必须早于预留后的任何本地副作用。
         await self._providers.build_for_task(parent)
         parent_root = self._state_root / "worktrees" / str(parent.workspace_id) / str(parent.id)
+        checkpoint_git = SafeGit(self._state_root)
+        checkpoint_git.trust_linked_worktree(parent_root, workspace.workspace.git_root)
         base_commit, patch = await self._worker.run(
-            capture_patch, parent_root, self._state_root, source_event_sequence
+            capture_patch, parent_root, self._state_root, source_event_sequence, checkpoint_git
         )
         import hashlib
         branch_id = uuid4()
@@ -132,9 +134,14 @@ class CorrectionBranchService:
     async def _child_diff(self, child: Task | None) -> str | None:
         if child is None:
             return None
+        workspace = await self._workspaces.get(child.workspace_id)
+        if workspace is None:
+            return None
         root = self._state_root / "worktrees" / str(child.workspace_id) / str(child.id)
+        git = SafeGit(self._state_root)
+        git.trust_linked_worktree(root, workspace.workspace.git_root)
         result = await self._worker.run(
-            SafeGit(self._state_root).run, root, ["diff", "--no-ext-diff", "--no-color", "HEAD", "--"]
+            git.run, root, ["diff", "--no-ext-diff", "--no-color", "HEAD", "--"]
         )
         if result.returncode != 0:
             return None
