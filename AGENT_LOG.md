@@ -1100,3 +1100,4 @@
 - **原因与 TDD：** 审查确认 `child_task_id` 需要先于 child Task 持久化，但已发布的 005 定义该列外键，不能静默重写历史 migration。先写 v5 手工旧 schema 升级 RED：旧 branch 行必须保留，升级到 v6 后才允许不存在的 child UUID；同时 fresh v4 必须连续执行 005、006。
 - **实现范围：** 005 恢复 `child_task_id REFERENCES tasks(id)` 原契约；新增 006 以受事务保护的 table-rebuild 复制全部行，再重建父 workspace/task 外键、状态/字节/序号约束和 `(parent_task_id, source_event_sequence)` 唯一约束，仅移除 child 外键。Task 5 计划 migration/test 编号顺延为 007，未实现 Task 5。
 - **验证：** storage/replay 完整聚焦 `67 passed`；Ruff、mypy（66 个源文件）、秘密扫描与 `git diff --check` 均通过，待提交。
+- **提交：** `e7fccd9`（`fix: 增加纠正分支兼容升级迁移`）；未联网、安装依赖、使用真实凭据、push 或修改 Task 5 实现。
