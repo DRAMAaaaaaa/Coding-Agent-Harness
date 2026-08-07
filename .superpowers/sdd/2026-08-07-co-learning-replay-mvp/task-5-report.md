@@ -16,7 +16,7 @@
 
 ## 当前状态
 
-实现完成，待独立规约符合性与代码质量复审。已为同名测试模块建立测试包命名空间，并将全部历史迁移契约连续升级到 v7；未来数据库版本 v8 仍被拒绝。真实 Provider 联网未执行。
+Task 已关闭。最终独立规约符合性与代码质量复审为 Spec Yes、Approved，Critical / Important / Minor=`0/0/0`，Ready to merge Yes。已为同名测试模块建立测试包命名空间，并将全部历史迁移契约连续升级到 v7；未来数据库版本 v8 仍被拒绝。真实 Provider 联网未执行。
 
 ## 最新验证
 
@@ -42,3 +42,10 @@
 - `FINAL_REVIEW_APPROVED` 已落入事件流而任务状态写入失败时，下一次 `approve_final` 会从事件恢复并在单次调用内返回 `COMPLETED`。
 - Demo 仅在成功 freeze 和完成持久化后才移除活动 workspace 映射；默认服务 cleanup 不再对 frozen worktree 调用 release。
 - 新鲜证据：`pytest tests/workspace/test_worktrees.py tests/agent/test_orchestrator.py tests/demo/test_router.py tests/demo/test_serve_cleanup.py tests/agent/test_runtime.py -q` 为 `85 passed, 1 skipped`；相关 Ruff、mypy 均通过。
+
+## 最终关闭证据
+
+- 工作树 marker 生命周期在单进程 MVP 内由跨实例共享 `RLock` 串行化；双实例双线程回归证明幂等冻结恢复不会误删新 child writer。Demo cleanup 精确跳过冻结父任务，不释放或删除回放现场。
+- 最终受审范围 `e6ab842..e71d6b0`；独立复审为 Spec Yes、Approved，Critical / Important / Minor=`0/0/0`，Ready to merge Yes。
+- 主控同一次 `mingw32-make test` 退出 0：Python `825 passed, 15 skipped`，Vitest `28 passed`，Playwright `3 passed, 1 skipped`；Ruff、mypy（68 个源文件）、ESLint、TypeScript 与 Vite build 全部通过。
+- `mingw32-make demo` 的治理护栏、反馈改变动作、确定性停止三项 PASS；秘密扫描无命中，`pip check`、`git diff --check` 和工作树状态检查通过。

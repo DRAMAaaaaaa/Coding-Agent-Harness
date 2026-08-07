@@ -1796,7 +1796,7 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 | CL-1 真实 Provider | Task 1—2 已关闭 | 会话 Key、DeepSeek/Qwen、现有 Agent 主路径 | `docs/superpowers/plans/2026-08-07-co-learning-replay-mvp.md` Task 1—2 |
 | CL-2 意图卡 | Task 3 已关闭 | 四类卡片与失败节点只读提问 | 同上 Task 3 |
 | CL-3 纠正分支 | Task 4 已关闭 | 单个失败节点、唯一分支、简化比较 | 同上 Task 4 |
-| CL-4 项目经验 | 正在进入 Task 5 | 单条批准经验、下一任务引用、旗舰 E2E | 同上 Task 5 |
+| CL-4 项目经验 | Task 5 已关闭 | 单条批准经验、下一任务引用、旗舰 E2E | 同上 Task 5 |
 
 ### 精简 CL Task 状态
 
@@ -1806,7 +1806,7 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 | 2 Provider 纵向接线 | 已完成（`abac70b..691e272`；最终复审 Approved，C/I/M=`0/0/0`） | session API、真实 runtime、最小 WebUI；维护 Minor 登记为 `DW-MVP-007` |
 | 3 意图卡与提问 | 已完成（`e979612..4b9b952`；最终复审 Approved，C/I/M=`0/0/0`） | 四类投影、失败节点零工具提问 |
 | 4 单级纠正分支 | 已完成（`bc46400..646eed0`；最终复审 Approved，C/I=`0/0`） | 父写租约冻结、唯一子分支、简化比较 |
-| 5 单条经验与最终验收 | 实现完成，待独立复审；C1 已修复终审后 writer 冻结与下一任务创建 | 用户批准、下一任务引用、唯一旗舰 E2E |
+| 5 单条经验与最终验收 | 已完成（`e6ab842..e71d6b0`；最终复审 Spec Yes、Approved，C/I/M=`0/0/0`，Ready to merge Yes） | 用户批准、下一任务引用、唯一旗舰 E2E |
 
 旧计划 `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md` 已废止。Keyring/加密 Vault 代码保留但不再扩展；Provider 管理、真实 smoke、通用/加密检查点、多级分支、复杂学习卡和最终 UI 设计必须在 Task 5 登记延期。若用户未提供真实凭据，只能记录真实联网“未执行”。
 

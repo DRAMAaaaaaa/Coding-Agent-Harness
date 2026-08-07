@@ -393,6 +393,8 @@ git commit -m "feat: 支持单级纠正分支"
 
 ### Task 5: 单条项目经验与最终旗舰验收
 
+**当前状态：** 已关闭。实现与返工提交为 `b0a7a00`、`81b3d3d`、`e689fc1`、`9f9b25f`、`1f61d5d`、`3be3d5c`、`2c765a8`、`e71d6b0`；最终合并规约/质量复审为 Spec Yes、Approved，Critical / Important / Minor 均为 0，Ready to merge Yes。
+
 **Files:**
 - Create: `src/coding_agent_harness/storage/migrations/007_project_learning.sql`
 - Create: `src/coding_agent_harness/learning/cards.py`
@@ -435,7 +437,7 @@ class ProjectLearningService:
     async def latest_for_workspace(self, workspace_id: UUID) -> ProjectLearningCard | None: ...
 ```
 
-- [ ] **Step 1: 写批准门、敏感拒绝和实际影响 RED**
+- [x] **Step 1: 写批准门、敏感拒绝和实际影响 RED**
 
 ```python
 async def test_only_approved_latest_card_changes_next_action(fixture) -> None:
@@ -448,13 +450,13 @@ async def test_only_approved_latest_card_changes_next_action(fixture) -> None:
 
 另测：非 `COMPLETED` task 拒绝；非 final-delivery event 拒绝；Redactor 命中、NUL、空值、>2048 bytes 整条拒绝；排序为 `approved_at DESC, id ASC`。
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/learning/test_cards.py tests/storage/test_migration_007.py tests/agent/test_runtime.py tests/api/test_learning.py -q`
 
 Expected: FAIL，migration 007、repository 和 service 不存在。
 
-- [ ] **Step 3: 实现 migration、批准与下一任务注入**
+- [x] **Step 3: 实现 migration、批准与下一任务注入**
 
 ```sql
 CREATE TABLE project_learning_cards (
@@ -472,7 +474,7 @@ CREATE INDEX project_learning_latest_idx
 
 批准前复验 Task 为 `COMPLETED`、来源事件为该 Task 的 `FINAL_SUMMARY_PROPOSED`。敏感过滤只要 Redactor 发生替换就拒绝整条。Runtime 构造 task orchestrator 时加载最近一条，把 `{card_id,text}` 作为独立、有界且不可信的 project context，并在首次 `propose_plan` 前幂等追加 `PROJECT_LEARNING_APPLIED`；它不能修改工具集合、治理或审批。IntentProjector 把 card ID 放入 plan card。
 
-- [ ] **Step 4: 增加 API/UI 与唯一旗舰 E2E**
+- [x] **Step 4: 增加 API/UI 与唯一旗舰 E2E**
 
 ```text
 POST /api/tasks/{task_id}/project-learning {source_event_sequence, text}
@@ -481,11 +483,11 @@ GET  /api/projects/{workspace_id}/project-learning/latest
 
 最终交付卡以 final summary 预填一条可编辑经验，只有用户点击批准才保存。下一任务顶部显示经验 ID 与文本。Playwright 只新增一个确定性场景：失败卡 → 提问 → 纠正分支 → 新分支验证通过 → 比较 → 最终批准 → 批准经验 → 下一任务首卡引用并改变 Mock 动作。
 
-- [ ] **Step 5: 更新延期和中文文档**
+- [x] **Step 5: 更新延期和中文文档**
 
 `DEFERRED_WORK.md` 登记 Provider 管理/持久凭据 UI/probe/smoke、通用或加密检查点、多级分支、复杂学习卡和最终视觉设计；每项写明当前替代、影响和重新启动条件。README/DEMO/SECURITY 只描述真实存在的入口，真实联网未执行时明确写“未执行”。
 
-- [ ] **Step 6: 运行最终新鲜验收**
+- [x] **Step 6: 运行最终新鲜验收**
 
 Run: `mingw32-make test`
 
@@ -497,7 +499,7 @@ Run: `.venv\Scripts\python.exe -m pip check`
 
 Expected: Python 全量、Ruff、mypy、Vitest、ESLint、TypeScript、Vite、现有 Playwright、唯一新增旗舰 E2E、三机制 demo、秘密扫描和依赖一致性全部退出 0。CI 不访问真实 Provider。
 
-- [ ] **Step 7: 最终合并审查与提交**
+- [x] **Step 7: 最终合并审查与提交**
 
 审查逐条对照 `SPEC.md` 16 节，确认所有延期合法且现有课程门禁不回退。Critical/Important 为 0 且 Step 6 证据仍新鲜后提交：
 

@@ -1125,3 +1125,10 @@
 - 使用 `systematic-debugging`、`test-driven-development` 与 `verification-before-completion`。真实 Playwright 首先稳定复现：子任务终审和经验批准显示完成，但创建下一任务失败。
 - 新增 Python/API 行为回归 `tests/demo/test_router.py`。RED 显示 `DemoOrchestratorRouter.approve_final()` 在完成事件之后调用未导入的 `asyncio`，抛出 `NameError`；这保留活动 writer，不能安全继续。
 - 修复不删除 marker 或 worktree：终审后以 `WorktreeManager.freeze()` 验证身份/注册并释放唯一 writer 租约，保留 child 分支、diff 与父冻结现场；Runtime 采用相同规则。聚焦 Python `5 passed`，Playwright 旗舰路径 `1 passed`。未联网、未安装依赖、未使用真实凭据、未 push；等待规约和质量复审及最终完整门禁。
+
+### 2026-08-07 — 关闭精简计划 Task 5 共学回放旗舰路径
+
+- **最终范围与复审：** 受审范围为 `e6ab842..e71d6b0`。经过终审顺序、冻结幂等、崩溃恢复、Demo cleanup 与旗舰 E2E 的定向返工，最终合并规约/质量复审为 Spec Yes、Assessment Approved，Critical / Important / Minor=`0/0/0`，Ready to merge Yes。
+- **交付结果：** 已连通验证失败意图卡、零工具提问、单级纠正分支、子任务验证与比较、最终批准、用户批准项目经验、同 Workspace 下一任务注入；旗舰真实 REST/SSE E2E 证明下一任务第一条 `ACTION_PARSED` 为 `run_verification`。终审先冻结再完成持久化，事件/状态分步失败可单次重试恢复；单进程共享锁保护跨实例 worktree marker 生命周期，冻结父任务不会被 Demo cleanup 释放。
+- **主控新鲜证据：** 同一次 `mingw32-make test` 退出 0：Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`；Ruff、mypy（68 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过。`mingw32-make demo` 三项 PASS，秘密扫描、`pip check`、`git diff --check` 与工作树状态检查通过。
+- **范围与限制：** 未联网调用 DeepSeek/Qwen、未使用真实 Key、未安装新依赖、未 push。Provider 管理/持久凭据 UI、真实 smoke、通用或加密检查点、多级分支、复杂学习卡与最终视觉设计继续按 `DEFERRED_WORK.md` 延期，不影响本轮安全、主路径或验收。
