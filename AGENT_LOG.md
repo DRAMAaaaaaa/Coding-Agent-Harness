@@ -1093,3 +1093,4 @@
 - **最小修复：** runtime failure 改用只依赖 TaskRepository/EventStore 的本地编排器；检查点只白名单已跟踪的修改/删除状态，并循环写满全部 bytes；005 的 nullable child ID 取消外键以允许先于 child Task 原子预留，重复调用复用该 ID，READY 更新失败后进入 UNCERTAIN 且保留关联。
 - **延期：** M1（检查点额外边界矩阵）与 M2（分支并发、取消、真实失败矩阵）按成本策略登记为未扩展范围；本轮只补 I 修复必需的最小行为测试。
 - **验证：** 聚焦 Python `33 passed`，Ruff 与 mypy（66 个源文件）通过；待 Web 和最终安全/差异门禁后复审、提交。
+- **提交与最终验证：** `304b83e`（`fix: 关闭单级纠正分支审查问题`）。提交前完整限定集为 Python `80 passed, 1 skipped`、Web `26 passed`；Ruff、mypy、ESLint、TypeScript、Vite build、秘密扫描与 `git diff --check` 均通过。未联网、安装依赖、使用真实凭据、push 或进入 Task 5。
