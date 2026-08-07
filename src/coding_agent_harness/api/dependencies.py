@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 from uuid import UUID
 
 from anyio import CapacityLimiter, to_thread
@@ -93,7 +93,14 @@ class TaskRunner(Protocol):
         provider_profile_id: UUID | None = None,
         provider_profile_version: int | None = None,
         llm_api_authorized_at: datetime | None = None,
+        base_commit: str = "HEAD",
+        initial_patch: bytes | None = None,
     ) -> Task: ...
+
+
+class CorrectionBranchPort(Protocol):
+    async def create(self, task_id: UUID, source_event_sequence: int, correction: str) -> Any: ...
+    async def compare(self, branch_id: UUID) -> Any: ...
 
 
 @dataclass(slots=True)
@@ -115,6 +122,7 @@ class ApiDependencies:
     require_provider_profile: bool = False
     provider_binding: ProviderBindingCoordinator | None = None
     question_service: QuestionService | None = None
+    correction_branches: CorrectionBranchPort | None = None
 
 
 class PlanGateOrchestrator:
@@ -176,12 +184,22 @@ class LocalTaskRunner:
         provider_profile_id: UUID | None = None,
         provider_profile_version: int | None = None,
         llm_api_authorized_at: datetime | None = None,
+        base_commit: str = "HEAD",
+        initial_patch: bytes | None = None,
     ) -> Task:
         prepared_requirement = self._tasks.prepare_requirement(requirement)
 
         def create_worktree() -> WorktreeManager:
             manager = WorktreeManager(workspace, self._state_root)
-            manager.create(task_id, "HEAD")
+            created = manager.create(task_id, base_commit)
+            if initial_patch is not None:
+                result = SafeGit(self._state_root).run(
+                    created.path,
+                    ["apply", "--whitespace=nowarn", "-"],
+                    stdin=initial_patch,
+                )
+                if result.returncode != 0:
+                    raise RuntimeUnavailableError("纠正检查点恢复失败")
             return manager
 
         async def create_and_persist() -> Task:
@@ -247,6 +265,8 @@ class UnavailableTaskRunner:
         provider_profile_id: UUID | None = None,
         provider_profile_version: int | None = None,
         llm_api_authorized_at: datetime | None = None,
+        base_commit: str = "HEAD",
+        initial_patch: bytes | None = None,
     ) -> Task:
         raise RuntimeUnavailableError("Agent 运行时未配置")
 

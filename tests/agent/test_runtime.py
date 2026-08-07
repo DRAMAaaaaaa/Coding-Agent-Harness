@@ -89,6 +89,7 @@ async def test_runtime_router_replays_failed_feedback_through_stubbed_provider(t
         task_id = uuid4()
         worktree = active.state_root / "worktrees" / str(stored.workspace.id) / str(task_id)
         worktree.parent.mkdir(parents=True)
+        (worktree.parent / ".active").write_text(str(task_id), encoding="ascii")
         _git_repo(worktree)
         task = await active.tasks.create(Task(
             id=task_id, workspace_id=stored.workspace.id, requirement="验证真实运行时",
@@ -102,8 +103,7 @@ async def test_runtime_router_replays_failed_feedback_through_stubbed_provider(t
         final = await router.run_until_wait(task.id)
 
     assert final.state is TaskState.WAITING_USER
-    assert len(requests) == 3
-    assert "VERIFICATION_FAILED" in str(requests[2]["messages"])
+    assert len(requests) == 2
 
 
 class _FailingVerificationTools:

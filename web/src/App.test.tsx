@@ -54,6 +54,20 @@ async function createTrustedTask(user: ReturnType<typeof userEvent.setup>): Prom
 }
 
 describe("App", () => {
+  it("失败卡可创建纠正分支并展示并排比较", async () => {
+    const user = userEvent.setup();
+    const createCorrectionBranch = vi.fn(async () => ({ id: "branch-1", workspace_id: workspace.id, parent_task_id: taskId, source_event_sequence: 1, child_task_id: "child-1", status: "READY" as const, created_at: "2026-08-07T00:00:00Z" }));
+    const getCorrectionComparison = vi.fn(async () => ({ branch_id: "branch-1", parent_state: "WAITING_USER", child_state: "WAITING_FINAL_REVIEW", parent_verification: "parent failed", child_verification: "child passed", parent_diff: "- old", child_diff: "+ new" }));
+    const api = { ...scriptedApi({ events: [event(1, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")] }), getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "verification_failure", evidence_sequences: [1], action: "VERIFICATION_FAILED", expected_result: "通过", actual_result: "失败", status: "recorded", source_event_sequence: 1, learning_card_id: null }]), createCorrectionBranch, getCorrectionComparison };
+    render(<App api={api} />);
+    await createTrustedTask(user);
+    await user.type(await screen.findByLabelText("纠正说明"), "补充边界");
+    await user.click(screen.getByRole("button", { name: "从此纠正" }));
+    expect(createCorrectionBranch).toHaveBeenCalledWith(taskId, 1, "补充边界");
+    expect(await screen.findByText(/child passed/)).toBeVisible();
+    expect(screen.getByText("+ new")).toBeVisible();
+  });
+
   it("仅为失败卡展示只读提问并显示回答", async () => {
     const user = userEvent.setup();
     const askQuestion = vi.fn(async () => ({ content: "Stub explanation" }));

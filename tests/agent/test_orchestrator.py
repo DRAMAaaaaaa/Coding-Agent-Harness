@@ -126,6 +126,29 @@ async def test_feedback_changes_next_action_after_injected_failure(harness) -> N
     assert (await orchestrator.task(task.id)).state is TaskState.WAITING_FINAL_REVIEW
 
 
+async def test_verification_failure_pauses_for_learning_when_enabled(harness) -> None:
+    _, provider, task, database = harness
+    orchestrator = AgentOrchestrator(
+        provider=provider,
+        parser=ActionParser({"apply_patch", "run_verification", "delete_file"}),
+        tools=ScriptedTools([
+            ToolResult(ok=True, code="OK", changed_paths=("src/add.py",)),
+            ToolResult(ok=False, code="VERIFICATION_FAILED", output="1 failed"),
+        ]),
+        event_store=EventStore(database),
+        tasks=TaskRepository(database),
+        pause_on_verification_failure=True,
+    )
+
+    await orchestrator.propose_plan(task.id)
+    await orchestrator.approve_plan(task.id)
+
+    assert (await orchestrator.run_until_wait(task.id)).state is TaskState.WAITING_USER
+    assert (await EventStore(database).list_for_task(task.id))[-1].payload == {
+        "reason_code": "LEARNING_CHECKPOINT"
+    }
+
+
 async def test_runtime_failure_is_recorded_once_through_legal_event(harness) -> None:
     _, _, task, database = harness
     orchestrator = AgentOrchestrator(

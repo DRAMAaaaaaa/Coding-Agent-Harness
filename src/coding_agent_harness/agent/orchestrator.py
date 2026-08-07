@@ -57,6 +57,7 @@ class AgentOrchestrator:
         tasks: TaskRepository,
         feedback: FeedbackEngine | None = None,
         redactor: Redactor | None = None,
+        pause_on_verification_failure: bool = False,
     ) -> None:
         self._provider = provider
         self._parser = parser
@@ -65,6 +66,7 @@ class AgentOrchestrator:
         self._tasks = tasks
         self._feedback = feedback or FeedbackEngine()
         self._redactor = redactor or Redactor()
+        self._pause_on_verification_failure = pause_on_verification_failure
         self._state_machine = StateMachine()
         self._actions: list[ToolAction] = []
 
@@ -281,6 +283,13 @@ class AgentOrchestrator:
                 task,
                 "USER_INPUT_REQUIRED",
                 {"reason_code": decision.reason_code},
+            )
+        if self._pause_on_verification_failure:
+            await self._emit(task, "VERIFICATION_FAILED", {"reason_code": decision.reason_code})
+            return await self._emit(
+                await self.task(task.id),
+                "USER_INPUT_REQUIRED",
+                {"reason_code": "LEARNING_CHECKPOINT"},
             )
         return await self._emit(task, "VERIFICATION_FAILED", {"reason_code": decision.reason_code})
 

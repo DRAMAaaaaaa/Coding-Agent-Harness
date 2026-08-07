@@ -142,6 +142,30 @@ def test_rejects_second_writer_across_manager_instances(
         first.release(first_task)
 
 
+def test_freeze_preserves_parent_worktree_and_allows_exactly_one_child_writer(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("freeze", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    state_root = tmp_path / "state"
+    parent_id = uuid4()
+    child_id = uuid4()
+    manager = WorktreeManager(workspace, state_root)
+    parent = manager.create(parent_id, head(root))
+
+    manager.freeze(parent_id)
+
+    frozen = state_root / "worktrees" / str(workspace.id) / f".frozen-{parent_id}"
+    assert frozen.read_text(encoding="ascii") == str(parent_id)
+    assert parent.path.is_dir()
+    with pytest.raises(WorkspaceBusyError):
+        manager.assert_writable(parent_id)
+    child = manager.create(child_id, head(root))
+    manager.assert_writable(child_id)
+    assert child.path.is_dir()
+
+
 def test_rejects_state_directory_inside_project(
     git_repository_factory: Callable[[str, Mapping[str, str]], Path],
 ) -> None:

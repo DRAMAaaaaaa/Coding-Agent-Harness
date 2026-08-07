@@ -16,6 +16,7 @@ from coding_agent_harness.governance.redaction import Redactor
 from coding_agent_harness.tools.models import ToolContext
 from coding_agent_harness.tools.registry import ToolRegistry
 from coding_agent_harness.workspace.git import SafeGit
+from coding_agent_harness.workspace.worktrees import WorktreeManager
 
 
 _ALLOWED_TOOLS = ("read_file", "search", "apply_patch", "run_verification", "git_status", "git_diff")
@@ -43,6 +44,16 @@ class RuntimeOrchestratorRouter(OrchestratorPort):
         return await (await self._for(task_id)).approve_plan(task_id)
 
     async def run_until_wait(self, task_id: UUID) -> Task:
+        task = await self._dependencies.tasks.get(task_id)
+        if task is None:
+            raise KeyError("任务不存在")
+        workspace = await self._dependencies.workspaces.get(task.workspace_id)
+        if workspace is None:
+            raise KeyError("Workspace 不存在")
+        await self._dependencies.worker.run(
+            WorktreeManager(workspace.workspace, self._dependencies.state_root).assert_writable,
+            task_id,
+        )
         return await (await self._for(task_id)).run_until_wait(task_id)
 
     async def approve_final(self, task_id: UUID) -> Task:
@@ -82,4 +93,5 @@ class RuntimeOrchestratorRouter(OrchestratorPort):
             tools=self._tool_registry_factory(context),
             event_store=dependencies.event_store,
             tasks=dependencies.tasks,
+            pause_on_verification_failure=True,
         )

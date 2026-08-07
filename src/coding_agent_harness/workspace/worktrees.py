@@ -99,6 +99,59 @@ class WorktreeManager:
         )
         self._active_marker = self._workspace_state / ".active"
 
+    def freeze(self, task_id: UUID) -> None:
+        """冻结已验证的父 worktree，保留现场并释放唯一写租约。"""
+        try:
+            if self._read_active_marker() != str(task_id):
+                raise WorktreeUncertainError("父任务写租约归属不确定，需要人工处理")
+            target = self._resolve_state_path(self._workspace_state / str(task_id))
+            self._git.trust_linked_worktree(target, self._git_root)
+            root = self._git.run(target, ["rev-parse", "--show-toplevel"])
+            registration = self._registration_for(target)
+            if root.returncode != 0 or registration is None:
+                raise WorktreeUncertainError("父任务 worktree 身份不确定，需要人工处理")
+            reported = Path(root.stdout.decode("utf-8").strip()).resolve(strict=True)
+            if not same_path(reported, target):
+                raise WorktreeUncertainError("父任务 worktree 身份不确定，需要人工处理")
+            frozen = self._resolve_state_path(self._workspace_state / f".frozen-{task_id}")
+            descriptor = os.open(frozen, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            try:
+                os.write(descriptor, str(task_id).encode("ascii"))
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            self._remove_active_marker()
+        except WorktreeUncertainError:
+            raise
+        except (OSError, UnicodeDecodeError, WorktreeError, GitSafetyError):
+            raise WorktreeUncertainError("父任务冻结结果不确定，需要人工处理") from None
+
+    def assert_writable(self, task_id: UUID) -> None:
+        """仅接受当前精确 owner，且拒绝所有已冻结任务。"""
+        try:
+            frozen = self._resolve_state_path(self._workspace_state / f".frozen-{task_id}")
+            if frozen.exists() or self._read_active_marker() != str(task_id):
+                raise WorkspaceBusyError("任务没有当前写租约")
+        except WorkspaceBusyError:
+            raise
+        except WorktreeError:
+            raise WorktreeUncertainError("任务写租约状态不确定，需要人工处理") from None
+
+    def restore_writer(self, task_id: UUID) -> None:
+        """只在创建子任务前的确定失败路径恢复父任务写租约。"""
+        try:
+            frozen = self._resolve_state_path(self._workspace_state / f".frozen-{task_id}")
+            if not frozen.is_file() or frozen.read_text(encoding="ascii") != str(task_id):
+                raise WorktreeUncertainError("父任务冻结状态不确定，需要人工处理")
+            if self._active_marker.exists():
+                raise WorkspaceBusyError("Workspace 已有写任务")
+            self._acquire_active_marker(task_id)
+            frozen.unlink()
+        except (WorktreeUncertainError, WorkspaceBusyError):
+            raise
+        except (OSError, UnicodeDecodeError, WorktreeError):
+            raise WorktreeUncertainError("父任务写租约恢复结果不确定，需要人工处理") from None
+
     def create(self, task_id: UUID, base_commit: str) -> WorktreeInfo:
         self._validate_git_root()
         resolved_base = self._resolve_base_commit(base_commit)

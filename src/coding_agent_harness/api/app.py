@@ -21,6 +21,7 @@ from coding_agent_harness.api.dependencies import (
 from coding_agent_harness.api.routes import create_router
 from coding_agent_harness.api.provider_routes import create_provider_router
 from coding_agent_harness.api.learning_routes import create_learning_router
+from coding_agent_harness.api.replay_routes import create_replay_router
 from coding_agent_harness.api.session import SessionGuard
 from coding_agent_harness.config import HarnessSettings
 from coding_agent_harness.governance.redaction import Redactor
@@ -36,6 +37,8 @@ from coding_agent_harness.runtime import RuntimeOrchestratorRouter
 from coding_agent_harness.workspace.detector import ProjectDetector
 from coding_agent_harness.workspace.scanner import WorkspaceScanner
 from coding_agent_harness.workspace.git import SafeGit
+from coding_agent_harness.replay.branches import CorrectionBranchService
+from coding_agent_harness.storage.correction_branches import CorrectionBranchRepository
 
 WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
@@ -83,11 +86,21 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
                 provider_registry=registry,
                 require_provider_profile=True,
                 provider_binding=binding,
+                correction_branches=CorrectionBranchService(
+                    branches=CorrectionBranchRepository(database), tasks=tasks, events=events,
+                    workspaces=workspaces, runner=UnavailableTaskRunner(), providers=registry,
+                    state_root=settings.state_root, worker=worker,
+                ),
             )
             app.state.dependencies.orchestrator_factory = lambda: RuntimeOrchestratorRouter(app.state.dependencies)
             app.state.dependencies.task_runner = LocalTaskRunner(
                 tasks, settings.state_root, step_budget=settings.max_task_cycles,
                 time_budget_seconds=settings.command_timeout_seconds, worker=worker,
+            )
+            app.state.dependencies.correction_branches = CorrectionBranchService(
+                branches=CorrectionBranchRepository(database), tasks=tasks, events=events,
+                workspaces=workspaces, runner=app.state.dependencies.task_runner, providers=registry,
+                state_root=settings.state_root, worker=worker,
             )
             app.state.event_store = events
             app.state.tasks = tasks
@@ -102,6 +115,7 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
     api_router = create_router(None, sessions)
     api_router.include_router(create_provider_router(sessions))
     api_router.include_router(create_learning_router(sessions))
+    api_router.include_router(create_replay_router(sessions))
     app.include_router(api_router)
 
     @app.middleware("http")

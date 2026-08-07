@@ -1078,3 +1078,10 @@
 - **最终范围与复审：** Task 3 范围为 `83ed253..4b9b952`；实现 `e979612`、审查返工 `e0a0f5f`、报告修订 `4b9b952`。最终合并规约/质量复审为 Spec compliant Yes、Assessment Approved，Critical / Important / Minor=`0/0/0`。
 - **交付结果：** 四类 `IntentCard` 从 `TaskEvent` 唯一事实源确定性投影；冲突 sequence 固定拒绝。只有验证失败卡可通过任务绑定 Provider 进行零工具提问，问题、事件摘要与回答分别执行 UTF-8 预算和脱敏，问题完整保留；审计事件保持 Task state，不修改文件、审批或 worktree。
 - **主控新鲜验证：** learning、learning API 与 storage event-store 聚焦 `25 passed`，其中 storage `19 passed`；Web 为 2 个文件 `25 passed`；Ruff、mypy（61 个源文件）、秘密扫描、ESLint、TypeScript typecheck、Vite 生产构建、`git diff --check` 和工作树状态均通过。未联网、安装依赖、使用真实 Key、push 或进入 Task 4 实现。
+
+### 2026-08-07 — CL3 Task 4 单级纠正分支实现完成，待审
+
+- **范围与过程：** 在既有 Task 4 未提交工作树上继续，使用 `test-driven-development`、`systematic-debugging` 与 `verification-before-completion`；未安装依赖、联网、使用真实凭据或进入 Task 5。任务 brief/report 的指定旧路径不存在，改以已批准的精简计划 Task 4 条款作为唯一实现边界。
+- **RED→GREEN：** 先确认既有聚焦集 `69 passed, 1 skipped`，再新增服务失败恢复、API 创建/比较和失败卡 UI 测试。RED 分别暴露父写租约未恢复、slots 比较对象错误序列化和 UI 缺少纠正入口；最小修复后 API/服务 RED→GREEN、Web `18 passed`。
+- **实现边界：** Repository 先原子预留唯一失败节点记录，父 worktree 冻结后才写检查点和创建子任务；失败时标记不确定并仅在没有子 writer 时尝试恢复父租约。禁止从子任务继续纠正；比较仅读取任务状态、最近验证摘要和父/子 diff。API 与 WebUI 仅在失败卡提供“从此纠正”和并排比较，不提供通用时间线或多级回放。
+- **当前验证：** Python 聚焦 `71 passed, 1 skipped`，Ruff 通过，mypy `66` 个源文件通过，Web TypeScript 通过；仍待本 Task 的完整 lint、构建、秘密扫描、差异检查及规约/质量复审后提交。
