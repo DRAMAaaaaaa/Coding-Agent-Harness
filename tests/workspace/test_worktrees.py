@@ -2,6 +2,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 import os
 import subprocess
+import threading
 from uuid import UUID, uuid4
 
 import pytest
@@ -94,8 +95,7 @@ def test_creates_and_releases_worktree_without_touching_dirty_main_workspace(
 
     assert not info.path.exists()
     assert (
-        git(root, "show-ref", "--verify", f"refs/heads/{info.branch}", check=False).returncode
-        == 0
+        git(root, "show-ref", "--verify", f"refs/heads/{info.branch}", check=False).returncode == 0
     )
     assert readme.read_text(encoding="utf-8") == "dirty main\n"
 
@@ -184,7 +184,8 @@ def test_freeze_is_idempotent_after_verifying_the_frozen_worktree_identity(
 
 
 def test_freeze_recovery_removes_matching_active_marker_after_marker_write_crash(
-    git_repository_factory: Callable[[str, Mapping[str, str]], Path], tmp_path: Path,
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
 ) -> None:
     root = git_repository_factory("freeze-recovery", {"README.md": "base\n"})
     workspace = workspace_for(root)
@@ -200,7 +201,8 @@ def test_freeze_recovery_removes_matching_active_marker_after_marker_write_crash
 
 
 def test_freeze_recovery_preserves_a_different_active_writer(
-    git_repository_factory: Callable[[str, Mapping[str, str]], Path], tmp_path: Path,
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
 ) -> None:
     root = git_repository_factory("freeze-recovery-child", {"README.md": "base\n"})
     workspace = workspace_for(root)
@@ -214,6 +216,57 @@ def test_freeze_recovery_preserves_a_different_active_writer(
     manager.freeze(task_id)
 
     assert manager._active_marker.read_text(encoding="ascii") == str(child_id)
+
+
+def test_freeze_recovery_blocks_child_marker_acquisition_until_matching_active_is_removed(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = git_repository_factory("freeze-thread-race", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    state_root = tmp_path / "state"
+    parent_id, child_id = uuid4(), uuid4()
+    parent = WorktreeManager(workspace, state_root)
+    parent.create(parent_id, head(root))
+    (parent._workspace_state / f".frozen-{parent_id}").write_text(str(parent_id), encoding="ascii")
+    entered, release, child_acquired = threading.Event(), threading.Event(), threading.Event()
+    original_remove, original_acquire = (
+        WorktreeManager._remove_active_marker,
+        WorktreeManager._acquire_active_marker,
+    )
+
+    def pause_matching_remove(self: WorktreeManager) -> None:
+        if self._read_active_marker() == str(parent_id):
+            entered.set()
+            assert release.wait(2)
+        original_remove(self)
+
+    def observe_child_acquire(self: WorktreeManager, task_id: UUID) -> None:
+        if task_id == child_id:
+            child_acquired.set()
+        original_acquire(self, task_id)
+
+    monkeypatch.setattr(WorktreeManager, "_remove_active_marker", pause_matching_remove)
+    monkeypatch.setattr(WorktreeManager, "_acquire_active_marker", observe_child_acquire)
+    freeze_thread = threading.Thread(
+        target=WorktreeManager(workspace, state_root).freeze, args=(parent_id,)
+    )
+    child_thread = threading.Thread(
+        target=WorktreeManager(workspace, state_root).create, args=(child_id, head(root))
+    )
+    freeze_thread.start()
+    assert entered.wait(2)
+    child_thread.start()
+    assert not child_acquired.wait(0.1)
+    release.set()
+    freeze_thread.join(5)
+    child_thread.join(5)
+    assert not freeze_thread.is_alive() and not child_thread.is_alive()
+    assert parent._active_marker.read_text(encoding="ascii") == str(child_id)
+    assert (parent._workspace_state / f".frozen-{parent_id}").read_text(encoding="ascii") == str(
+        parent_id
+    )
 
 
 def test_rejects_state_directory_inside_project(
@@ -405,9 +458,7 @@ class FailingAddRunner:
         if command[:2] == ["worktree", "add"]:
             branch = command[-3]
             base = command[-1]
-            created = self._delegate.run(
-                replace_request_command(request, ["branch", branch, base])
-            )
+            created = self._delegate.run(replace_request_command(request, ["branch", branch, base]))
             assert created.returncode == 0
             target = Path(command[-2])
             target.mkdir(parents=True)
@@ -440,9 +491,7 @@ class SideEffectThenOSErrorRunner:
         if command[:2] == ["worktree", "add"]:
             branch = command[-3]
             base = command[-1]
-            created = self._delegate.run(
-                replace_request_command(request, ["branch", branch, base])
-            )
+            created = self._delegate.run(replace_request_command(request, ["branch", branch, base]))
             assert created.returncode == 0
             target = Path(command[-2])
             target.mkdir(parents=True)
@@ -493,10 +542,7 @@ class DriveRelativeRegistrationGit:
         assert list(args) == ["worktree", "list", "--porcelain"]
         return CommandResult(
             returncode=0,
-            stdout=(
-                b"worktree Z:payload\n"
-                b"HEAD deadbeef\nbranch refs/heads/foreign\n\n"
-            ),
+            stdout=(b"worktree Z:payload\nHEAD deadbeef\nbranch refs/heads/foreign\n\n"),
             stderr=b"",
         )
 
@@ -647,10 +693,11 @@ class StaleRegistrationAfterRemoveRunner:
                 ).encode()
             return result
         result = self._delegate.run(request)
-        if (
-            self._stale_registration is not None
-            and command[:3] == ["worktree", "list", "--porcelain"]
-        ):
+        if self._stale_registration is not None and command[:3] == [
+            "worktree",
+            "list",
+            "--porcelain",
+        ]:
             return CommandResult(
                 returncode=0,
                 stdout=result.stdout + self._stale_registration,
