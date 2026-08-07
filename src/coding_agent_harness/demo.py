@@ -485,7 +485,11 @@ class DemoOrchestratorRouter:
                 self._state_root,
                 safe_git=cleanup_git,
             )
+            if manager.is_frozen(task_id):
+                self._workspaces_by_task.pop(task_id, None)
+                continue
             manager.release(task_id)
+            self._workspaces_by_task.pop(task_id, None)
 
 
 def demo_script() -> list[str]:

@@ -5,6 +5,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import stat
+from threading import RLock
+from collections.abc import Callable
+from typing import ParamSpec, TypeVar, cast
 from uuid import UUID
 
 from coding_agent_harness.governance.path_identity import (
@@ -63,6 +66,19 @@ class WorktreeUncertainError(WorktreeError):
     """Git 副作用结果无法安全确认，需要人工接管。"""
 
 
+# 单进程 MVP：跨实例共享锁仅保护本进程内的 marker 生命周期，不提供跨进程互斥。
+_MARKER_LIFECYCLE_LOCK = RLock()
+_Params = ParamSpec("_Params")
+_Result = TypeVar("_Result")
+
+
+def _marker_lifecycle_locked(function: Callable[_Params, _Result]) -> Callable[_Params, _Result]:
+    def guarded(*args: _Params.args, **kwargs: _Params.kwargs) -> _Result:
+        with _MARKER_LIFECYCLE_LOCK:
+            return function(*args, **kwargs)
+    return cast(Callable[_Params, _Result], guarded)
+
+
 class WorktreeManager:
     """使用原子活动标记维持每 Workspace 单写任务约束。"""
 
@@ -99,6 +115,7 @@ class WorktreeManager:
         )
         self._active_marker = self._workspace_state / ".active"
 
+    @_marker_lifecycle_locked
     def freeze(self, task_id: UUID) -> None:
         """冻结已验证的父 worktree，保留现场并释放唯一写租约。"""
         try:
@@ -145,6 +162,15 @@ class WorktreeManager:
         except WorktreeError:
             raise WorktreeUncertainError("任务写租约状态不确定，需要人工处理") from None
 
+    def is_frozen(self, task_id: UUID) -> bool:
+        """仅确认私有 frozen marker 的精确 owner，供 cleanup 跳过冻结现场。"""
+        try:
+            frozen = self._resolve_state_path(self._workspace_state / f".frozen-{task_id}")
+            return frozen.is_file() and frozen.read_text(encoding="ascii") == str(task_id)
+        except (OSError, UnicodeDecodeError, WorktreeError):
+            return False
+
+    @_marker_lifecycle_locked
     def restore_writer(self, task_id: UUID) -> None:
         """只在创建子任务前的确定失败路径恢复父任务写租约。"""
         try:
@@ -160,6 +186,7 @@ class WorktreeManager:
         except (OSError, UnicodeDecodeError, WorktreeError):
             raise WorktreeUncertainError("父任务写租约恢复结果不确定，需要人工处理") from None
 
+    @_marker_lifecycle_locked
     def create(self, task_id: UUID, base_commit: str) -> WorktreeInfo:
         self._validate_git_root()
         resolved_base = self._resolve_base_commit(base_commit)
@@ -242,6 +269,7 @@ class WorktreeManager:
             base_commit=resolved_base,
         )
 
+    @_marker_lifecycle_locked
     def release(self, task_id: UUID) -> None:
         try:
             marker_task = self._read_active_marker()
