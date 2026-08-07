@@ -28,7 +28,7 @@
 
 ## 当前记录
 
-当前有 7 个经批准设计明确排除在首版外的能力或威胁边界外加固项。
+当前有 8 个经批准设计明确排除在首版外的能力或威胁边界外加固项。
 
 | 编号 | 来源 Task | 状态 | 优先级 | 内容 | 用户影响 | 安全/验收影响 | 临时替代 | 恢复条件 | 证据 |
 |---|---:|---|---|---|---|---|---|---|---|
@@ -38,7 +38,8 @@
 | DW-MVP-003 | MVP-0 | DEFERRED | P1 | 真实 DeepSeek/Qwen 联网验收 | 首版不能声称真实模型调用已经通过验收 | Provider 协议继续保留；离线 Mock 可确定性覆盖核心 Harness 验收 | 使用 `ScriptedMockProvider` 完成全部首版验收 | 凭据、网络边界和脱敏门禁完成后，在明确授权的隔离环境中增加 Provider 契约测试与真实联网验收 | MVP 设计第 3、4.3 节，MVP 计划 Task 1 |
 | DW-MVP-004 | MVP-0 | DEFERRED | P1 | 依赖安装、工具网络请求以及 Git push/merge/release | Harness 不会替用户安装缺失依赖、访问工具网络或发布远端变更 | 固定拒绝缩小副作用面；不阻断依赖已就绪项目的本地修改、验证和 diff 交付 | 首版策略固定 `DENY`；用户在 Harness 外准备依赖并自行处理远端操作 | 为每类副作用建立显式工具协议、审批、审计、恢复和离线拒绝/允许测试，并由用户单独批准开放 | MVP 设计第 3、4.2 节，MVP 计划 Task 1 |
 | DW-MVP-005 | MVP-0 | DEFERRED | P1 | Git LFS、加密 filter 或其他外部 checkout filter 的正式执行 | 使用活动 filter 的仓库不能进入首版任务 worktree | 在 filter 外部程序运行前拒绝，避免接入或 materialize 隐式执行未受治理代码 | 审计到活动 filter 后固定拒绝并说明限制 | 形成跨平台隔离执行、凭据、网络、输出和失败恢复方案，增加真实 sentinel 回归测试并经安全设计批准 | MVP 设计第 3、4.1 节，MVP 计划 Task 1 |
-| DW-MVP-006 | MVP-0 | DEFERRED | P2 | 高级凭据管理界面和高级 WebUI 能力 | 首版不提供复杂凭据管理、主题、动画、高级筛选或多浏览器矩阵 | 不影响项目接入、计划审批、事件、危险动作审批、验证和最终 diff 的核心页面 | 保留最小本地会话与状态页面，不接收或显示 API Key | MVP WebUI 主路径、可访问性与 E2E 通过后，完成独立交互设计、威胁建模和浏览器兼容验证 | MVP 设计第 3、4.4 节，MVP 计划 Task 1 |
+| DW-MVP-006 | MVP-0 | DEFERRED | P2 | 高级凭据管理界面和高级 WebUI 能力 | 首版不提供复杂凭据管理、主题、动画、高级筛选或多浏览器矩阵 | 不影响项目接入、计划审批、事件、危险动作审批、验证和最终 diff 的核心页面 | 仅接收 React state 中会话 Key，成功/失败/项目或任务切换立即清空；不提供持久化、edit、delete、probe 或 unlock | MVP WebUI 主路径、可访问性与 E2E 通过后，完成独立交互设计、威胁建模和浏览器兼容验证 | MVP 设计第 3、4.4 节，MVP 计划 Task 1 |
+| DW-MVP-007 | 精简 CL Task 2 | DEFERRED | P2 | Provider 行为边界测试与协调器维护：NUL、mutation 安全断言及无 waiter per-profile 锁回收 | 维护期前，少数 Provider 边界缺少直接回归；持续创建 profile 时可累积小锁对象 | 已有确定性校验、`SessionGuard` 与会话 Key 清空不被削弱，Task 2 安全主路径和验收不受阻断 | 现有超长 Key、Provider 路由、会话清空和真实绑定并发回归继续覆盖主路径；评审定级 Minor | 补 NUL 直接行为测试、Provider mutation Origin/session 负向及 Key 不入事件/storage/异常响应断言；实现锁回收并补并发/取消测试；运行 Task 2 聚焦回归 | `abac70b`、`d39baef`、`ff9e37d` 与独立复审 |
 
 ### DW-MVP-001：长期记忆与跨任务经验
 
@@ -73,8 +74,16 @@
 ### DW-MVP-006：高级凭据界面和高级 WebUI
 
 - **用户影响：** 首版不提供高级凭据管理、主题、动画、高级筛选或多浏览器矩阵，只覆盖核心任务操作。
-- **MVP 替代：** 提供最小本地会话与状态页面，覆盖项目接入、需求输入、计划审批、事件、危险动作审批、验证和最终 diff；页面不接收或显示 API Key。
+- **MVP 替代：** 提供最小本地会话与状态页面，覆盖项目接入、需求输入、计划审批、事件、危险动作审批、验证和最终 diff；仅接收 React state 中会话 Key，成功/失败/项目或任务切换立即清空，不提供持久化、edit、delete、probe 或 unlock。
 - **恢复条件：** MVP WebUI 主路径、可访问性和浏览器 E2E 稳定后，完成独立交互设计、凭据威胁模型与目标浏览器兼容验证。
+
+### DW-MVP-007：Provider 行为边界测试与协调器维护
+
+- **原始要求与未完成边界：** 精简 CL Task 2 的复审将三项定级为 Minor：M1 缺少 NUL 拒绝的直接行为测试；M2 缺少 Provider mutation 的 Origin/session 负向，以及 Key 不进入事件、storage 或异常响应的直接断言；M3 `ProviderBindingCoordinator` 不回收无 waiter 的 per-profile 锁。
+- **用户影响与安全/验收影响：** 用户在当前本地单进程 MVP 主路径不受影响；已有确定性 Key 校验、`SessionGuard` 和成功/失败/项目或任务切换后的会话 Key 清空仍生效。三项不阻断 Task 2 验收，也不降低其安全主路径。
+- **延期原因与当前替代：** 独立复审将其定级为 Minor，依用户成本策略不在当前 Task 返工。现有超长 Key、Provider 路由、会话清空和真实绑定并发回归继续作为主路径替代。
+- **恢复条件：** 补齐 M1、M2 的直接行为测试；实现 M3 锁回收并增加并发/取消测试；随后运行 Task 2 聚焦回归并重新审查。
+- **证据：** 基线 `abac70b`、返工 `d39baef`、延期记录 `ff9e37d` 及 Task 2 独立复审。
 
 ### DW-05-001：Harness 私有状态的独立 OS 隔离
 
