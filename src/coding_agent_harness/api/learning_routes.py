@@ -26,6 +26,19 @@ class _QuestionRequest(BaseModel):
         return value
 
 
+class _ProjectLearningRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    source_event_sequence: int = Field(gt=0)
+    text: str = Field(min_length=1)
+
+    @field_validator("text")
+    @classmethod
+    def validate_text_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 2048:
+            raise ValueError("text exceeds byte limit")
+        return value
+
+
 def create_learning_router(sessions: SessionGuard) -> APIRouter:
     router = APIRouter()
 
@@ -53,5 +66,27 @@ def create_learning_router(sessions: SessionGuard) -> APIRouter:
         except ValueError:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT) from None
         return answer.model_dump()
+
+    @router.post("/api/tasks/{task_id}/project-learning")
+    async def approve_project_learning(request: Request, task_id: UUID, body: _ProjectLearningRequest) -> dict[str, object]:
+        sessions.require_mutation(request)
+        active: ApiDependencies = request.app.state.dependencies
+        if active.project_learning is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        try:
+            card = await active.project_learning.approve(task_id, body.source_event_sequence, body.text)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT) from None
+        return card.model_dump(mode="json")
+
+    @router.get("/api/projects/{workspace_id}/project-learning/latest")
+    async def latest_project_learning(request: Request, workspace_id: UUID) -> dict[str, object] | None:
+        active: ApiDependencies = request.app.state.dependencies
+        if await active.workspaces.get(workspace_id) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        if active.project_learning is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        card = await active.project_learning.latest_for_workspace(workspace_id)
+        return card.model_dump(mode="json") if card else None
 
     return router

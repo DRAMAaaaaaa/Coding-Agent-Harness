@@ -1108,3 +1108,10 @@
 - **实现范围：** 005 恢复 `child_task_id REFERENCES tasks(id)` 原契约；新增 006 以受事务保护的 table-rebuild 复制全部行，再重建父 workspace/task 外键、状态/字节/序号约束和 `(parent_task_id, source_event_sequence)` 唯一约束，仅移除 child 外键。Task 5 计划 migration/test 编号顺延为 007，未实现 Task 5。
 - **验证：** storage/replay 完整聚焦 `67 passed`；Ruff、mypy（66 个源文件）、秘密扫描与 `git diff --check` 均通过，待提交。
 - **提交：** `e7fccd9`（`fix: 增加纠正分支兼容升级迁移`）；未联网、安装依赖、使用真实凭据、push 或修改 Task 5 实现。
+# 2026-08-07 Task 5
+
+- 按 task-5 brief 使用 TDD、systematic-debugging、verification-before-completion；先新增项目经验 RED 测试，确认缺少模块后实现。
+- 增加 migration 007、单条项目经验审批/查询、运行时不可信上下文注入和 API。聚焦 pytest 已通过；真实 Provider 联网未执行。
+- 补齐 WebUI 最终交付卡的可编辑经验批准、下一任务经验 ID/文本展示及浏览器 API；离线 Playwright 主路径通过，不使用真实 Key 或网络。
+- 全量收集曾暴露同名 `test_registry` 模块缓存；以 tests/providers/tools 包命名空间修复。迁移契约同步至 v7、future v8 拒绝；lifecycle 在构造失败时仅关闭已初始化资源且不遮蔽原异常。
+- 当前状态：实现完成，待独立复审。验证事实：Python 810 passed/15 skipped 与 Ruff/mypy；Web Vitest 28 passed、lint/typecheck/build；Playwright 3 passed/1 skipped；本轮聚焦 12 passed、demo 三项 PASS、secret scan/pip check/diff check 均通过。完整一键门禁尚需在同一次最终重跑中记录，未宣称已合并或已 push。

@@ -114,4 +114,19 @@ describe("Browser API adapter", () => {
     expect(fetcher).toHaveBeenNthCalledWith(6, `/api/tasks/${taskId}/run`, options({}));
     expect(fetcher).toHaveBeenNthCalledWith(7, `/api/tasks/${taskId}/final/approve`, options({}));
   });
+
+  it("发送经验批准并读取下一任务使用的最新经验", async () => {
+    const card = { id: "learning-1", workspace_id: "workspace-1", text: "先运行聚焦测试", source_task_id: taskId, source_event_sequence: 5, approved_at: "2026-08-07T00:00:00Z" };
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("Harness", { headers: { "X-Harness-Session": "session-1" } }))
+      .mockResolvedValueOnce(json(card))
+      .mockResolvedValueOnce(json(card));
+    const api = createBrowserApi({ fetcher, eventSourceFactory: () => { throw new Error("unused"); } });
+
+    await expect(api.approveProjectLearning?.(taskId, 5, card.text)).resolves.toEqual(card);
+    await expect(api.getLatestProjectLearning?.("workspace-1")).resolves.toEqual(card);
+    const headers = { "Content-Type": "application/json", "X-Harness-Session": "session-1" };
+    expect(fetcher).toHaveBeenNthCalledWith(2, `/api/tasks/${taskId}/project-learning`, { method: "POST", credentials: "same-origin", headers, body: JSON.stringify({ source_event_sequence: 5, text: card.text }) });
+    expect(fetcher).toHaveBeenNthCalledWith(3, "/api/projects/workspace-1/project-learning/latest", { credentials: "same-origin" });
+  });
 });

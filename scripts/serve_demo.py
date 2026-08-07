@@ -32,6 +32,8 @@ from coding_agent_harness.storage.database import Database  # noqa: E402
 from coding_agent_harness.storage.event_store import EventStore  # noqa: E402
 from coding_agent_harness.storage.repositories import TaskRepository  # noqa: E402
 from coding_agent_harness.storage.workspaces import WorkspaceRepository  # noqa: E402
+from coding_agent_harness.storage.project_learning import ProjectLearningRepository  # noqa: E402
+from coding_agent_harness.learning.cards import ProjectLearningService  # noqa: E402
 from coding_agent_harness.workspace.detector import ProjectDetector  # noqa: E402
 from coding_agent_harness.workspace.git import SafeGit  # noqa: E402
 from coding_agent_harness.workspace.scanner import WorkspaceScanner  # noqa: E402
@@ -308,6 +310,9 @@ async def _serve(
             ),
             branch_resolver=SafeBranchResolver(SafeGit(state_root)),
             worker=worker,
+            project_learning=ProjectLearningService(
+                ProjectLearningRepository(database), tasks, event_store,
+            ),
         )
         server = uvicorn.Server(
             uvicorn.Config(

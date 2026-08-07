@@ -39,6 +39,8 @@ from coding_agent_harness.workspace.scanner import WorkspaceScanner
 from coding_agent_harness.workspace.git import SafeGit
 from coding_agent_harness.replay.branches import CorrectionBranchService
 from coding_agent_harness.storage.correction_branches import CorrectionBranchRepository
+from coding_agent_harness.storage.project_learning import ProjectLearningRepository
+from coding_agent_harness.learning.cards import ProjectLearningService
 
 WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
@@ -61,9 +63,12 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
             yield
             return
 
-        database = await Database.open(settings.resolved_database_path())
-        client = httpx.AsyncClient(trust_env=False, follow_redirects=False)
+        database: Database | None = None
+        client: httpx.AsyncClient | None = None
+        credentials: CredentialBroker | None = None
         try:
+            database = await Database.open(settings.resolved_database_path())
+            client = httpx.AsyncClient(trust_env=False, follow_redirects=False)
             workspaces = WorkspaceRepository(database)
             tasks = TaskRepository(database)
             events = EventStore(database)
@@ -91,6 +96,7 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
                     workspaces=workspaces, runner=UnavailableTaskRunner(), providers=registry,
                     state_root=settings.state_root, worker=worker,
                 ),
+                project_learning=ProjectLearningService(ProjectLearningRepository(database), tasks, events),
             )
             app.state.dependencies.orchestrator_factory = lambda: RuntimeOrchestratorRouter(app.state.dependencies)
             app.state.dependencies.task_runner = LocalTaskRunner(
@@ -106,10 +112,12 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
             app.state.tasks = tasks
             yield
         finally:
-            await client.aclose()
-            if dependencies is None:
+            if credentials is not None:
                 credentials.clear_session()
-            await database.close()
+            if client is not None:
+                await client.aclose()
+            if database is not None:
+                await database.close()
 
     app = FastAPI(lifespan=lifespan)
     api_router = create_router(None, sessions)

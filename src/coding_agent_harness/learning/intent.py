@@ -71,7 +71,15 @@ class IntentProjector:
             cards.append(self._card(task_id, IntentKind.VERIFICATION_FAILURE, failure, evidence))
         final = _first(ordered, "FINAL_SUMMARY_PROPOSED")
         if final is not None:
-            cards.append(self._card(task_id, IntentKind.FINAL_DELIVERY, final, (final.sequence,)))
+            card = self._card(task_id, IntentKind.FINAL_DELIVERY, final, (final.sequence,))
+            applied = _first(ordered, "PROJECT_LEARNING_APPLIED")
+            card_id = applied.payload.get("card_id") if applied is not None else None
+            if isinstance(card_id, str):
+                try:
+                    card = card.model_copy(update={"learning_card_id": UUID(card_id)})
+                except ValueError:
+                    pass
+            cards.append(card)
         return tuple(cards)
 
     def _card(self, task_id: UUID, kind: IntentKind, event: TaskEvent, evidence: tuple[int, ...]) -> IntentCard:

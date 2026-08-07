@@ -54,6 +54,31 @@ async function createTrustedTask(user: ReturnType<typeof userEvent.setup>): Prom
 }
 
 describe("App", () => {
+  it("只在最终交付卡中由用户批准经验，并在下一任务入口展示已批准卡", async () => {
+    const user = userEvent.setup();
+    const approvedCard = { id: "learning-1", workspace_id: workspace.id, text: "先运行聚焦测试", source_task_id: taskId, source_event_sequence: 5, approved_at: "2026-08-07T00:00:00Z" };
+    const approveProjectLearning = vi.fn(async () => approvedCard);
+    const getLatestProjectLearning = vi.fn(async () => approvedCard);
+    const api = {
+      ...scriptedApi(),
+      getIntentCards: vi.fn(async () => [{ id: "final-card", task_id: taskId, kind: "final_delivery" as const, intent: "交付", evidence_sequences: [5], action: "批准", expected_result: "保存", actual_result: "完成", status: "ready", source_event_sequence: 5, learning_card_id: null }]),
+      approveProjectLearning,
+      getLatestProjectLearning,
+    };
+    render(<App api={api} />);
+    await createTrustedTask(user);
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await user.click(await screen.findByRole("button", { name: "批准最终审查" }));
+    const learningInput = await screen.findByLabelText("项目经验");
+    expect(learningInput).toHaveValue("add 已修复");
+    await user.clear(learningInput);
+    await user.type(learningInput, approvedCard.text);
+    await user.click(screen.getByRole("button", { name: "批准经验" }));
+    expect(approveProjectLearning).toHaveBeenCalledWith(taskId, 5, approvedCard.text);
+    expect(await screen.findByText(`经验 ID：${approvedCard.id}`)).toBeVisible();
+    expect(screen.getByLabelText("下一任务项目经验")).toHaveTextContent(approvedCard.text);
+  });
+
   it("失败卡可创建纠正分支并展示并排比较", async () => {
     const user = userEvent.setup();
     const createCorrectionBranch = vi.fn(async () => ({ id: "branch-1", workspace_id: workspace.id, parent_task_id: taskId, source_event_sequence: 1, child_task_id: "child-1", status: "READY" as const, created_at: "2026-08-07T00:00:00Z" }));

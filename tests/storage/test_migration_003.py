@@ -13,7 +13,7 @@ from coding_agent_harness.storage.database import Database
 _MIGRATIONS = Path(__file__).parents[2] / "src" / "coding_agent_harness" / "storage" / "migrations"
 
 
-async def test_fresh_v0_applies_exactly_001_through_006(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_fresh_v0_applies_exactly_001_through_007(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[int] = []
     original = database_module._apply_one_migration_locked
 
@@ -24,8 +24,8 @@ async def test_fresh_v0_applies_exactly_001_through_006(tmp_path: Path, monkeypa
     monkeypatch.setattr(database_module, "_apply_one_migration_locked", recorded)
     database = await Database.open(tmp_path / "fresh.db")
     try:
-        assert seen == [1, 2, 3, 4, 5, 6]
-        assert await (await database.connection.execute("PRAGMA user_version")).fetchone() == (6,)
+        assert seen == [1, 2, 3, 4, 5, 6, 7]
+        assert await (await database.connection.execute("PRAGMA user_version")).fetchone() == (7,)
     finally:
         await database.close()
 
@@ -55,7 +55,7 @@ async def test_v2_only_runs_003_and_keeps_approval(tmp_path: Path, monkeypatch: 
     monkeypatch.setattr(database_module, "_apply_one_migration_locked", recorded)
     database = await Database.open(path)
     try:
-        assert seen == [3, 4, 5, 6]
+        assert seen == [3, 4, 5, 6, 7]
         after = await (await database.connection.execute(f"SELECT {columns} FROM approvals WHERE id=?", (str(approval_id),))).fetchone()
         assert after == before
         assert await (await database.connection.execute("SELECT trust_state, trusted_at FROM workspaces WHERE id=?", (str(workspace_id),))).fetchone() == ("UNTRUSTED", None)
@@ -77,9 +77,9 @@ async def test_latest_reopen_performs_no_ddl(tmp_path: Path, monkeypatch: pytest
 async def test_future_database_is_rejected_without_mutation(tmp_path: Path) -> None:
     path = tmp_path / "future.db"
     connection = sqlite3.connect(path)
-    connection.execute("PRAGMA user_version=7")
+    connection.execute("PRAGMA user_version=8")
     connection.commit()
     connection.close()
     with pytest.raises(RuntimeError, match="高于代码支持"):
         await Database.open(path)
-    assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone() == (7,)
+    assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone() == (8,)

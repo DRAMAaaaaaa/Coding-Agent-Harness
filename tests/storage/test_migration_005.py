@@ -56,7 +56,7 @@ async def test_v4_applies_005_with_single_branch_per_failure(tmp_path: Path) -> 
             "UPDATE correction_branches SET child_task_id = ? WHERE id = ?",
             (str(uuid4()), str(branch_id)),
         )
-        assert await (await database.connection.execute("PRAGMA user_version")).fetchone() == (6,)
+        assert await (await database.connection.execute("PRAGMA user_version")).fetchone() == (7,)
     finally:
         await database.close()
 
@@ -87,7 +87,7 @@ async def test_v5_correction_branch_schema_upgrades_without_losing_rows(tmp_path
 
     database = await Database.open(path)
     try:
-        assert await (await database.connection.execute("PRAGMA user_version")).fetchone() == (6,)
+        assert await (await database.connection.execute("PRAGMA user_version")).fetchone() == (7,)
         assert await (await database.connection.execute("SELECT id FROM correction_branches")).fetchone() == (str(branch_id),)
         await database.connection.execute("UPDATE correction_branches SET child_task_id = ? WHERE id = ?", (str(child_id), str(branch_id)))
         await database.connection.commit()

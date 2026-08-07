@@ -30,6 +30,7 @@ BUSINESS_TABLES = {
     "credential_references",
     "provider_profiles",
     "correction_branches",
+    "project_learning_cards",
 }
 
 

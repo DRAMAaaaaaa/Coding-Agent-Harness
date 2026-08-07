@@ -108,6 +108,9 @@ class RuntimeOrchestratorRouter(OrchestratorPort):
             ),
             safe_git=safe_git,
         )
+        learning = None
+        if dependencies.project_learning is not None:
+            learning = await dependencies.project_learning.latest_for_workspace(task.workspace_id)
         return AgentOrchestrator(
             provider=await dependencies.provider_registry.build_for_task(task),
             parser=ActionParser(_ALLOWED_TOOLS),
@@ -115,4 +118,5 @@ class RuntimeOrchestratorRouter(OrchestratorPort):
             event_store=dependencies.event_store,
             tasks=dependencies.tasks,
             pause_on_verification_failure=True,
+            project_learning=learning,
         )

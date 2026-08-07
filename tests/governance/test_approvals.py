@@ -319,10 +319,9 @@ def test_migration_files_do_not_manage_transactions_or_user_version() -> None:
     )
 
     for migration in migration_directory.glob("[0-9][0-9][0-9]_*.sql"):
-        sql = migration.read_text(encoding="utf-8").upper()
-        assert "BEGIN" not in sql
-        assert "COMMIT" not in sql
-        assert "PRAGMA USER_VERSION" not in sql
+        statements = [statement.strip().upper() for statement in migration.read_text(encoding="utf-8").split(";")]
+        assert all(not statement.startswith(("BEGIN", "COMMIT", "ROLLBACK")) for statement in statements)
+        assert all(not statement.startswith("PRAGMA USER_VERSION") for statement in statements)
 
 
 async def test_migration_lock_timeout_has_one_fixed_error() -> None:
@@ -739,7 +738,7 @@ async def test_fresh_database_runs_all_migrations_and_adds_task_config_version(
             await database.connection.execute("PRAGMA table_info(tasks)")
         ).fetchall()
 
-        assert version == (3,)
+        assert version == (7,)
         config_column = next(row for row in columns if row[1] == "config_version")
         assert config_column[2:5] == ("TEXT", 1, "'v1'")
     finally:
@@ -810,7 +809,7 @@ async def test_database_migrates_v1_legacy_approval_and_reopen_is_idempotent(
                 "SELECT COUNT(*) FROM approvals WHERE id = ?", (str(approval_id),)
             )
         ).fetchone()
-        assert version == (3,)
+        assert version == (7,)
         assert {
             "action_id",
             "reason_code",
@@ -896,6 +895,7 @@ async def test_two_database_instances_migrate_legacy_v1_once_without_sleep(
             "SELECT name FROM sqlite_master WHERE type = 'table'"
         ).fetchall()
     }
+    business_tables.update({"provider_profiles", "correction_branches", "project_learning_cards"})
     connection.commit()
     connection.close()
 
@@ -908,7 +908,7 @@ async def test_two_database_instances_migrate_legacy_v1_once_without_sleep(
             journal_mode = await (
                 await database.connection.execute("PRAGMA journal_mode")
             ).fetchone()
-            assert version == (3,)
+            assert version == (7,)
             assert journal_mode is not None and journal_mode[0].casefold() == "wal"
         migrated = await (
             await first.connection.execute(

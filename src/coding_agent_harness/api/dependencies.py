@@ -28,6 +28,7 @@ from coding_agent_harness.providers.registry import ProviderRegistry
 from coding_agent_harness.storage.provider_profiles import ProviderProfileRepository
 from coding_agent_harness.providers.binding import ProviderBindingCoordinator
 from coding_agent_harness.learning.questions import QuestionService
+from coding_agent_harness.learning.cards import ProjectLearningService
 
 
 _ResultT = TypeVar("_ResultT")
@@ -123,6 +124,7 @@ class ApiDependencies:
     provider_binding: ProviderBindingCoordinator | None = None
     question_service: QuestionService | None = None
     correction_branches: CorrectionBranchPort | None = None
+    project_learning: ProjectLearningService | None = None
 
 
 class PlanGateOrchestrator:

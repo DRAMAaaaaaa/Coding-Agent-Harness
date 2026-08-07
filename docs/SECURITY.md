@@ -25,3 +25,6 @@ MVP 只使用 Scripted Mock，不需要真实 Key。`.env.example` 只能保存�
 ## 容器边界
 
 镜像以非 root `harness` 用户运行。镜像不内置运行项目，Docker/Compose 必须把一个现有目录只读挂载到专用 `/workspace/project`，并把私有状态单独挂载到 `/state`；缺失或非目录项目源 fail closed，服务只复制到独立 session，不删除源。Compose 只发布 `127.0.0.1:8000`，使用只读根文件系统、`no-new-privileges` 并移除 Linux capabilities。容器隔离不是多租户安全边界；不要挂载宿主用户目录、Docker socket、SSH 目录或真实凭据。
+# 项目经验边界
+
+经验文本限制为 2048 UTF-8 字节，含 NUL、空文本或任一 Redactor 命中即整体拒绝。只接受已完成任务对应的 `FINAL_SUMMARY_PROPOSED` 事件；经验以不可信、独立且有界的 project context 注入，绝不能改变工具集、治理或审批。

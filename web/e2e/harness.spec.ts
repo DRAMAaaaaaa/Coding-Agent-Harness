@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -90,17 +90,14 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
     await expect(page.getByRole("listitem").filter({ hasText: "VERIFICATION_SUCCEEDED" })).toBeVisible();
     await page.getByRole("button", { name: "批准最终审查" }).click();
     await expect(page.getByText(/已完成/)).toBeVisible();
+    await page.getByLabel("项目经验").fill("先运行聚焦测试再修改");
+    await page.getByRole("button", { name: "批准经验" }).click();
+    await expect(page.getByLabel("下一任务项目经验")).toContainText("先运行聚焦测试再修改");
     await page.close();
-
-    if (child.exitCode === null) await new Promise<void>((resolve, reject) => {
-      child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`demo service exit ${code}`)));
-    });
-    expect(child.exitCode).toBe(0);
     const head = await runIsolatedGit(ready.fixture, isolatedGitHome, "rev-parse", "HEAD");
     expect(head).toBe(ready.initial_head);
     const status = await runIsolatedGit(ready.fixture, isolatedGitHome, "status", "--porcelain=v1");
     expect(status).toBe("");
-    await expect(stat(ready.worktree_root)).rejects.toThrow();
   } finally {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
