@@ -25,9 +25,9 @@ class KeyringCredentialStore:
         return SecretStr(value) if value is not None else None
 
     def delete(self, reference: str) -> None:
+        if self.get(reference) is None:
+            return
         try:
             keyring.delete_password(_SERVICE_NAME, reference)
-        except keyring.errors.PasswordDeleteError:
-            return
         except Exception:
             raise CredentialVaultError("CREDENTIAL_STORE_UNAVAILABLE") from None

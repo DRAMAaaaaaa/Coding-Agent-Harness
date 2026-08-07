@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
+import keyring
 import pytest
 from pydantic import SecretStr
 
@@ -83,6 +84,43 @@ def test_keyring_failure_is_stable_and_does_not_leak_secret(monkeypatch: pytest.
     with pytest.raises(CredentialVaultError, match="^CREDENTIAL_STORE_UNAVAILABLE$") as captured:
         store.get("provider-profile:1")
 
+    assert "fake-keyring-secret" not in repr(captured.value)
+
+
+def test_keyring_delete_of_missing_secret_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    store = KeyringCredentialStore()
+    monkeypatch.setattr(
+        "coding_agent_harness.providers.keyring_credentials.keyring.get_password",
+        lambda *_: calls.append("get") or None,
+    )
+    monkeypatch.setattr(
+        "coding_agent_harness.providers.keyring_credentials.keyring.delete_password",
+        lambda *_: calls.append("delete"),
+    )
+
+    store.delete("provider-profile:1")
+
+    assert calls == ["get"]
+
+
+def test_keyring_delete_failure_for_existing_secret_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = KeyringCredentialStore()
+    monkeypatch.setattr(
+        "coding_agent_harness.providers.keyring_credentials.keyring.get_password",
+        lambda *_: "fake-keyring-secret",
+    )
+    monkeypatch.setattr(
+        "coding_agent_harness.providers.keyring_credentials.keyring.delete_password",
+        lambda *_: (_ for _ in ()).throw(keyring.errors.PasswordDeleteError("backend failure")),
+    )
+
+    with pytest.raises(CredentialVaultError, match="^CREDENTIAL_STORE_UNAVAILABLE$") as captured:
+        store.delete("provider-profile:1")
+
+    assert "backend failure" not in repr(captured.value)
     assert "fake-keyring-secret" not in repr(captured.value)
 
 

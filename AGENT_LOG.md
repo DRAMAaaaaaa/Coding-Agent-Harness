@@ -1018,3 +1018,9 @@
 - **纠正性 TDD：** mypy 报告空字符串秘密的返回类型错误；根因为 `and` 真值短路返回原始空字符串。新增空秘密 RED（`1 failed, 10 passed`），改为显式 `None` 判定后转绿。
 - **新鲜验证：** 聚焦 pytest `25 passed`；Ruff 输出 `All checks passed!`；mypy 输出 `Success: no issues found in 53 source files`。仍需独立规约符合性和代码质量审查，未将 CL1-2 标记为完成。
 - **秘密零泄漏：** 测试仅含显然假值；秘密值只经 `SecretStr` 或加密字节处理，异常使用固定原因码，不记录第三方异常正文或秘密。
+
+### 2026-08-07 — FIX-CL1-2-KEYRING-DELETE
+
+- **审查修复：** 处理 CL1-2 唯一 Important：原 Keyring 删除无条件吞掉 `PasswordDeleteError`，可能误报成功并留下持久化凭据。先新增缺失幂等和“已存在但删除失败”两个 RED；聚焦命令得到 `2 failed, 11 passed`，直接复现问题。
+- **最小 GREEN：** `delete()` 先经稳定 `get()` 确认状态；只有观察到缺失才幂等返回，观察到存在后任何删除异常均为 `CREDENTIAL_STORE_UNAVAILABLE`，不携带后端正文或秘密。读取/删除竞态下已观察到存在而删除失败仍 fail-closed。
+- **新鲜验证：** credentials/config 聚焦 `27 passed`，Ruff、mypy（53 个源文件）、`git diff --check` 与仓库秘密扫描均退出 0；测试只使用明显假值，并断言异常 message/repr 不泄漏。
