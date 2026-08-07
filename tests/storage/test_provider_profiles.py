@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from uuid import UUID
+from datetime import UTC, datetime, timedelta, timezone
+from uuid import UUID, uuid4
 
 import pytest
 
 from coding_agent_harness.providers.models import ProviderKind
+from coding_agent_harness.domain.actions import TaskState
+from coding_agent_harness.domain.models import Task
 from coding_agent_harness.storage.database import Database
 from coding_agent_harness.storage.provider_profiles import ProviderProfileRepository
+from coding_agent_harness.storage.repositories import TaskRepository
 
 
 async def test_create_normalizes_model_and_starts_version_one(tmp_path) -> None:
@@ -56,3 +59,33 @@ def test_rejects_control_characters_and_overlong_utf8_model() -> None:
         ProviderProfileRepository.normalize_model("good\x00bad")
     with pytest.raises(ValueError):
         ProviderProfileRepository.normalize_model("界" * 43)
+
+
+async def test_task_authorization_is_normalized_to_utc_before_persistence(tmp_path) -> None:
+    database = await Database.open(tmp_path / "authorization.db")
+    profiles = ProviderProfileRepository(database)
+    repository = TaskRepository(database)
+    local_authorization = datetime(2026, 1, 1, 8, tzinfo=timezone(timedelta(hours=8)))
+    try:
+        profile = await profiles.create(ProviderKind.QWEN, "qwen-plus")
+        workspace_id = uuid4()
+        await database.connection.execute("INSERT INTO workspaces (id) VALUES (?)", (str(workspace_id),))
+        await database.connection.commit()
+        task = Task(
+            id=uuid4(), workspace_id=workspace_id, requirement="x", state=TaskState.CREATED,
+            step_budget=1, time_budget_seconds=1.0, created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            deadline_at=None, provider_profile_id=profile.id,
+            provider_profile_version=profile.version,
+            llm_api_authorized_at=local_authorization,
+        )
+        assert task.llm_api_authorized_at == datetime(2026, 1, 1, tzinfo=UTC)
+        await repository.create(task)
+        stored = await repository.get(task.id)
+        assert stored is not None
+        assert stored.llm_api_authorized_at == datetime(2026, 1, 1, tzinfo=UTC)
+        row = await (await database.connection.execute(
+            "SELECT llm_api_authorized_at FROM tasks WHERE id = ?", (str(task.id),)
+        )).fetchone()
+        assert row == ("2026-01-01T00:00:00+00:00",)
+    finally:
+        await database.close()

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -26,7 +26,7 @@ class Task(BaseModel):
     def authorization_is_utc_aware(cls, value: datetime | None) -> datetime | None:
         if value is not None and (value.tzinfo is None or value.utcoffset() is None):
             raise ValueError("llm authorization timestamp must be UTC-aware")
-        return value
+        return value.astimezone(UTC) if value is not None else None
 
     @model_validator(mode="after")
     def provider_binding_is_complete(self) -> "Task":

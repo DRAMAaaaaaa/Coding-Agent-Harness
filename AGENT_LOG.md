@@ -982,6 +982,17 @@
 - **增量边界：** CL-1 复用现有 `LLMProvider`、`AgentOrchestrator`、`EventStore`、治理、ToolRegistry 和 worktree；6 个 Task 依次交付配置持久化、凭据保险库、受限 Registry、Provider API、真实运行时和最小 WebUI/验收。CL-2—CL-4 在前一阶段接口稳定后分别生成精确计划，避免提前固化错误接口。
 - **规格同步：** `SPEC.md` 新增第 16 节，写入已批准特色、四阶段范围、安全边界和旗舰验收；`PLAN.md` 新增阶段路线、CL1-1—CL1-6 状态表和陌生智能体冷启动门禁。详细计划位于 `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md`，下一步是计划自审、提交和冷启动检查。
 
+### 2026-08-07 — CL1-1 修复轮次 1
+
+- RED：`test_task_authorization_is_normalized_to_utc_before_persistence` 证明 +08:00 授权时间被原样保存为非 UTC ISO 字符串。
+- GREEN：领域模型将授权时间规范化为 UTC；新增 migration 004 双连接单次应用与故障回滚/重试测试。
+- 验证：聚焦 recovery/API 回归 `57 passed in 42.19s`；wheel 与 sdist 各恰含一份 migration 004；Ruff、mypy 与 `git diff --check` 通过。
+
+### 2026-08-07 — CL1-1 双重审查
+
+- 规约符合性自审确认 migration 004 的三字段完整性触发器、repository 的 `BEGIN IMMEDIATE` 版本核对、UTC 与 Unicode 校验均与 Task 简报一致。
+- 独立代码审查未发现 Critical。审查指出直写 SQL 可绕过 Python 层的 model 字符串校验及 repository 的版本核对；该路径不在简报指定的 migration trigger 契约内，且明确的版本核对位置是 `TaskRepository.create_prepared`，故不在本 Task 扩展数据库架构。
+
 ### 2026-08-07 — CL1-1 Provider 配置持久化
 
 - 按 `task-1-brief.md` 在隔离 worktree 实现 migration 004、Provider Profile repository 与 Task 的版本化授权绑定；未读取或写入任何真实凭据，未联网。
