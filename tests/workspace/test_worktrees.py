@@ -166,6 +166,23 @@ def test_freeze_preserves_parent_worktree_and_allows_exactly_one_child_writer(
     assert child.path.is_dir()
 
 
+def test_freeze_is_idempotent_after_verifying_the_frozen_worktree_identity(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path],
+    tmp_path: Path,
+) -> None:
+    root = git_repository_factory("freeze-idempotent", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    manager = WorktreeManager(workspace, tmp_path / "state")
+    task_id = uuid4()
+    parent = manager.create(task_id, head(root))
+
+    manager.freeze(task_id)
+    manager.freeze(task_id)
+
+    assert parent.path.is_dir()
+    assert manager._registration_for(parent.path) is not None
+
+
 def test_rejects_state_directory_inside_project(
     git_repository_factory: Callable[[str, Mapping[str, str]], Path],
 ) -> None:

@@ -64,6 +64,7 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
   await mkdir(isolatedGitHome);
   const child = spawn(python, [
     "scripts/serve_demo.py", "--ready-file", readyFile, "--runtime-root", runtimeRoot,
+    "--keep-alive",
   ], {
     cwd: repoRoot,
     detached: process.platform !== "win32",
@@ -92,6 +93,7 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
     await page.getByRole("button", { name: "从此纠正" }).click();
     const response = await correctionResponse;
     expect(response.status(), await response.text()).toBe(201);
+    const correctionBranch = await response.json() as { id: string };
     await expect(page.getByLabel("纠正分支比较")).toBeVisible();
     await expect(page.getByText(/子任务：WAITING_PLAN_APPROVAL/)).toBeVisible();
     await page.getByRole("button", { name: "批准计划" }).click();
@@ -101,14 +103,29 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
     await expect(page.getByRole("listitem").filter({ hasText: "VERIFICATION_SUCCEEDED" })).toBeVisible();
     await page.getByRole("button", { name: "批准最终审查" }).click();
     await expect(page.getByText(/已完成/)).toBeVisible();
+    const finalComparison = await page.request.get(`${ready.url}/api/correction-branches/${correctionBranch.id}/comparison`);
+    expect(finalComparison.ok(), await finalComparison.text()).toBeTruthy();
+    const comparison = await finalComparison.json() as { child_state: string; child_diff: string | null };
+    expect(comparison.child_state).toBe("COMPLETED");
+    expect(comparison.child_diff).toContain("+VALUE = 2");
     await page.getByLabel("项目经验").fill("先运行聚焦测试再修改");
     await page.getByRole("button", { name: "批准经验" }).click();
     await expect(page.getByLabel("下一任务项目经验")).toContainText("先运行聚焦测试再修改");
     await page.getByLabel("编码需求").fill("应用已批准的项目经验");
+    const nextTaskResponse = page.waitForResponse((next) => next.url().endsWith("/api/tasks") && next.request().method() === "POST");
     await page.getByRole("button", { name: "生成计划" }).click();
+    const nextTask = await (await nextTaskResponse).json() as { id: string };
     await expect(page.getByText(/经验 ID：/)).toBeVisible();
     await expect(page.getByText("已应用项目经验，先运行验证。", { exact: true })).toBeVisible();
     await expect(page.getByRole("listitem").filter({ hasText: "PROJECT_LEARNING_APPLIED" })).toBeVisible();
+    const firstActionPromise = page.evaluate(async (taskId) => await new Promise<{ tool: string }>((resolve, reject) => {
+      const source = new EventSource(`/api/tasks/${taskId}/events?after=0`);
+      source.addEventListener("task-event", (message) => { const event = JSON.parse((message as MessageEvent<string>).data) as { event_type: string; payload: { action?: { tool?: string } } }; if (event.event_type === "ACTION_PARSED") { source.close(); resolve({ tool: event.payload.action?.tool ?? "" }); } });
+      source.onerror = () => { source.close(); reject(new Error("SSE failed before ACTION_PARSED")); };
+    }), nextTask.id);
+    await page.getByRole("button", { name: "批准计划" }).click();
+    const firstAction = await firstActionPromise;
+    expect(firstAction.tool).toBe("run_verification");
     await page.close();
     const head = await runIsolatedGit(ready.fixture, isolatedGitHome, "rev-parse", "HEAD");
     expect(head).toBe(ready.initial_head);

@@ -445,13 +445,18 @@ class DemoOrchestratorRouter:
         return await (await self._for(task_id)).run_until_wait(task_id)
 
     async def approve_final(self, task_id: UUID) -> Task:
-        completed = await (await self._for(task_id)).approve_final(task_id)
-        workspace = self._workspaces_by_task.pop(task_id, None)
-        if workspace is not None:
-            await asyncio.to_thread(
-                WorktreeManager(workspace, self._state_root).freeze,
-                task_id,
-            )
+        task = await self._tasks.get(task_id)
+        if task is None:
+            raise KeyError(f"任务不存在：{task_id}")
+        stored = await self._workspaces.get(task.workspace_id)
+        if stored is None:
+            raise KeyError(f"Workspace 不存在：{task.workspace_id}")
+        workspace = stored.workspace
+        await asyncio.to_thread(WorktreeManager(workspace, self._state_root).freeze, task_id)
+        if task.state is TaskState.COMPLETED:
+            return task
+        orchestrator = await self._for(task_id)
+        completed = await orchestrator.approve_final(task_id)
         if self._on_completed is not None:
             self._on_completed()
         return completed

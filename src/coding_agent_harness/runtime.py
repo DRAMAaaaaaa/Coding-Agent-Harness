@@ -9,6 +9,7 @@ from coding_agent_harness.agent.orchestrator import AgentOrchestrator, ToolExecu
 from coding_agent_harness.agent.parser import ActionParser
 from coding_agent_harness.api.dependencies import ApiDependencies, OrchestratorPort, RuntimeUnavailableError
 from coding_agent_harness.domain.models import Task
+from coding_agent_harness.domain.actions import TaskState
 from coding_agent_harness.governance.path_identity import trusted_paths_overlap
 from coding_agent_harness.governance.paths import PathGuard
 from coding_agent_harness.governance.policy import PolicyContext, PolicyEngine
@@ -78,15 +79,19 @@ class RuntimeOrchestratorRouter(OrchestratorPort):
         return await (await self._for(task_id)).run_until_wait(task_id)
 
     async def approve_final(self, task_id: UUID) -> Task:
-        completed = await (await self._for(task_id)).approve_final(task_id)
-        workspace = await self._dependencies.workspaces.get(completed.workspace_id)
+        task = await self._dependencies.tasks.get(task_id)
+        if task is None:
+            raise KeyError("任务不存在")
+        workspace = await self._dependencies.workspaces.get(task.workspace_id)
         if workspace is None:
             raise KeyError("Workspace 不存在")
         await self._dependencies.worker.run(
             WorktreeManager(workspace.workspace, self._dependencies.state_root).freeze,
             task_id,
         )
-        return completed
+        if task.state is TaskState.COMPLETED:
+            return task
+        return await (await self._for(task_id)).approve_final(task_id)
 
     async def _for(self, task_id: UUID) -> AgentOrchestrator:
         dependencies = self._dependencies

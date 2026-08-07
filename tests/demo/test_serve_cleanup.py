@@ -83,6 +83,44 @@ def _stub_serve_dependencies(
     return listener, database, router
 
 
+async def test_serve_exits_zero_when_the_single_demo_task_completes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    _stub_serve_dependencies(monkeypatch, tmp_path)
+
+    def completed_router(**kwargs: object) -> _Router:
+        callback = kwargs["on_completed"]
+        assert callable(callback)
+        callback()
+        return _Router()
+
+    monkeypatch.setattr(serve_demo, "DemoOrchestratorRouter", completed_router)
+
+    assert await asyncio.wait_for(
+        serve_demo._serve(runtime_root, tmp_path / "ready.json", 10), timeout=2,
+    ) == 0
+
+
+async def test_serve_keep_alive_omits_the_single_task_completion_callback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_serve_dependencies(monkeypatch, tmp_path)
+    captured: dict[str, object] = {}
+
+    def keep_alive_router(**kwargs: object) -> _Router:
+        captured.update(kwargs)
+        raise RuntimeError("stop after construction")
+
+    monkeypatch.setattr(serve_demo, "DemoOrchestratorRouter", keep_alive_router)
+
+    with pytest.raises(RuntimeError, match="stop after construction"):
+        await serve_demo._serve(tmp_path / "runtime", tmp_path / "ready.json", 10, keep_alive=True)
+    assert captured["on_completed"] is None
+
+
 async def test_cleanup_continues_after_router_failure(tmp_path: Path) -> None:
     state_root = tmp_path / "state"
     state_root.mkdir()

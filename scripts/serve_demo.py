@@ -252,6 +252,7 @@ async def _serve(
     bind_host: str = "127.0.0.1",
     bind_port: int = 0,
     project_source: Path | None = None,
+    keep_alive: bool = False,
 ) -> int:
     state_root = runtime_root / "state"
     database: Database | None = None
@@ -288,6 +289,7 @@ async def _serve(
             event_store=event_store,
             state_root=state_root,
             project_learning=project_learning,
+            on_completed=None if keep_alive else completed.set,
         )
         settings = HarnessSettings(
             bind_host=bind_host,
@@ -390,6 +392,7 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--project-source", type=Path)
+    parser.add_argument("--keep-alive", action="store_true", help="允许同一演示会话连续创建多个任务")
     return parser.parse_args()
 
 
@@ -409,6 +412,7 @@ def main() -> int:
                 bind_host=arguments.host,
                 bind_port=arguments.port,
                 project_source=arguments.project_source,
+                keep_alive=arguments.keep_alive,
             )
         )
     with TemporaryDirectory(prefix="harness-web-demo-") as directory:
@@ -420,6 +424,7 @@ def main() -> int:
                 bind_host=arguments.host,
                 bind_port=arguments.port,
                 project_source=arguments.project_source,
+                keep_alive=arguments.keep_alive,
             )
         )
 

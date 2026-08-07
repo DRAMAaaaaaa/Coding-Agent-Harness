@@ -102,9 +102,14 @@ class WorktreeManager:
     def freeze(self, task_id: UUID) -> None:
         """冻结已验证的父 worktree，保留现场并释放唯一写租约。"""
         try:
-            if self._read_active_marker() != str(task_id):
-                raise WorktreeUncertainError("父任务写租约归属不确定，需要人工处理")
             target = self._resolve_state_path(self._workspace_state / str(task_id))
+            frozen = self._resolve_state_path(self._workspace_state / f".frozen-{task_id}")
+            already_frozen = frozen.exists()
+            if already_frozen:
+                if not frozen.is_file() or frozen.read_text(encoding="ascii") != str(task_id):
+                    raise WorktreeUncertainError("父任务冻结状态不确定，需要人工处理")
+            elif self._read_active_marker() != str(task_id):
+                raise WorktreeUncertainError("父任务写租约归属不确定，需要人工处理")
             self._git.trust_linked_worktree(target, self._git_root)
             root = self._git.run(target, ["rev-parse", "--show-toplevel"])
             registration = self._registration_for(target)
@@ -113,7 +118,8 @@ class WorktreeManager:
             reported = Path(root.stdout.decode("utf-8").strip()).resolve(strict=True)
             if not same_path(reported, target):
                 raise WorktreeUncertainError("父任务 worktree 身份不确定，需要人工处理")
-            frozen = self._resolve_state_path(self._workspace_state / f".frozen-{task_id}")
+            if already_frozen:
+                return
             descriptor = os.open(frozen, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             try:
                 os.write(descriptor, str(task_id).encode("ascii"))

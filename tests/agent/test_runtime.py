@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import httpx
@@ -22,6 +23,7 @@ from coding_agent_harness.providers.credentials import (
     SessionOnlyCredentialStore,
 )
 from coding_agent_harness.runtime import RuntimeOrchestratorRouter
+from coding_agent_harness import runtime as runtime_module
 from coding_agent_harness.tools.models import ToolResult
 from tests.api.conftest import session_headers
 from tests.api.test_projects import _git_repo
@@ -140,3 +142,41 @@ class _FailingVerificationTools:
 
     def normalized_governance_scope(self, action: object) -> None:
         return None
+
+
+@pytest.mark.asyncio
+async def test_runtime_final_approval_freezes_before_persisting_and_revalidates_completed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = Task(id=uuid4(), workspace_id=uuid4(), requirement="final", state=TaskState.WAITING_FINAL_REVIEW,
+        step_budget=1, time_budget_seconds=1, created_at=datetime.now(UTC), deadline_at=None)
+    calls: list[TaskState] = []
+
+    class _Tasks:
+        async def get(self, _task_id: UUID) -> Task:
+            return task
+
+    class _Workspaces:
+        async def get(self, _workspace_id: UUID) -> object:
+            return SimpleNamespace(workspace=object())
+
+    class _Worker:
+        async def run(self, function: object, *args: object) -> object:
+            return function(*args)  # type: ignore[operator]
+
+    class _Agent:
+        async def approve_final(self, _task_id: UUID) -> Task:
+            nonlocal task
+            assert calls == [TaskState.WAITING_FINAL_REVIEW]
+            task = task.model_copy(update={"state": TaskState.COMPLETED})
+            return task
+
+    router = RuntimeOrchestratorRouter(SimpleNamespace(tasks=_Tasks(), workspaces=_Workspaces(), worker=_Worker(), state_root=tmp_path))
+    async def build(_task_id: UUID) -> _Agent:
+        return _Agent()
+    monkeypatch.setattr(router, "_for", build)
+    monkeypatch.setattr(runtime_module, "WorktreeManager", lambda *_args: SimpleNamespace(freeze=lambda _task_id: calls.append(task.state)))
+
+    assert (await router.approve_final(task.id)).state is TaskState.COMPLETED
+    assert (await router.approve_final(task.id)).state is TaskState.COMPLETED
+    assert calls == [TaskState.WAITING_FINAL_REVIEW, TaskState.COMPLETED]
