@@ -982,6 +982,11 @@
 - **增量边界：** CL-1 复用现有 `LLMProvider`、`AgentOrchestrator`、`EventStore`、治理、ToolRegistry 和 worktree；6 个 Task 依次交付配置持久化、凭据保险库、受限 Registry、Provider API、真实运行时和最小 WebUI/验收。CL-2—CL-4 在前一阶段接口稳定后分别生成精确计划，避免提前固化错误接口。
 - **规格同步：** `SPEC.md` 新增第 16 节，写入已批准特色、四阶段范围、安全边界和旗舰验收；`PLAN.md` 新增阶段路线、CL1-1—CL1-6 状态表和陌生智能体冷启动门禁。详细计划位于 `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md`，下一步是计划自审、提交和冷启动检查。
 
+### 2026-08-07 — CL1-1 修复轮次 2
+
+- 新增制品行为测试，真实构建 wheel/sdist 后断言 migration 004 在每个制品中仅出现一次；测试使用 pytest 临时目录保存制品。
+- 验证：制品与 storage 聚焦测试 `10 passed in 8.73s`，相关 Ruff 和 `git diff --check` 通过；报告追加准确制品及 recovery/API 命令和输出摘要。
+
 ### 2026-08-07 — CL1-1 修复轮次 1
 
 - RED：`test_task_authorization_is_normalized_to_utc_before_persistence` 证明 +08:00 授权时间被原样保存为非 UTC ISO 字符串。

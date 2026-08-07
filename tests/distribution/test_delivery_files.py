@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 import sys
+import tarfile
+from zipfile import ZipFile
 
 import pytest
 import yaml
@@ -49,6 +52,25 @@ def test_required_delivery_files_exist() -> None:
         "docs/DEMO.md",
     )
     assert [path for path in required if not (ROOT / path).is_file()] == []
+
+
+def test_wheel_and_sdist_include_migration_004_exactly_once(tmp_path: Path) -> None:
+    output = tmp_path / "dist"
+    result = subprocess.run(
+        [sys.executable, "-m", "build", "--outdir", str(output)],
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    expected = "coding_agent_harness/storage/migrations/004_provider_profiles.sql"
+    wheel = next(output.glob("*.whl"))
+    sdist = next(output.glob("*.tar.gz"))
+    with ZipFile(wheel) as archive:
+        assert sum(name == expected for name in archive.namelist()) == 1
+    with tarfile.open(sdist) as archive:
+        assert sum(name.endswith(expected) for name in archive.getnames()) == 1
 
 
 def test_docker_runtime_is_non_root_and_exposes_only_web_port() -> None:
