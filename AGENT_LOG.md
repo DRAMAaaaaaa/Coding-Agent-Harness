@@ -1072,3 +1072,9 @@
 - **范围与技能：** 基于 `e979612` 仅处理 I1—I5；使用 `receiving-code-review`、`test-driven-development` 和 `verification-before-completion`。未联网、安装依赖、使用真实 Key，亦未进入 Task 4。
 - **RED→GREEN：** 新增冲突 sequence、16 KiB 多字节回答、最大卡片下完整问题与支撑事件摘要测试。首轮因缺少稳定冲突错误而收集失败；GREEN 后 learning/API/storage 聚焦测试通过。`BUSINESS_TABLES` 断言同步纳入既有 `provider_profiles`，未修改迁移或产品存储。
 - **状态：** I1—I5 返工完成，待规约符合性与代码质量复审；最终提交 hash 由 closure 台账记录。
+
+### 2026-08-07 — 关闭精简计划 Task 3 意图卡与只读提问
+
+- **最终范围与复审：** Task 3 范围为 `83ed253..4b9b952`；实现 `e979612`、审查返工 `e0a0f5f`、报告修订 `4b9b952`。最终合并规约/质量复审为 Spec compliant Yes、Assessment Approved，Critical / Important / Minor=`0/0/0`。
+- **交付结果：** 四类 `IntentCard` 从 `TaskEvent` 唯一事实源确定性投影；冲突 sequence 固定拒绝。只有验证失败卡可通过任务绑定 Provider 进行零工具提问，问题、事件摘要与回答分别执行 UTF-8 预算和脱敏，问题完整保留；审计事件保持 Task state，不修改文件、审批或 worktree。
+- **主控新鲜验证：** learning、learning API 与 storage event-store 聚焦 `25 passed`，其中 storage `19 passed`；Web 为 2 个文件 `25 passed`；Ruff、mypy（61 个源文件）、秘密扫描、ESLint、TypeScript typecheck、Vite 生产构建、`git diff --check` 和工作树状态均通过。未联网、安装依赖、使用真实 Key、push 或进入 Task 4 实现。

@@ -168,6 +168,8 @@ git commit -m "feat: 连通真实 Provider 最小主路径"
 
 ### Task 3: 四类意图卡与失败节点只读提问
 
+**当前状态：** 已关闭。实现提交 `e979612`，审查返工 `e0a0f5f`，报告修订 `4b9b952`；最终合并规约/质量复审为 Approved，Critical / Important / Minor 均为 0。
+
 **Files:**
 - Create: `src/coding_agent_harness/learning/__init__.py`
 - Create: `src/coding_agent_harness/learning/intent.py`
@@ -212,7 +214,7 @@ class QuestionService:
     async def ask(self, task_id: UUID, card_id: str, question: str) -> ReadOnlyAnswer: ...
 ```
 
-- [ ] **Step 1: 写确定性投影与零工具 RED**
+- [x] **Step 1: 写确定性投影与零工具 RED**
 
 同一乱序输入先按 sequence 排序，固定投影四张卡；重复事件不产生重复卡。`FIRST_EDIT` 使用首个 `TOOL_EXECUTION_COMPLETED.result.changed_paths` 非空事件；失败卡绑定 `VERIFICATION_FAILED` 和最近的 `VERIFICATION_RECORDED/FEEDBACK_RECORDED`；最终卡绑定 `FINAL_SUMMARY_PROPOSED`。
 
@@ -226,19 +228,19 @@ async def test_question_is_zero_tool_and_state_preserving(fixture) -> None:
     assert fixture.registered_tools == ()
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/learning/test_intent.py tests/learning/test_questions.py tests/api/test_learning.py -q`
 
 Expected: FAIL，`learning` package 与 routes 不存在。
 
-- [ ] **Step 3: 实现纯投影器和 QuestionService**
+- [x] **Step 3: 实现纯投影器和 QuestionService**
 
 卡片 ID 固定为 `{task_id}:{kind}:{source_event_sequence}`。所有字符串经 Redactor 后分别限制为 8 KiB；不保存 raw chain-of-thought。问题先校验 1–4096 UTF-8 bytes，再调用任务 Registry Provider。`LLMRequest` 只包含卡片、问题和最多 8 KiB 的事件摘要；Provider 接口本身不接收 ToolRegistry。
 
 追加 `LEARNING_QUESTION_ASKED/ANSWERED/FAILED` 事件时 `state_before == state_after == 当前 Task state`。失败事件只保存稳定 Provider kind，不保存第三方正文。
 
-- [ ] **Step 4: 增加最小 API 与卡片 UI**
+- [x] **Step 4: 增加最小 API 与卡片 UI**
 
 端点固定为：
 
@@ -249,7 +251,7 @@ POST /api/tasks/{task_id}/questions  {card_id, question}
 
 只有 failure card 显示问题输入和按钮；提交后显示回答。UI 不渲染 HTML，不显示隐藏 prompt 或未脱敏 payload。
 
-- [ ] **Step 5: GREEN、静态检查、审查与提交**
+- [x] **Step 5: GREEN、静态检查、审查与提交**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/learning tests/api/test_learning.py tests/storage/test_event_store.py -q`
 
