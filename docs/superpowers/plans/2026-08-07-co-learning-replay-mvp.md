@@ -26,7 +26,7 @@
 
 ### Task 1: 关闭已实现的 Provider 核心
 
-**当前状态：** 实现提交已存在：`437d7d7`、`765c9e9`、`4b5d977`、`25a81ff`、`7f7fde1`、`a49ad27`、`f17ac16`。本 Task 不再增加产品能力，只完成 `f17ac16` 的范围复审和状态关闭。
+**当前状态：** 已关闭。实现提交为 `437d7d7`、`765c9e9`、`4b5d977`、`25a81ff`、`7f7fde1`、`a49ad27`、`f17ac16`；`a49ad27..f17ac16` 合并规约/质量复审为 Approved，Critical / Important / Minor 均为 0。
 
 **Files:**
 - Existing: `src/coding_agent_harness/providers/registry.py`
@@ -51,13 +51,13 @@ async def test_registry_default_client_factory_disables_environment_and_redirect
 
 `f17ac16` 已把默认 factory 固定为 `httpx.AsyncClient(trust_env=False, follow_redirects=False)`；Provider 回归为 `42 passed`，Ruff、mypy、秘密扫描和 diff check 已通过。
 
-- [ ] **Step 3: 生成修复差异包并执行一次范围复审**
+- [x] **Step 3: 生成修复差异包并执行一次范围复审**
 
 Run: `review-package docs/superpowers/plans/2026-08-07-co-learning-replay-mvp.md a49ad27 f17ac16`
 
 Expected: 原 Critical “默认 client 采用环境代理” 为 ADDRESSED；无新 Critical/Important。client 生命周期 Minor 转入 Task 2 的共享 lifespan client，不在本 Task 扩展。
 
-- [ ] **Step 4: 回填任务状态**
+- [x] **Step 4: 回填任务状态**
 
 更新 `PLAN.md` 与 `AGENT_LOG.md`，记录复审结论和 `f17ac16`；提交：
 

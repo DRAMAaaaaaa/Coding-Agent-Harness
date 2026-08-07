@@ -1045,3 +1045,9 @@
 - **计划结果：** 使用 `writing-plans` 把旧六 Task Provider 计划和未展开的 CL-2—4 合并为 `docs/superpowers/plans/2026-08-07-co-learning-replay-mvp.md` 的五个纵向 Task。旧 Provider 计划明确标记废止。
 - **关键约束发现：** 现有 `WorktreeManager` 每 Workspace 只有一个活动写租约；纠正分支不能直接并行创建。新计划以“冻结父 worktree 为只读、保留现场、释放写租约、再创建唯一子分支”解决，不放宽单写者边界。
 - **成本策略：** 不再冷启动；实现者只读单 Task brief，任务审查合并规约/质量，Minor 登记不返工，聚焦测试逐 Task 运行，全量仅在最终 Task 运行。
+
+### 2026-08-07 — 关闭精简计划 Task 1 Provider 核心
+
+- **任务与技能：** 使用 `subagent-driven-development` 和 `verification-before-completion`，仅关闭既有 Provider 核心实现，不增加产品能力。受审范围为 `a49ad27..f17ac16`。
+- **独立复审：** 新鲜合并规约/质量审查确认默认 HTTP client 经真实 `ProviderRegistry.build_for_task()` 路径固定使用 `trust_env=False`、`follow_redirects=False`，测试由 `httpx.MockTransport` 离线驱动；结论为 Approved，Critical / Important / Minor 均为 0。共享 client 生命周期仍按计划由 Task 2 负责。
+- **主控新鲜验证：** 环境代理目标测试 `1 passed`，全 Provider 回归 `42 passed`；Ruff、mypy（54 个源文件）、秘密扫描、`git diff --check` 与工作树状态检查均退出 0。未联网、安装依赖、接触真实凭据、push 或扩展 Task 2。

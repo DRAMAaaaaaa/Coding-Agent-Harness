@@ -1793,7 +1793,7 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 
 | 阶段 | 状态 | 可独立验收的交付 | 精确计划 |
 |---|---|---|---|
-| CL-1 真实 Provider | 核心已实现，待关闭复审与最小接线 | 会话 Key、DeepSeek/Qwen、现有 Agent 主路径 | `docs/superpowers/plans/2026-08-07-co-learning-replay-mvp.md` Task 1—2 |
+| CL-1 真实 Provider | Task 1 已关闭，正在最小接线 | 会话 Key、DeepSeek/Qwen、现有 Agent 主路径 | `docs/superpowers/plans/2026-08-07-co-learning-replay-mvp.md` Task 1—2 |
 | CL-2 意图卡 | 待 Task 2 | 四类卡片与失败节点只读提问 | 同上 Task 3 |
 | CL-3 纠正分支 | 待 Task 3 | 单个失败节点、唯一分支、简化比较 | 同上 Task 4 |
 | CL-4 项目经验 | 待 Task 4 | 单条批准经验、下一任务引用、旗舰 E2E | 同上 Task 5 |
@@ -1802,7 +1802,7 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 
 | Task | 状态 | 交付边界 |
 |---|---|---|
-| 1 Provider 核心关闭 | 实现完成，待 `f17ac16` 范围复审 | 固定端点、会话/保留的安全 Vault、授权、受限 HTTP |
+| 1 Provider 核心关闭 | 已完成（`f17ac16`；复审 Approved，C/I/M=`0/0/0`） | 固定端点、会话/保留的安全 Vault、授权、受限 HTTP |
 | 2 Provider 纵向接线 | 待开始 | session API、真实 runtime、最小 WebUI |
 | 3 意图卡与提问 | 待 Task 2 | 四类投影、失败节点零工具提问 |
 | 4 单级纠正分支 | 待 Task 3 | 父写租约冻结、唯一子分支、简化比较 |
