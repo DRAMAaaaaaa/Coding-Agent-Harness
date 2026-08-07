@@ -391,11 +391,11 @@ git commit -m "feat: 支持单级纠正分支"
 ### Task 5: 单条项目经验与最终旗舰验收
 
 **Files:**
-- Create: `src/coding_agent_harness/storage/migrations/006_project_learning.sql`
+- Create: `src/coding_agent_harness/storage/migrations/007_project_learning.sql`
 - Create: `src/coding_agent_harness/learning/cards.py`
 - Create: `src/coding_agent_harness/storage/project_learning.py`
 - Create: `tests/learning/test_cards.py`
-- Create: `tests/storage/test_migration_006.py`
+- Create: `tests/storage/test_migration_007.py`
 - Modify: `src/coding_agent_harness/agent/orchestrator.py`
 - Modify: `src/coding_agent_harness/runtime.py`
 - Modify: `src/coding_agent_harness/api/learning_routes.py`
@@ -447,7 +447,7 @@ async def test_only_approved_latest_card_changes_next_action(fixture) -> None:
 
 - [ ] **Step 2: 运行 RED**
 
-Run: `.venv\Scripts\python.exe -m pytest tests/learning/test_cards.py tests/storage/test_migration_006.py tests/agent/test_runtime.py tests/api/test_learning.py -q`
+Run: `.venv\Scripts\python.exe -m pytest tests/learning/test_cards.py tests/storage/test_migration_007.py tests/agent/test_runtime.py tests/api/test_learning.py -q`
 
 Expected: FAIL，migration 006、repository 和 service 不存在。
 

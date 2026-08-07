@@ -1094,3 +1094,9 @@
 - **延期：** M1（检查点额外边界矩阵）与 M2（分支并发、取消、真实失败矩阵）按成本策略登记为未扩展范围；本轮只补 I 修复必需的最小行为测试。
 - **验证：** 聚焦 Python `33 passed`，Ruff 与 mypy（66 个源文件）通过；待 Web 和最终安全/差异门禁后复审、提交。
 - **提交与最终验证：** `304b83e`（`fix: 关闭单级纠正分支审查问题`）。提交前完整限定集为 Python `80 passed, 1 skipped`、Web `26 passed`；Ruff、mypy、ESLint、TypeScript、Vite build、秘密扫描与 `git diff --check` 均通过。未联网、安装依赖、使用真实凭据、push 或进入 Task 5。
+
+### 2026-08-07 — CL3 Task 4 纠正分支兼容迁移
+
+- **原因与 TDD：** 审查确认 `child_task_id` 需要先于 child Task 持久化，但已发布的 005 定义该列外键，不能静默重写历史 migration。先写 v5 手工旧 schema 升级 RED：旧 branch 行必须保留，升级到 v6 后才允许不存在的 child UUID；同时 fresh v4 必须连续执行 005、006。
+- **实现范围：** 005 恢复 `child_task_id REFERENCES tasks(id)` 原契约；新增 006 以受事务保护的 table-rebuild 复制全部行，再重建父 workspace/task 外键、状态/字节/序号约束和 `(parent_task_id, source_event_sequence)` 唯一约束，仅移除 child 外键。Task 5 计划 migration/test 编号顺延为 007，未实现 Task 5。
+- **验证：** storage/replay 完整聚焦 `67 passed`；Ruff、mypy（66 个源文件）、秘密扫描与 `git diff --check` 均通过，待提交。

@@ -29,6 +29,7 @@ BUSINESS_TABLES = {
     "memory_records",
     "credential_references",
     "provider_profiles",
+    "correction_branches",
 }
 
 

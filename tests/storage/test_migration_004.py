@@ -38,7 +38,7 @@ async def test_v3_only_applies_004_and_preserves_existing_task(tmp_path: Path) -
             "SELECT provider_profile_id, provider_profile_version, llm_api_authorized_at FROM tasks"
         )).fetchone()
         assert row == (None, None, None)
-        assert await (await database.connection.execute("PRAGMA user_version")).fetchone() == (4,)
+        assert await (await database.connection.execute("PRAGMA user_version")).fetchone() == (6,)
     finally:
         await database.close()
 
@@ -105,6 +105,6 @@ async def test_failed_004_rolls_back_and_can_retry(tmp_path: Path, monkeypatch: 
     shutil.copy2(_MIGRATIONS / "004_provider_profiles.sql", migration_directory / "004_provider_profiles.sql")
     database = await Database.open(path)
     try:
-        assert await (await database.connection.execute("PRAGMA user_version")).fetchone() == (4,)
+        assert await (await database.connection.execute("PRAGMA user_version")).fetchone() == (6,)
     finally:
         await database.close()
