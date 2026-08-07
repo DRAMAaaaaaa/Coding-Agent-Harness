@@ -7,7 +7,7 @@ from pathlib import Path
 import stat
 from threading import RLock
 from collections.abc import Callable
-from typing import ParamSpec, TypeVar, cast
+from typing import ParamSpec, TypeVar
 from uuid import UUID
 
 from coding_agent_harness.governance.path_identity import (
@@ -76,7 +76,7 @@ def _marker_lifecycle_locked(function: Callable[_Params, _Result]) -> Callable[_
     def guarded(*args: _Params.args, **kwargs: _Params.kwargs) -> _Result:
         with _MARKER_LIFECYCLE_LOCK:
             return function(*args, **kwargs)
-    return cast(Callable[_Params, _Result], guarded)
+    return guarded
 
 
 class WorktreeManager:
