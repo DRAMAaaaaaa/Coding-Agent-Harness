@@ -54,6 +54,18 @@ async function createTrustedTask(user: ReturnType<typeof userEvent.setup>): Prom
 }
 
 describe("App", () => {
+  it("仅为失败卡展示只读提问并显示回答", async () => {
+    const user = userEvent.setup();
+    const askQuestion = vi.fn(async () => ({ content: "Stub explanation" }));
+    const api = { ...scriptedApi({ events: [event(1, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")] }), getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "verification_failure", evidence_sequences: [1], action: "VERIFICATION_FAILED", expected_result: "验证通过", actual_result: "失败", status: "recorded", source_event_sequence: 1, learning_card_id: null }]), askQuestion };
+    render(<App api={api} />);
+    await createTrustedTask(user);
+    await user.type(await screen.findByLabelText("失败原因提问"), "为什么失败？");
+    await user.click(screen.getByRole("button", { name: "提问" }));
+    expect(askQuestion).toHaveBeenCalledWith(taskId, "failure-card", "为什么失败？");
+    expect(await screen.findByText("Stub explanation")).toBeVisible();
+  });
+
   it("会话 Provider 密钥使用 password 输入，并在配置后清空", async () => {
     const user = userEvent.setup();
     const createProvider = vi.fn(async () => ({ id: "provider-1", kind: "deepseek" as const, model: "deepseek-chat", version: 1, configured: false }));

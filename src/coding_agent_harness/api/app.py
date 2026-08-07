@@ -20,6 +20,7 @@ from coding_agent_harness.api.dependencies import (
 )
 from coding_agent_harness.api.routes import create_router
 from coding_agent_harness.api.provider_routes import create_provider_router
+from coding_agent_harness.api.learning_routes import create_learning_router
 from coding_agent_harness.api.session import SessionGuard
 from coding_agent_harness.config import HarnessSettings
 from coding_agent_harness.governance.redaction import Redactor
@@ -100,6 +101,7 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
     app = FastAPI(lifespan=lifespan)
     api_router = create_router(None, sessions)
     api_router.include_router(create_provider_router(sessions))
+    api_router.include_router(create_learning_router(sessions))
     app.include_router(api_router)
 
     @app.middleware("http")
