@@ -1138,3 +1138,10 @@
 - **本地集成：** `codex/cl1-providers` 从基线 `3b45271` 以 `--ff-only` 快进合并到本地 `p1`，Task 关闭 Head 为 `3ab7530`；全部 Task 提交记录保留。未 pull、未 push、未接触真实凭据。
 - **合并后新鲜验证：** 在 `p1` 再次运行 `mingw32-make test` 退出 0：Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy（68 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过。
 - **清理事实：** Git worktree 注册已解除，已合并功能分支已安全删除；Windows 上残留目录仍被已结束会话的进程句柄占用，因此未强制终止来源不明的进程或删除该普通目录。该目录不再关联 Git 分支，不影响 `p1` 或后续 push。
+
+### 2026-08-08 — Windows worktree 联接清理事故与恢复
+
+- **现象与根因：** `git worktree remove` 在清理包含 `.venv`/`web/node_modules` 目录联接的 Windows 工作树时先遍历了指向主仓库的 `.venv`，删除部分依赖后才以 `Invalid argument` 失败。后续 `make demo` 以缺少 `annotated_types` 暴露环境损坏；`pip check` 进一步确认多项依赖目录缺失。Git 提交、源码和主分支均未受损。
+- **处置：** 停止继续删除仍被进程占用的普通残留目录；使用 `requirements/windows-py311.lock` 的哈希约束执行完整强制重装，恢复 Python 3.11 虚拟环境。未使用真实凭据，也未修改锁文件或产品代码。
+- **恢复证据：** 依赖导入检查与 `pip check` 通过，`mingw32-make demo` 三项 PASS；随后在锁定依赖环境中重新运行 `mingw32-make test`，结果为 Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy、Web lint/typecheck/build 全部通过。
+- **经验：** Windows 上不得让 `git worktree remove` 直接处理包含指向共享依赖目录联接的工作树；必须先验证并解除联接，再调用 Git 清理。若 Git 已解除注册但目录删除失败，应保留普通残留并人工处理，不能再次递归触碰共享目标。
