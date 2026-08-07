@@ -1784,3 +1784,33 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 ## 计划完成后的强制门禁
 
 本计划完成并提交后，正式实现仍不得开始。必须先启动一个不包含当前对话或记忆的不同类型智能体，初始上下文仅提供 `SPEC.md` 和 `PLAN.md`，要求它选择 1—2 个 Task 尝试冷启动，并在任何不确定处立即暂停而不是猜测。选定 Task 后，审计员可以读取该 Task “文件”清单中明确列出的目标文件，以便安全修改既有内容；不得读取其他过程文档、Git 历史或主对话。主智能体必须把暂停点、误读、产出差距和修订 diff 写入 `SPEC_PROCESS.md`；修订完成并再次获得用户确认后，方可选择 `subagent-driven-development` 或 `executing-plans` 开始实现。
+
+## 共学回放式 Harness 增量路线（2026-08-07）
+
+**批准设计：** `docs/superpowers/specs/2026-08-07-co-learning-replay-harness-design.md`（提交 `bc0a7dd`）。
+
+**执行策略：** 四阶段按依赖顺序分别生成精确实施计划，避免后续计划假定尚未稳定的接口。每阶段继续使用隔离 worktree、红—绿—重构、规约符合性审查、代码质量审查、新鲜全量验证和逐 Task 中文提交。
+
+| 阶段 | 状态 | 可独立验收的交付 | 精确计划 |
+|---|---|---|---|
+| CL-1 真实 Provider 与凭据 | 计划已编写，待冷启动检查 | DeepSeek/Qwen 配置、凭据生命周期、真实 Agent 接线、最小 WebUI 和显式冒烟验收 | `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md` |
+| CL-2 意图卡与引导执行 | 待 CL-1 接口稳定后计划 | 结构化意图卡、语义检查点、只读提问和双执行模式 | 尚未生成精确文件计划 |
+| CL-3 检查点与分支回放 | 待 CL-2 接口稳定后计划 | 加密检查点、原轨迹不变、纠正分支、比较和恢复 | 尚未生成精确文件计划 |
+| CL-4 项目学习卡 | 待 CL-3 接口稳定后计划 | 用户批准记忆、作用域/版本、确定性检索、冲突和引用 | 尚未生成精确文件计划 |
+
+### CL-1 Task 状态
+
+| Task | 状态 | 交付边界 |
+|---|---|---|
+| CL1-1 Provider 配置持久化 | 待开始 | migration 004、ProviderProfile repository、Task 绑定与授权时间 |
+| CL1-2 凭据保险库 | 待开始 | 会话、OS Keyring、Argon2id + AES-256-GCM 容器存储 |
+| CL1-3 Provider 注册表 | 待开始 | 固定端点、受限 HTTP、DeepSeek/Qwen adapter 构造与契约 |
+| CL1-4 Provider API | 待开始 | 配置、凭据状态/更新/删除、保险库解锁和显式连接检查 |
+| CL1-5 真实 Agent 运行时 | 待开始 | 任务级 Provider 选择/授权并复用现有 Agent、工具和 worktree |
+| CL1-6 最小 WebUI 与验收 | 待开始 | 功能入口、HTTP Stub E2E、显式真实冒烟命令和中文文档 |
+
+CL-1 完成后才能把 `DW-MVP-003` 标记为 `RESOLVED`；若用户未提供真实凭据，只能记录真实联网未执行，不能伪造通过。`DW-MVP-006` 的高级 UI 仍保持延期，最小 Provider 功能入口不等于完成最终 UI 设计。
+
+### 新扩展冷启动门禁
+
+CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `SPEC.md` 和 `PLAN.md` 选择 CL1-1 或 CL1-2 尝试冷启动，并在不确定处暂停。暂停点、误读、接口差距和计划修订必须写入 `SPEC_PROCESS.md`。冷启动通过后采用 `subagent-driven-development` 逐 Task 实施。

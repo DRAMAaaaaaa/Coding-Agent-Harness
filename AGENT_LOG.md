@@ -975,3 +975,9 @@
 - **用户批准的定位：** 产品第一特色确定为“证据驱动的共学回放式 Coding Harness”，主要帮助程序员理解真实项目中的工程决策。原轨迹不可改写；纠正从语义检查点创建新轨迹；回放以结构化意图卡为单位；提问、纠正和补充需求严格分离；学习卡每次由用户确认后才进入长期记忆；默认使用引导执行，同时保留自动执行。
 - **范围收敛：** 用户选择“共学纵向闭环优先”，并批准本轮只包含真实 DeepSeek/Qwen 与凭据、意图卡与引导执行、检查点与分支回放、项目学习卡四阶段。高风险工具、多 Agent、最终 UI 和正式部署另立后续规格。本轮估算约 50 万—90 万 Token、35—60 小时。
 - **设计产出：** 完整增量架构、数据流、数据模型、安全恢复、确定性检索、测试不变量、旗舰验收场景和完成标准已写入 `docs/superpowers/specs/2026-08-07-co-learning-replay-harness-design.md`；占位符、内部一致性、范围和歧义自审已完成，等待用户最终复核后进入 `writing-plans`。
+
+### 2026-08-07 — PLAN-CL1-REAL-PROVIDERS
+
+- **范围与技能：** 用户最终批准共学回放设计并要求开始实施；使用 Superpowers `writing-plans`，先把四阶段拆为顺序子项目，再为 CL-1“真实 Provider 与凭据”编写精确文件、接口、RED/GREEN、验证、双重评审和逐 Task 提交计划。未修改实现代码、安装依赖、联网或接触凭据。
+- **增量边界：** CL-1 复用现有 `LLMProvider`、`AgentOrchestrator`、`EventStore`、治理、ToolRegistry 和 worktree；6 个 Task 依次交付配置持久化、凭据保险库、受限 Registry、Provider API、真实运行时和最小 WebUI/验收。CL-2—CL-4 在前一阶段接口稳定后分别生成精确计划，避免提前固化错误接口。
+- **规格同步：** `SPEC.md` 新增第 16 节，写入已批准特色、四阶段范围、安全边界和旗舰验收；`PLAN.md` 新增阶段路线、CL1-1—CL1-6 状态表和陌生智能体冷启动门禁。详细计划位于 `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md`，下一步是计划自审、提交和冷启动检查。
