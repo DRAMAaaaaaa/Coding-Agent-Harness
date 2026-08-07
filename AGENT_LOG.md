@@ -1037,3 +1037,11 @@
 - **问题与 RED：** 安全审查发现 Registry 默认 `httpx.AsyncClient` 可采用环境代理。新增构造边界记录测试，并经实际 `build_for_task()` 路径执行；命令 `.venv\\Scripts\\python.exe -m pytest tests/providers/test_registry.py::test_registry_default_client_factory_disables_environment_and_redirects -v` 得到预期 `1 failed`，因为旧实现没有向构造器传入安全参数。
 - **GREEN：** 默认工厂固定为 `httpx.AsyncClient(trust_env=False, follow_redirects=False)`；不接受环境或调用者传入的安全参数，且不扩大到 Task 4 的共享 client 生命周期。相同命令得到 `1 passed`；完整回归、静态检查和秘密扫描将在提交前重跑。
 - **新鲜验证：** Task 3 聚焦为 `29 passed`，全 Provider 回归为 `42 passed`；`ruff check src tests`、`mypy src`（54 个源文件）、`scripts/secret_scan.py` 与 `git diff --check` 均退出 0。
+
+### 2026-08-07 — 全部 CL 阶段范围压缩与重新计划
+
+- **用户决策：** 用户要求缩小所有 CL Task，而非仅缩减 CL-1，并批准方案 A：CL-1—CL-4 各保留一个能展示产品特色的最小能力。
+- **技能与设计：** 使用 `brainstorming` 依次批准最小范围、复用现有事件/Agent 的架构、WebUI/API 错误边界和五 Task 验收设计；精简规格提交为 `2b811c0`。
+- **计划结果：** 使用 `writing-plans` 把旧六 Task Provider 计划和未展开的 CL-2—4 合并为 `docs/superpowers/plans/2026-08-07-co-learning-replay-mvp.md` 的五个纵向 Task。旧 Provider 计划明确标记废止。
+- **关键约束发现：** 现有 `WorktreeManager` 每 Workspace 只有一个活动写租约；纠正分支不能直接并行创建。新计划以“冻结父 worktree 为只读、保留现场、释放写租约、再创建唯一子分支”解决，不放宽单写者边界。
+- **成本策略：** 不再冷启动；实现者只读单 Task brief，任务审查合并规约/质量，Minor 登记不返工，聚焦测试逐 Task 运行，全量仅在最终 Task 运行。

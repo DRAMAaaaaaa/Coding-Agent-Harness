@@ -1,5 +1,7 @@
 # 真实 Provider 与凭据实施计划
 
+> **已废止（2026-08-07）：** 用户批准缩减全部 CL 阶段。本计划只保留历史证据，不得继续执行。后续唯一有效计划为 `docs/superpowers/plans/2026-08-07-co-learning-replay-mvp.md`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在现有 Mock Harness 上增量交付可配置、可安全保存并可由真实 Agent 任务使用的 DeepSeek/Qwen Provider，同时保持现有治理、worktree、反馈闭环和离线验收不回退。

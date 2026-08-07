@@ -1787,29 +1787,28 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 
 ## 共学回放式 Harness 增量路线（2026-08-07）
 
-**批准设计：** `docs/superpowers/specs/2026-08-07-co-learning-replay-harness-design.md`（提交 `bc0a7dd`）。
+**批准设计：** `docs/superpowers/specs/2026-08-07-co-learning-replay-harness-design.md`（精简修订提交 `2b811c0`）。
 
-**执行策略：** 四阶段按依赖顺序分别生成精确实施计划，避免后续计划假定尚未稳定的接口。每阶段继续使用隔离 worktree、红—绿—重构、规约符合性审查、代码质量审查、新鲜全量验证和逐 Task 中文提交。
+**执行策略：** 全部 CL 阶段压缩为一条五 Task 纵向计划。每 Task 使用隔离 worktree、红—绿—重构、一次合并的规约/质量审查、聚焦验证和中文提交；只有最终 Task 运行新增路线的全量验收。
 
 | 阶段 | 状态 | 可独立验收的交付 | 精确计划 |
 |---|---|---|---|
-| CL-1 真实 Provider 与凭据 | 冷启动问题已修订，准备 CL1-1 | DeepSeek/Qwen 配置、凭据生命周期、真实 Agent 接线、最小 WebUI 和显式冒烟验收 | `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md` |
-| CL-2 意图卡与引导执行 | 待 CL-1 接口稳定后计划 | 结构化意图卡、语义检查点、只读提问和双执行模式 | 尚未生成精确文件计划 |
-| CL-3 检查点与分支回放 | 待 CL-2 接口稳定后计划 | 加密检查点、原轨迹不变、纠正分支、比较和恢复 | 尚未生成精确文件计划 |
-| CL-4 项目学习卡 | 待 CL-3 接口稳定后计划 | 用户批准记忆、作用域/版本、确定性检索、冲突和引用 | 尚未生成精确文件计划 |
+| CL-1 真实 Provider | 核心已实现，待关闭复审与最小接线 | 会话 Key、DeepSeek/Qwen、现有 Agent 主路径 | `docs/superpowers/plans/2026-08-07-co-learning-replay-mvp.md` Task 1—2 |
+| CL-2 意图卡 | 待 Task 2 | 四类卡片与失败节点只读提问 | 同上 Task 3 |
+| CL-3 纠正分支 | 待 Task 3 | 单个失败节点、唯一分支、简化比较 | 同上 Task 4 |
+| CL-4 项目经验 | 待 Task 4 | 单条批准经验、下一任务引用、旗舰 E2E | 同上 Task 5 |
 
-### CL-1 Task 状态
+### 精简 CL Task 状态
 
 | Task | 状态 | 交付边界 |
 |---|---|---|
-| CL1-1 Provider 配置持久化 | 已实现，待提交 | migration 004、ProviderProfile repository、Task 绑定与授权时间 |
-| CL1-2 凭据保险库 | 已实现，待独立审查 | 会话、OS Keyring、Argon2id + AES-256-GCM 容器存储；实现提交待生成 |
-| CL1-3 Provider 注册表 | 已实现，待复审 | 固定端点、受限 HTTP、DeepSeek/Qwen adapter 构造与契约 |
-| CL1-4 Provider API | 待开始 | 配置、凭据状态/更新/删除、保险库解锁和显式连接检查 |
-| CL1-5 真实 Agent 运行时 | 待开始 | 任务级 Provider 选择/授权并复用现有 Agent、工具和 worktree |
-| CL1-6 最小 WebUI 与验收 | 待开始 | 功能入口、HTTP Stub E2E、显式真实冒烟命令和中文文档 |
+| 1 Provider 核心关闭 | 实现完成，待 `f17ac16` 范围复审 | 固定端点、会话/保留的安全 Vault、授权、受限 HTTP |
+| 2 Provider 纵向接线 | 待开始 | session API、真实 runtime、最小 WebUI |
+| 3 意图卡与提问 | 待 Task 2 | 四类投影、失败节点零工具提问 |
+| 4 单级纠正分支 | 待 Task 3 | 父写租约冻结、唯一子分支、简化比较 |
+| 5 单条经验与最终验收 | 待 Task 4 | 用户批准、下一任务引用、唯一旗舰 E2E |
 
-CL-1 完成后才能把 `DW-MVP-003` 标记为 `RESOLVED`；若用户未提供真实凭据，只能记录真实联网未执行，不能伪造通过。`DW-MVP-006` 的高级 UI 仍保持延期，最小 Provider 功能入口不等于完成最终 UI 设计。
+旧计划 `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md` 已废止。Keyring/加密 Vault 代码保留但不再扩展；Provider 管理、真实 smoke、通用/加密检查点、多级分支、复杂学习卡和最终 UI 设计必须在 Task 5 登记延期。若用户未提供真实凭据，只能记录真实联网“未执行”。
 
 ### 新扩展冷启动门禁
 
