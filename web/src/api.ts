@@ -1,5 +1,5 @@
 import { parseTaskEvent } from "./types";
-import type { EventListener, HarnessApi, Task, Workspace } from "./types";
+import type { EventListener, HarnessApi, ProviderProfile, Task, Workspace } from "./types";
 
 interface EventSourceLike { onopen: ((event: Event) => void) | null; onerror: ((event: Event) => void) | null; addEventListener: (name: string, listener: (event: MessageEvent<string>) => void) => void; removeEventListener: (name: string, listener: (event: MessageEvent<string>) => void) => void; close: () => void; }
 interface BrowserApiOptions { fetcher?: typeof fetch; eventSourceFactory?: (url: string) => EventSourceLike; scheduleReconnect?: (callback: () => void) => unknown; }
@@ -10,9 +10,9 @@ export function createBrowserApi(options: BrowserApiOptions = {}): HarnessApi {
   const eventSourceFactory = options.eventSourceFactory ?? ((url) => new EventSource(url));
   const scheduleReconnect = options.scheduleReconnect ?? ((callback) => window.setTimeout(callback, 1000));
   let session: string | undefined;
-  async function request<T>(path: string, body?: object): Promise<T> {
+  async function request<T>(path: string, body?: object, method = "POST"): Promise<T> {
     if (body !== undefined && session === undefined) { const bootstrap = await fetcher("/", { credentials: "same-origin" }); session = bootstrap.headers.get("X-Harness-Session") ?? undefined; if (!bootstrap.ok || session === undefined) throw safeRequestError; }
-    const response = await fetcher(path, body === undefined ? { credentials: "same-origin" } : { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "X-Harness-Session": session! }, body: JSON.stringify(body) });
+    const response = await fetcher(path, body === undefined ? { credentials: "same-origin" } : { method, credentials: "same-origin", headers: { "Content-Type": "application/json", "X-Harness-Session": session! }, body: JSON.stringify(body) });
     if (!response.ok) throw safeRequestError;
     try { return await response.json() as T; } catch { throw safeRequestError; }
   }
@@ -41,5 +41,5 @@ export function createBrowserApi(options: BrowserApiOptions = {}): HarnessApi {
     connect();
     return () => { closed = true; cleanup(); source?.close(); listener.onConnection("disconnected"); };
   }
-  return { connectProject: (path) => request<Workspace>("/api/projects", { path }), trustProject: (workspace) => request<Workspace>(`/api/projects/${workspace.id}/trust`, { fingerprint: workspace.trust_fingerprint }), createTask: (workspaceId, requirement) => request<Task>("/api/tasks", { workspace_id: workspaceId, requirement }), approvePlan: (taskId) => request<Task>(`/api/tasks/${taskId}/plan/approve`, {}), runTask: (taskId) => request<Task>(`/api/tasks/${taskId}/run`, {}), approveFinal: (taskId) => request<Task>(`/api/tasks/${taskId}/final/approve`, {}), getTask: (taskId) => request<Task>(`/api/tasks/${taskId}`), subscribeEvents };
+  return { connectProject: (path) => request<Workspace>("/api/projects", { path }), trustProject: (workspace) => request<Workspace>(`/api/projects/${workspace.id}/trust`, { fingerprint: workspace.trust_fingerprint }), createTask: (workspaceId, requirement, providerProfileId) => request<Task>("/api/tasks", { workspace_id: workspaceId, requirement, ...(providerProfileId ? { provider_profile_id: providerProfileId } : {}) }), listProviders: () => request<ProviderProfile[]>("/api/providers"), createProvider: (kind, model) => request<ProviderProfile>("/api/providers", { kind, model }), setSessionCredential: (profileId, apiKey) => request<ProviderProfile>(`/api/providers/${encodeURIComponent(profileId)}/session-credential`, { api_key: apiKey }, "PUT"), approvePlan: (taskId) => request<Task>(`/api/tasks/${taskId}/plan/approve`, {}), runTask: (taskId) => request<Task>(`/api/tasks/${taskId}/run`, {}), approveFinal: (taskId) => request<Task>(`/api/tasks/${taskId}/final/approve`, {}), getTask: (taskId) => request<Task>(`/api/tasks/${taskId}`), subscribeEvents };
 }

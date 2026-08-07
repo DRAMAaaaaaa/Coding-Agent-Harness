@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -63,6 +64,7 @@ class TrustRequest(_Request):
 class TaskRequest(_Request):
     workspace_id: UUID
     requirement: str = Field(min_length=1)
+    provider_profile_id: UUID | None = None
 
     @field_validator("requirement")
     @classmethod
@@ -80,6 +82,18 @@ class TaskRequest(_Request):
             return UUID(value)
         except ValueError:
             raise ValueError("workspace_id 必须是 UUID") from None
+
+    @field_validator("provider_profile_id", mode="before")
+    @classmethod
+    def parse_provider_profile_id(cls, value: object) -> UUID | None:
+        if value is None or isinstance(value, UUID):
+            return value
+        if not isinstance(value, str):
+            raise ValueError("provider_profile_id 必须是 UUID")
+        try:
+            return UUID(value)
+        except ValueError:
+            raise ValueError("provider_profile_id 必须是 UUID") from None
 
 
 def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) -> APIRouter:
@@ -144,6 +158,20 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
             raise _error(409, "WORKSPACE_UNTRUSTED", "Workspace 尚未建立当前信任")
         if active.orchestrator_factory is None:
             raise _error(503, "RUNTIME_UNAVAILABLE", "Agent 运行时未配置")
+        provider_profile_version: int | None = None
+        authorized_at: datetime | None = None
+        if active.require_provider_profile:
+            if body.provider_profile_id is None:
+                raise _error(409, "PROVIDER_CREDENTIAL_REQUIRED", "必须选择已配置的 Provider")
+            if active.profiles is None or active.credentials is None:
+                raise _error(503, "RUNTIME_UNAVAILABLE", "Provider 运行时未配置")
+            profile = await active.profiles.get(body.provider_profile_id)
+            if profile is None:
+                raise _error(404, "PROVIDER_PROFILE_NOT_FOUND", "Provider Profile 不存在")
+            if not (await active.credentials.status(profile.id)).configured:
+                raise _error(409, "PROVIDER_CREDENTIAL_REQUIRED", "Provider 会话凭据未配置")
+            provider_profile_version = profile.version
+            authorized_at = datetime.now(UTC)
         try:
             current = await active.worker.run(
                 active.detector.detect,
@@ -157,7 +185,12 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
         orchestrator = _create_orchestrator(active)
         task_id = uuid4()
         try:
-            task = await active.task_runner.create(stored.workspace, task_id, body.requirement)
+            task = await active.task_runner.create(
+                stored.workspace, task_id, body.requirement,
+                provider_profile_id=body.provider_profile_id,
+                provider_profile_version=provider_profile_version,
+                llm_api_authorized_at=authorized_at,
+            )
         except asyncio.CancelledError as cancellation:
             await _record_request_cancellation(orchestrator, task_id)
             raise cancellation from None

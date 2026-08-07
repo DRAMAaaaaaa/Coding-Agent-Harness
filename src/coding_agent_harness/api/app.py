@@ -6,6 +6,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
+
 from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from starlette.middleware.base import RequestResponseEndpoint
@@ -14,9 +16,10 @@ from starlette.routing import Match
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from coding_agent_harness.api.dependencies import (
-    ApiDependencies, BlockingWorker, SafeBranchResolver, UnavailableTaskRunner,
+    ApiDependencies, BlockingWorker, LocalTaskRunner, SafeBranchResolver, UnavailableTaskRunner,
 )
 from coding_agent_harness.api.routes import create_router
+from coding_agent_harness.api.provider_routes import create_provider_router
 from coding_agent_harness.api.session import SessionGuard
 from coding_agent_harness.config import HarnessSettings
 from coding_agent_harness.governance.redaction import Redactor
@@ -24,6 +27,10 @@ from coding_agent_harness.storage.database import Database
 from coding_agent_harness.storage.event_store import EventStore
 from coding_agent_harness.storage.repositories import TaskRepository
 from coding_agent_harness.storage.workspaces import WorkspaceRepository
+from coding_agent_harness.storage.provider_profiles import ProviderProfileRepository
+from coding_agent_harness.providers.credentials import CredentialBroker, SessionOnlyCredentialStore
+from coding_agent_harness.providers.registry import ProviderRegistry
+from coding_agent_harness.runtime import RuntimeOrchestratorRouter
 from coding_agent_harness.workspace.detector import ProjectDetector
 from coding_agent_harness.workspace.scanner import WorkspaceScanner
 from coding_agent_harness.workspace.git import SafeGit
@@ -50,11 +57,15 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
             return
 
         database = await Database.open(settings.resolved_database_path())
+        client = httpx.AsyncClient(trust_env=False, follow_redirects=False)
         try:
             workspaces = WorkspaceRepository(database)
             tasks = TaskRepository(database)
             events = EventStore(database)
             worker = BlockingWorker()
+            profiles = ProviderProfileRepository(database)
+            credentials = CredentialBroker(SessionOnlyCredentialStore(), worker)
+            registry = ProviderRegistry(profiles, credentials, client_factory=lambda: client)
             app.state.dependencies = ApiDependencies(
                 workspaces=workspaces, tasks=tasks, event_store=events,
                 detector=ProjectDetector(), scanner=WorkspaceScanner(state_root=settings.state_root),
@@ -64,15 +75,28 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
                 task_runner=UnavailableTaskRunner(),
                 branch_resolver=SafeBranchResolver(SafeGit(settings.state_root)),
                 worker=worker,
+                profiles=profiles,
+                credentials=credentials,
+                provider_registry=registry,
+                require_provider_profile=True,
+            )
+            app.state.dependencies.orchestrator_factory = lambda: RuntimeOrchestratorRouter(app.state.dependencies)
+            app.state.dependencies.task_runner = LocalTaskRunner(
+                tasks, settings.state_root, step_budget=settings.max_task_cycles,
+                time_budget_seconds=settings.command_timeout_seconds, worker=worker,
             )
             app.state.event_store = events
             app.state.tasks = tasks
             yield
         finally:
+            await client.aclose()
+            if dependencies is None:
+                credentials.clear_session()
             await database.close()
 
     app = FastAPI(lifespan=lifespan)
     api_router = create_router(None, sessions)
+    api_router.include_router(create_provider_router(sessions))
     app.include_router(api_router)
 
     @app.middleware("http")

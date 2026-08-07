@@ -54,6 +54,36 @@ async function createTrustedTask(user: ReturnType<typeof userEvent.setup>): Prom
 }
 
 describe("App", () => {
+  it("会话 Provider 密钥使用 password 输入，并在配置后清空", async () => {
+    const user = userEvent.setup();
+    const createProvider = vi.fn(async () => ({ id: "provider-1", kind: "deepseek" as const, model: "deepseek-chat", version: 1, configured: false }));
+    const setSessionCredential = vi.fn(async () => ({ id: "provider-1", kind: "deepseek" as const, model: "deepseek-chat", version: 1, configured: true }));
+    render(<App api={{ ...scriptedApi(), listProviders: vi.fn(async () => []), createProvider, setSessionCredential }} />);
+
+    const key = screen.getByLabelText("API Key");
+    expect(key).toHaveAttribute("type", "password");
+    await user.type(key, "test-session-key");
+    await user.click(screen.getByRole("button", { name: "配置会话 Provider" }));
+
+    expect(await screen.findByRole("option", { name: "deepseek: deepseek-chat" })).toBeVisible();
+    expect(setSessionCredential).toHaveBeenCalledWith("provider-1", "test-session-key");
+    expect(key).toHaveValue("");
+  });
+
+  it("会话 Provider 密钥在配置失败和切换项目后均清空", async () => {
+    const user = userEvent.setup();
+    const api = { ...scriptedApi(), listProviders: vi.fn(async () => []), createProvider: vi.fn(async () => { throw new Error("offline"); }), setSessionCredential: vi.fn() };
+    render(<App api={api} />);
+    const key = screen.getByLabelText("API Key");
+    await user.type(key, "test-session-key");
+    await user.click(screen.getByRole("button", { name: "配置会话 Provider" }));
+    expect(await screen.findByRole("status")).toBeVisible();
+    expect(key).toHaveValue("");
+    await user.type(key, "another-test-key");
+    await user.type(screen.getByLabelText("项目路径"), "C:\\demo\\repo");
+    await user.click(screen.getByRole("button", { name: "接入项目" }));
+    expect(key).toHaveValue("");
+  });
   it("展示真实计划、验证和 diff，并完成最终批准", async () => {
     const user = userEvent.setup();
     const api = scriptedApi();

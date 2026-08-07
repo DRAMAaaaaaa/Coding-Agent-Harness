@@ -332,7 +332,7 @@ async def test_config_change_invalidates_trust_before_creating_task(
     assert _relative_state_entries(dependencies.state_root) == before_state
 
 
-async def test_default_app_without_runtime_creates_no_task_or_worktree(tmp_path: Path) -> None:
+async def test_default_app_requires_session_provider_before_creating_task_or_worktree(tmp_path: Path) -> None:
     state_root = tmp_path / "state"
     app = create_app(
         settings=HarnessSettings(
@@ -348,7 +348,8 @@ async def test_default_app_without_runtime_creates_no_task_or_worktree(tmp_path:
             project = await value.post("/api/projects", json={"path": str(_git_repo(tmp_path / "repo"))}, headers=headers)
             trusted = await value.post(f"/api/projects/{project.json()['id']}/trust", json={"fingerprint": project.json()["trust_fingerprint"]}, headers=headers)
             response = await value.post("/api/tasks", json={"workspace_id": trusted.json()["id"], "requirement": "x"}, headers=headers)
-        assert response.status_code == 503
+        assert response.status_code == 409
+        assert response.json()["code"] == "PROVIDER_CREDENTIAL_REQUIRED"
         count = await (await app.state.tasks._database.connection.execute("SELECT COUNT(*) FROM tasks")).fetchone()  # type: ignore[attr-defined]
         assert count == (0,)
         assert not (state_root / "worktrees").exists()
@@ -455,6 +456,7 @@ async def test_cancelled_plan_request_recovers_same_task_after_restart(
         )
         recovery = _CancellationRecoveryBarrier(orchestrator)
         active.orchestrator_factory = lambda: recovery
+        active.require_provider_profile = False
         active.task_runner = LocalTaskRunner(
             active.tasks,
             active.state_root,
@@ -507,6 +509,7 @@ async def test_cancelled_plan_request_recovers_same_task_after_restart(
             tasks=active.tasks,
         )
         active.orchestrator_factory = lambda: orchestrator
+        active.require_provider_profile = False
         active.task_runner = LocalTaskRunner(
             active.tasks,
             active.state_root,
@@ -859,7 +862,7 @@ class _FailingTaskRunner:
     def __init__(self, error: Exception) -> None:
         self._error = error
 
-    async def create(self, workspace: object, task_id: object, requirement: str) -> object:
+    async def create(self, workspace: object, task_id: object, requirement: str, **_: object) -> object:
         raise self._error
 
 

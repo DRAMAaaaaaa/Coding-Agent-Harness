@@ -23,6 +23,9 @@ from coding_agent_harness.workspace.models import Workspace
 from coding_agent_harness.workspace.worktrees import WorktreeManager
 from coding_agent_harness.workspace.git import SafeGit
 from coding_agent_harness.workspace.processes import CommandResult
+from coding_agent_harness.providers.credentials import CredentialBroker
+from coding_agent_harness.providers.registry import ProviderRegistry
+from coding_agent_harness.storage.provider_profiles import ProviderProfileRepository
 
 
 _ResultT = TypeVar("_ResultT")
@@ -104,6 +107,10 @@ class ApiDependencies:
     task_runner: TaskRunner
     branch_resolver: BranchResolver
     worker: BlockingWorker
+    profiles: ProviderProfileRepository | None = None
+    credentials: CredentialBroker | None = None
+    provider_registry: ProviderRegistry | None = None
+    require_provider_profile: bool = False
 
 
 class PlanGateOrchestrator:

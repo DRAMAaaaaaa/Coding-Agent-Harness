@@ -26,6 +26,7 @@ async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
     )
     async with app.router.lifespan_context(app):
         current = app.state.dependencies
+        current.require_provider_profile = False
         orchestrator = AgentOrchestrator(
             provider=ScriptedMockProvider(["最小计划"]),
             parser=ActionParser(()),

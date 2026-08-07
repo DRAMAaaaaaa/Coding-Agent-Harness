@@ -26,6 +26,21 @@ class CredentialVaultError(RuntimeError):
     """只携带稳定原因码，避免泄露外部错误或秘密。"""
 
 
+class SessionOnlyCredentialStore:
+    """拒绝一切持久化写入的后端，实际凭据仅由 Broker 保存在内存中。"""
+
+    def put(self, reference: str, secret: SecretStr) -> None:
+        del reference, secret
+        raise CredentialVaultError("PERSISTENT_CREDENTIALS_DISABLED")
+
+    def get(self, reference: str) -> None:
+        del reference
+        return None
+
+    def delete(self, reference: str) -> None:
+        del reference
+
+
 class PersistentCredentialStore(Protocol):
     def put(self, reference: str, secret: SecretStr) -> None: ...
 
@@ -101,6 +116,9 @@ class CredentialBroker:
     async def lock(self) -> None:
         store = self._unlockable_store()
         await self._run(store.lock)
+        self._session.clear()
+
+    def clear_session(self) -> None:
         self._session.clear()
 
     @staticmethod
