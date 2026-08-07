@@ -60,3 +60,20 @@ def test_rejects_conflicting_duplicate_sequences_independent_of_input_order() ->
     for values in ([first, second], [second, first]):
         with pytest.raises(IntentProjectionError, match="EVENT_SEQUENCE_CONFLICT"):
             IntentProjector().project(TASK_ID, values)
+
+
+def test_applied_project_learning_is_attached_to_plan_not_final_delivery() -> None:
+    card_id = uuid4()
+    cards = IntentProjector().project(
+        TASK_ID,
+        [
+            event(1, "PLAN_PROPOSED", {"plan": "change"}),
+            event(2, "FINAL_SUMMARY_PROPOSED", {"summary": "done"}),
+            event(3, "PROJECT_LEARNING_APPLIED", {"card_id": str(card_id)}),
+        ],
+    )
+
+    assert cards[0].kind is IntentKind.PLAN
+    assert cards[0].learning_card_id == card_id
+    assert cards[-1].kind is IntentKind.FINAL_DELIVERY
+    assert cards[-1].learning_card_id is None

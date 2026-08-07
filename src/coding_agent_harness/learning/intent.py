@@ -60,7 +60,15 @@ class IntentProjector:
         cards: list[IntentCard] = []
         plan = _first(ordered, "PLAN_PROPOSED")
         if plan is not None:
-            cards.append(self._card(task_id, IntentKind.PLAN, plan, (plan.sequence,)))
+            card = self._card(task_id, IntentKind.PLAN, plan, (plan.sequence,))
+            applied = _first(ordered, "PROJECT_LEARNING_APPLIED")
+            card_id = applied.payload.get("card_id") if applied is not None else None
+            if isinstance(card_id, str):
+                try:
+                    card = card.model_copy(update={"learning_card_id": UUID(card_id)})
+                except ValueError:
+                    pass
+            cards.append(card)
         edit = next((event for event in ordered if event.event_type == "TOOL_EXECUTION_COMPLETED" and _changed_paths(event)), None)
         if edit is not None:
             cards.append(self._card(task_id, IntentKind.FIRST_EDIT, edit, (edit.sequence,)))
@@ -72,13 +80,6 @@ class IntentProjector:
         final = _first(ordered, "FINAL_SUMMARY_PROPOSED")
         if final is not None:
             card = self._card(task_id, IntentKind.FINAL_DELIVERY, final, (final.sequence,))
-            applied = _first(ordered, "PROJECT_LEARNING_APPLIED")
-            card_id = applied.payload.get("card_id") if applied is not None else None
-            if isinstance(card_id, str):
-                try:
-                    card = card.model_copy(update={"learning_card_id": UUID(card_id)})
-                except ValueError:
-                    pass
             cards.append(card)
         return tuple(cards)
 
