@@ -968,3 +968,10 @@
 - **本地集成：** `codex/distribution` 以 `--ff-only` 从 `5e08b07` 快进合并到本地 `p1`，无冲突；Task 最终关闭 Head 为 `d01796d`。未 pull、未 push、未接触真实凭据。
 - **合并后新鲜验证：** 在 `p1` 运行 `mingw32-make test` 退出 0，Python `739 passed, 15 skipped`、Vitest `21 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy（48 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过；`mingw32-make demo` 固定三项 PASS，`pip check`、本地秘密扫描和 Compose 解析通过。
 - **最终交付：** MVP 已具备 WebUI→计划审批→自有 Agent 循环→代码修改→确定性反馈→最终审查→代码/文档交付的本地 Mock 完整路径，以及 Docker/Compose、GitHub Actions、GitLab `unit-test` 和一键验收。真实 DeepSeek/Qwen 产品接线、凭据生命周期、公网部署和 Docker 动态镜像验收仍按文档与既有延期台账明确披露；Task 10 无新增延期。
+
+### 2026-08-07 — BRAINSTORM-CO-LEARNING-REPLAY
+
+- **范围与技能：** 使用 Superpowers `brainstorming`，核对当前实现、`SPEC.md`、`PLAN.md`、`DEFERRED_WORK.md` 和最近提交；本轮只进行尚未完成能力的产品设计，没有修改 Harness 实现、安装依赖、联网调用 Provider、接触凭据或 push。
+- **用户批准的定位：** 产品第一特色确定为“证据驱动的共学回放式 Coding Harness”，主要帮助程序员理解真实项目中的工程决策。原轨迹不可改写；纠正从语义检查点创建新轨迹；回放以结构化意图卡为单位；提问、纠正和补充需求严格分离；学习卡每次由用户确认后才进入长期记忆；默认使用引导执行，同时保留自动执行。
+- **范围收敛：** 用户选择“共学纵向闭环优先”，并批准本轮只包含真实 DeepSeek/Qwen 与凭据、意图卡与引导执行、检查点与分支回放、项目学习卡四阶段。高风险工具、多 Agent、最终 UI 和正式部署另立后续规格。本轮估算约 50 万—90 万 Token、35—60 小时。
+- **设计产出：** 完整增量架构、数据流、数据模型、安全恢复、确定性检索、测试不变量、旗舰验收场景和完成标准已写入 `docs/superpowers/specs/2026-08-07-co-learning-replay-harness-design.md`；占位符、内部一致性、范围和歧义自审已完成，等待用户最终复核后进入 `writing-plans`。
