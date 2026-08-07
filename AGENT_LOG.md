@@ -1060,3 +1060,9 @@
 - **I3：** 单进程 `ProviderBindingCoordinator` 的同一 profile 租约同时包住真实任务的首次 profile/credential/version/UTC/当前信任复核、worktree 创建与 TaskRepository CAS；`update_model()` 共享同一租约。并发回归证明 runner barrier 内更新等待、任务保持 v1，释放后更新为 v2。没有 migration、重读补偿或删除 CAS。
 - **状态：** 返工完成，待复审；未联网、安装依赖、处理两个 Minor 或扩展 Task 3。
 - **复审 Minor 延期记录：** M1：`tests/api/test_providers.py` 中“拒绝 NUL 和超长 Key”的测试名实际仅覆盖超长 Key，缺少 NUL 拒绝的直接行为测试。M2：Provider mutation 虽复用 `SessionGuard`，但新增测试缺 Origin/session 拒绝，以及 Key 不进入事件、存储或异常响应的直接行为断言。M3：单进程 `ProviderBindingCoordinator._locks` 不回收没有 waiter 的 profile lock，持续创建 profile 可累积小对象。三项均是单进程本地 MVP Minor，不影响安全主路径或 Task 2 验收；依用户成本策略登记为 `DW-MVP-007`，不在本 Task 返工。Task 2 状态保持“返工完成，待复审”。
+
+### 2026-08-07 — 关闭精简计划 Task 2 真实 Provider 主路径
+
+- **最终范围与复审：** Task 2 技术与过程范围为 `a238e67..691e272`；实现 `abac70b`、审查返工 `d39baef`、延期记录修订 `ff9e37d` 与 `691e272`。最终合并规约/质量复审为 Spec compliant Yes、Assessment Approved，Critical / Important / Minor=`0/0/0`；M1—M3 已作为 `DW-MVP-007` 的可追踪 deferred Minor，不计为未关闭问题。
+- **交付结果：** 默认生产路径已连通会话 API Key、DeepSeek/Qwen 固定端点、共享受限 HTTP client、现有 `AgentOrchestrator` 确定性反馈闭环、六工具白名单与最小 WebUI；Provider 绑定协调租约防止单进程内 model update 插入首次读取和最终 CAS 之间。Mock 演示路径继续允许空 profile。
+- **主控新鲜验证：** Task 2 后端聚焦 `82 passed`；Web 为 2 个文件 `24 passed`；Ruff、mypy（57 个源文件）、秘密扫描、ESLint、TypeScript typecheck、Vite 生产构建、`git diff --check` 和工作树状态检查均退出 0。未真实联网、安装依赖、使用真实 Key、push 或进入 Task 3 实现。

@@ -68,6 +68,8 @@ git commit -m "docs: 关闭 Provider 核心任务"
 
 ### Task 2: 真实 Provider 最小纵向接线
 
+**当前状态：** 已关闭。实现提交 `abac70b`，审查返工 `d39baef`，延期台账修订 `ff9e37d`、`691e272`；最终合并规约/质量复审为 Approved，Critical / Important / Minor 均为 0。
+
 **Files:**
 - Create: `src/coding_agent_harness/runtime.py`
 - Create: `src/coding_agent_harness/api/provider_routes.py`
@@ -92,7 +94,7 @@ git commit -m "docs: 关闭 Provider 核心任务"
 - Extends: `TaskRequest.provider_profile_id: UUID | None`；默认生产依赖要求非空，现有注入 Mock runtime 允许空值。
 - Extends: `ApiDependencies.profiles`、`credentials`、`provider_registry` 为可选依赖；全部存在时启用真实 Provider 路径。
 
-- [ ] **Step 1: 写 API、运行时和浏览器秘密生命周期 RED**
+- [x] **Step 1: 写 API、运行时和浏览器秘密生命周期 RED**
 
 ```python
 async def test_real_task_reuses_existing_feedback_loop(runtime_fixture) -> None:
@@ -109,7 +111,7 @@ async def test_missing_session_key_fails_before_worktree(client) -> None:
 
 Web RED 必须证明密码输入使用 `type="password"`、不写 `localStorage/sessionStorage`、mutation 成功或失败后 state 均清空，并把 `provider_profile_id` 发给任务 API。
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/agent/test_runtime.py tests/api/test_providers.py tests/api/test_tasks.py -q`
 
@@ -117,7 +119,7 @@ Run: `npm.cmd --prefix web run test -- --run`
 
 Expected: FAIL，缺少 runtime、Provider routes 和 Web 类型/入口。
 
-- [ ] **Step 3: 实现最小 session Provider API 与依赖生命周期**
+- [x] **Step 3: 实现最小 session Provider API 与依赖生命周期**
 
 `POST /api/providers` 只接受 `{kind, model}`；session credential 只接受 `{api_key}`，1–192 UTF-8 bytes、拒绝 NUL。所有 mutation 复用现有 Origin/session guard。响应只返回：
 
@@ -127,17 +129,17 @@ Expected: FAIL，缺少 runtime、Provider routes 和 Web 类型/入口。
 
 `create_app` 默认创建共享 `httpx.AsyncClient(trust_env=False, follow_redirects=False)`、Profile repository、session-only Broker 和 Registry；Registry 的 `client_factory` 固定返回该共享 client，不为每个 Task 创建连接池。关闭顺序为停止请求 → `aclose()` HTTP client → `CredentialBroker.clear_session()` → 关闭数据库。
 
-- [ ] **Step 4: 实现真实 RuntimeOrchestratorRouter**
+- [x] **Step 4: 实现真实 RuntimeOrchestratorRouter**
 
 从 `DemoOrchestratorRouter._for` 提取共用构造逻辑到 `runtime.py`。真实 router 用 `ProviderRegistry.build_for_task(task)` 构造 Provider；工具固定为 `read_file/search/apply_patch/run_verification/git_status/git_diff`。`PolicyContext.llm_api_authorized=True` 只描述 LLM 调用，不能授权 Shell、安装、工具网络或远程 Git。
 
 创建真实任务前按顺序验证 Profile 存在、session credential configured、Profile version 当前，再把 profile ID/version/当前 UTC 时间与 Task 同次持久化；任何失败发生在 worktree 创建前。
 
-- [ ] **Step 5: 实现最小 WebUI 输入**
+- [x] **Step 5: 实现最小 WebUI 输入**
 
 沿用现有单页，只增加 Provider 类型、model、API Key 与已配置 Profile 下拉框。API Key 只存在 React state；切换项目、任务、请求成功或失败均立即设为 `""`。不实现 edit/delete/probe/unlock/persistence 选择。
 
-- [ ] **Step 6: 运行 GREEN 与静态检查**
+- [x] **Step 6: 运行 GREEN 与静态检查**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/providers tests/agent/test_runtime.py tests/agent/test_real_tool_loop.py tests/api/test_providers.py tests/api/test_tasks.py -q`
 
@@ -155,7 +157,7 @@ Run: `.venv\Scripts\python.exe scripts\secret_scan.py`
 
 Expected: PASS；所有 HTTP 使用 Stub/MockTransport，响应、事件、异常和 DOM 均无假 secret。
 
-- [ ] **Step 7: 合并任务审查并提交**
+- [x] **Step 7: 合并任务审查并提交**
 
 审查重点：worktree 前置拒绝、共享 client 关闭、Key 生命周期、真实 runtime 复用现有反馈闭环、Mock 路径不回退。
 
