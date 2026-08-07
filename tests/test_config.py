@@ -80,3 +80,20 @@ def test_database_path_inside_project_is_rejected(tmp_path: Path) -> None:
             state_root=tmp_path / "state",
             database_path=project / "harness.db",
         )
+
+
+def test_encrypted_credential_vault_must_stay_inside_private_state_root(tmp_path: Path) -> None:
+    state_root = tmp_path / "state"
+    vault_path = state_root / "credentials.v1"
+    settings = HarnessSettings(
+        state_root=state_root,
+        credential_backend="encrypted",
+        credential_vault_path=vault_path,
+    )
+    assert settings.credential_vault_path == vault_path.resolve()
+    with pytest.raises(ValidationError):
+        HarnessSettings(
+            state_root=state_root,
+            credential_backend="encrypted",
+            credential_vault_path=tmp_path / "outside.v1",
+        )

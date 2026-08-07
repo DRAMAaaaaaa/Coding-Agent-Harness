@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import os
-from typing import Self
+from typing import Literal, Self
 from urllib.parse import urlsplit
 
 from pydantic import Field, model_validator
@@ -33,6 +33,8 @@ class HarnessSettings(BaseSettings):
     trusted_origins: tuple[str, ...] | None = None
     state_root: Path = Field(default_factory=_default_state_root)
     database_path: Path | None = None
+    credential_backend: Literal["keyring", "encrypted"] = "keyring"
+    credential_vault_path: Path | None = None
     command_timeout_seconds: int = Field(default=300, ge=1)
     max_task_cycles: int = Field(default=8, ge=1)
     max_same_fingerprint: int = Field(default=3, ge=1)
@@ -52,6 +54,16 @@ class HarnessSettings(BaseSettings):
             raise ValueError("Harness 私有状态路径无法解析") from None
         if database_path == state_root or not database_path.is_relative_to(state_root):
             raise ValueError("database_path 必须位于 state_root 内")
+        credential_vault_path = (
+            self.credential_vault_path.expanduser().resolve(strict=False)
+            if self.credential_vault_path is not None
+            else None
+        )
+        if credential_vault_path is not None and (
+            credential_vault_path == state_root
+            or not credential_vault_path.is_relative_to(state_root)
+        ):
+            raise ValueError("credential_vault_path 必须位于 state_root 内")
 
         hosts = self.trusted_hosts
         origins = self.trusted_origins
@@ -65,6 +77,7 @@ class HarnessSettings(BaseSettings):
         normalized_origins = _normalize_trusted_origins(origins, normalized_hosts)
         object.__setattr__(self, "state_root", state_root)
         object.__setattr__(self, "database_path", database_path)
+        object.__setattr__(self, "credential_vault_path", credential_vault_path)
         object.__setattr__(self, "trusted_hosts", normalized_hosts)
         object.__setattr__(self, "trusted_origins", normalized_origins)
         return self

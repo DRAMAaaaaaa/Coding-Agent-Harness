@@ -1009,3 +1009,12 @@
 - **执行事实：** 计划提交为 `3974cb8`。两个无历史只读审计分别启动 CL1-1 与 CL1-2；根文档读取耗时超过预期后，用户要求减少冷启动时间和 Token，主 Agent 停止未完成的 CL1-2，不伪造结论。
 - **有效发现：** CL1-1 审计在 RED 前暂停，指出 Repository 构造/时间/ID、同值版本、三字段事务绑定、Unicode model、UTC、排序、稳定错误、无用途 Redactor 和 migration 并发/回滚矩阵不明确。
 - **修订与后续策略：** 详细计划已冻结上述语义并写入 `SPEC_PROCESS.md`。不再重复全量冷启动；后续 Subagent-Driven 每次只分发一个 Task 的必要规格段、限定文件和限定验证命令，以降低 Token，同时保留逐 Task TDD、规约审查、质量审查和提交。
+
+### 2026-08-07 — IMPL-CL1-2-CREDENTIALS
+
+- **任务与范围：** 在隔离 worktree `codex/cl1-providers`（基线 `4b5d977`）实现 CL1-2 凭据保险库；只读取任务简报及必要的 Provider/配置契约，未读取整份 SPEC/PLAN、未联网、未安装或升级依赖、未接触真实凭据。
+- **技能与 TDD：** 使用 `test-driven-development` 与 `verification-before-completion`。先新增会话不持久化、固定 Keyring service、Keyring fail-closed、Secret repr、加密文件无明文、错误主密码/篡改、原子替换、删除双清理及取消等待测试；RED 命令 `.venv\\Scripts\\python.exe -m pytest tests/providers/test_credentials.py tests/test_config.py -v` 因缺少 `coding_agent_harness.providers.credentials` 收集失败，符合简报的缺失模块预期。
+- **实现与安全：** 新增 Broker、协议和稳定 `CredentialVaultError` 原因码；会话优先且 SESSION 不调用持久 Store，所有持久调用经可注入 runner。Keyring 固定 service `coding-agent-harness`。加密 Store 使用受上限验证的 Argon2id 与 AES-256-GCM AAD，JSON envelope 无明文，临时独占文件 flush/fsync 后原子替换；容器无主密码时 locked。配置新增受 `state_root` 围栏的 backend/vault 路径。
+- **纠正性 TDD：** mypy 报告空字符串秘密的返回类型错误；根因为 `and` 真值短路返回原始空字符串。新增空秘密 RED（`1 failed, 10 passed`），改为显式 `None` 判定后转绿。
+- **新鲜验证：** 聚焦 pytest `25 passed`；Ruff 输出 `All checks passed!`；mypy 输出 `Success: no issues found in 53 source files`。仍需独立规约符合性和代码质量审查，未将 CL1-2 标记为完成。
+- **秘密零泄漏：** 测试仅含显然假值；秘密值只经 `SecretStr` 或加密字节处理，异常使用固定原因码，不记录第三方异常正文或秘密。
