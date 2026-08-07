@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 import threading
 from uuid import UUID
@@ -13,8 +14,10 @@ from coding_agent_harness.api.app import create_app
 from coding_agent_harness.api.dependencies import (
     BlockingWorker,
     LocalTaskRunner,
+    PlanGateOrchestrator,
     RuntimeUnavailableError,
 )
+from coding_agent_harness.providers.binding import ProviderBindingCoordinator
 from coding_agent_harness.agent.orchestrator import AgentOrchestrator, TaskStateError
 from coding_agent_harness.agent.parser import ActionParser
 from coding_agent_harness.config import HarnessSettings
@@ -353,6 +356,99 @@ async def test_default_app_requires_session_provider_before_creating_task_or_wor
         count = await (await app.state.tasks._database.connection.execute("SELECT COUNT(*) FROM tasks")).fetchone()  # type: ignore[attr-defined]
         assert count == (0,)
         assert not (state_root / "worktrees").exists()
+
+
+async def test_real_task_binding_holds_profile_lease_until_task_cas_completes(tmp_path: Path) -> None:
+    state_root = tmp_path / "state"
+    app = create_app(
+        settings=HarnessSettings(
+            state_root=state_root,
+            database_path=state_root / "harness.db",
+            trusted_hosts=("testserver",),
+            trusted_origins=("http://testserver",),
+        )
+    )
+    async with app.router.lifespan_context(app):
+        active = app.state.dependencies
+        coordinator = _RecordingProviderBindingCoordinator()
+        active.provider_binding = coordinator
+        assert active.profiles is not None
+        active.profiles._coordinator = coordinator  # type: ignore[attr-defined]
+        active.orchestrator_factory = lambda: PlanGateOrchestrator(active.tasks)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+            headers = await session_headers(client)
+            profile = await client.post(
+                "/api/providers", json={"kind": "deepseek", "model": "deepseek-chat"}, headers=headers
+            )
+            profile_id = UUID(profile.json()["id"])
+            configured = await client.put(
+                f"/api/providers/{profile_id}/session-credential",
+                json={"api_key": "test-session-provider-key"}, headers=headers,
+            )
+            assert configured.status_code == 200
+            original_get = active.profiles.get
+            profile_reads_outside_lease: list[UUID] = []
+
+            async def get_while_held(current_profile_id: UUID) -> object:
+                if not coordinator.is_held(current_profile_id):
+                    profile_reads_outside_lease.append(current_profile_id)
+                return await original_get(current_profile_id)
+
+            active.profiles.get = get_while_held  # type: ignore[method-assign]
+            _, workspace_id = await _trusted_workspace(client, tmp_path / "profile-lease")
+            original_runner = active.task_runner
+            barrier = _TaskRunnerBarrier(original_runner)
+            active.task_runner = barrier
+
+            create_request = asyncio.create_task(client.post(
+                "/api/tasks",
+                json={"workspace_id": workspace_id, "requirement": "绑定旧版本", "provider_profile_id": str(profile_id)},
+                headers=headers,
+            ))
+            await barrier.started.wait()
+            update = asyncio.create_task(active.profiles.update_model(profile_id, "deepseek-reasoner"))
+            await asyncio.sleep(0)
+            assert not update.done()
+            barrier.release.set()
+            created = await create_request
+            updated = await update
+
+        assert created.status_code == 201
+        persisted = await active.tasks.get(UUID(created.json()["id"]))
+        assert persisted is not None
+        assert persisted.provider_profile_version == 1
+        assert updated.version == 2
+        assert profile_reads_outside_lease == []
+
+
+class _RecordingProviderBindingCoordinator(ProviderBindingCoordinator):
+    def __init__(self) -> None:
+        super().__init__()
+        self._held: set[UUID] = set()
+
+    @asynccontextmanager
+    async def hold(self, profile_id: UUID):  # type: ignore[no-untyped-def]
+        async with super().hold(profile_id):
+            self._held.add(profile_id)
+            try:
+                yield
+            finally:
+                self._held.remove(profile_id)
+
+    def is_held(self, profile_id: UUID) -> bool:
+        return profile_id in self._held
+
+
+class _TaskRunnerBarrier:
+    def __init__(self, delegate: object) -> None:
+        self._delegate = delegate
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def create(self, *args: object, **kwargs: object) -> object:
+        self.started.set()
+        await self.release.wait()
+        return await self._delegate.create(*args, **kwargs)  # type: ignore[union-attr]
 
 
 async def test_project_blocking_ports_run_off_event_loop_and_health_responds(

@@ -84,6 +84,20 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "接入项目" }));
     expect(key).toHaveValue("");
   });
+
+  it("任务创建失败也清空会话 Provider 密钥", async () => {
+    const user = userEvent.setup();
+    const api = { ...scriptedApi({ connectProject: vi.fn(async () => ({ ...workspace, trusted: true })) }), listProviders: vi.fn(async () => [{ id: "provider-1", kind: "deepseek" as const, model: "deepseek-chat", version: 1, configured: true }]), createProvider: vi.fn(), setSessionCredential: vi.fn(), createTask: vi.fn(async () => { throw new Error("offline"); }) };
+    render(<App api={api} />);
+    await user.type(screen.getByLabelText("项目路径"), "C:\\demo\\repo");
+    await user.click(screen.getByRole("button", { name: "接入项目" }));
+    await user.type(screen.getByLabelText("API Key"), "test-session-key");
+    await user.selectOptions(screen.getByLabelText("已配置 Profile"), "provider-1");
+    await user.type(screen.getByLabelText("编码需求"), "修复失败");
+    await user.click(screen.getByRole("button", { name: "生成计划" }));
+    expect(await screen.findByRole("status")).toBeVisible();
+    expect(screen.getByLabelText("API Key")).toHaveValue("");
+  });
   it("展示真实计划、验证和 diff，并完成最终批准", async () => {
     const user = userEvent.setup();
     const api = scriptedApi();

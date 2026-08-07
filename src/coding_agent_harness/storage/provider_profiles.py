@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from coding_agent_harness.providers.models import ProviderKind, ProviderProfile, normalize_model
+from coding_agent_harness.providers.binding import ProviderBindingCoordinator
 from coding_agent_harness.storage.database import Database
 
 
@@ -26,10 +27,12 @@ class ProviderProfileRepository:
         *,
         clock: Callable[[], datetime] = utc_now,
         id_factory: Callable[[], UUID] = uuid4,
+        coordinator: ProviderBindingCoordinator | None = None,
     ) -> None:
         self._database = database
         self._clock = clock
         self._id_factory = id_factory
+        self._coordinator = coordinator
 
     @staticmethod
     def normalize_model(model: str) -> str:
@@ -73,6 +76,12 @@ class ProviderProfileRepository:
         return tuple(_profile_from_row(row) for row in rows)
 
     async def update_model(self, profile_id: UUID, model: str) -> ProviderProfile:
+        if self._coordinator is not None:
+            async with self._coordinator.hold(profile_id):
+                return await self._update_model(profile_id, model)
+        return await self._update_model(profile_id, model)
+
+    async def _update_model(self, profile_id: UUID, model: str) -> ProviderProfile:
         normalized = self.normalize_model(model)
         async with self._database.operation_lock:
             try:

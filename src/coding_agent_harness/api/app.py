@@ -30,6 +30,7 @@ from coding_agent_harness.storage.workspaces import WorkspaceRepository
 from coding_agent_harness.storage.provider_profiles import ProviderProfileRepository
 from coding_agent_harness.providers.credentials import CredentialBroker, SessionOnlyCredentialStore
 from coding_agent_harness.providers.registry import ProviderRegistry
+from coding_agent_harness.providers.binding import ProviderBindingCoordinator
 from coding_agent_harness.runtime import RuntimeOrchestratorRouter
 from coding_agent_harness.workspace.detector import ProjectDetector
 from coding_agent_harness.workspace.scanner import WorkspaceScanner
@@ -63,7 +64,8 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
             tasks = TaskRepository(database)
             events = EventStore(database)
             worker = BlockingWorker()
-            profiles = ProviderProfileRepository(database)
+            binding = ProviderBindingCoordinator()
+            profiles = ProviderProfileRepository(database, coordinator=binding)
             credentials = CredentialBroker(SessionOnlyCredentialStore(), worker)
             registry = ProviderRegistry(profiles, credentials, client_factory=lambda: client)
             app.state.dependencies = ApiDependencies(
@@ -79,6 +81,7 @@ def create_app(*, settings: HarnessSettings | None = None, dependencies: ApiDepe
                 credentials=credentials,
                 provider_registry=registry,
                 require_provider_profile=True,
+                provider_binding=binding,
             )
             app.state.dependencies.orchestrator_factory = lambda: RuntimeOrchestratorRouter(app.state.dependencies)
             app.state.dependencies.task_runner = LocalTaskRunner(

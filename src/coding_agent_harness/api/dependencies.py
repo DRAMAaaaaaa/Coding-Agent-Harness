@@ -26,6 +26,7 @@ from coding_agent_harness.workspace.processes import CommandResult
 from coding_agent_harness.providers.credentials import CredentialBroker
 from coding_agent_harness.providers.registry import ProviderRegistry
 from coding_agent_harness.storage.provider_profiles import ProviderProfileRepository
+from coding_agent_harness.providers.binding import ProviderBindingCoordinator
 
 
 _ResultT = TypeVar("_ResultT")
@@ -111,6 +112,7 @@ class ApiDependencies:
     credentials: CredentialBroker | None = None
     provider_registry: ProviderRegistry | None = None
     require_provider_profile: bool = False
+    provider_binding: ProviderBindingCoordinator | None = None
 
 
 class PlanGateOrchestrator:

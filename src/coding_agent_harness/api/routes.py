@@ -160,39 +160,53 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
             raise _error(503, "RUNTIME_UNAVAILABLE", "Agent 运行时未配置")
         provider_profile_version: int | None = None
         authorized_at: datetime | None = None
-        if active.require_provider_profile:
-            if body.provider_profile_id is None:
-                raise _error(409, "PROVIDER_CREDENTIAL_REQUIRED", "必须选择已配置的 Provider")
-            if active.profiles is None or active.credentials is None:
-                raise _error(503, "RUNTIME_UNAVAILABLE", "Provider 运行时未配置")
-            profile = await active.profiles.get(body.provider_profile_id)
-            if profile is None:
-                raise _error(404, "PROVIDER_PROFILE_NOT_FOUND", "Provider Profile 不存在")
-            if not (await active.credentials.status(profile.id)).configured:
-                raise _error(409, "PROVIDER_CREDENTIAL_REQUIRED", "Provider 会话凭据未配置")
-            provider_profile_version = profile.version
-            authorized_at = datetime.now(UTC)
-        try:
-            current = await active.worker.run(
-                active.detector.detect,
-                stored.workspace.root,
-            )
-            if current != stored.workspace.profile or current.trust_fingerprint != stored.trusted_fingerprint:
-                await active.workspaces.revoke_trust(stored.workspace.id)
-                raise _error(409, "STALE_PROJECT_TRUST", "项目配置已变化，需要重新建立信任")
-        except ProjectDetectionError:
-            raise _error(409, "STALE_PROJECT_TRUST", "项目配置已变化，需要重新建立信任") from None
-        orchestrator = _create_orchestrator(active)
-        task_id = uuid4()
-        try:
-            task = await active.task_runner.create(
+
+        async def create_bound_task() -> Task:
+            return await active.task_runner.create(
                 stored.workspace, task_id, body.requirement,
                 provider_profile_id=body.provider_profile_id,
                 provider_profile_version=provider_profile_version,
                 llm_api_authorized_at=authorized_at,
             )
+
+        async def verify_current_project_trust() -> None:
+            try:
+                current = await active.worker.run(
+                    active.detector.detect,
+                    stored.workspace.root,
+                )
+                if current != stored.workspace.profile or current.trust_fingerprint != stored.trusted_fingerprint:
+                    await active.workspaces.revoke_trust(stored.workspace.id)
+                    raise _error(409, "STALE_PROJECT_TRUST", "项目配置已变化，需要重新建立信任")
+            except ProjectDetectionError:
+                raise _error(409, "STALE_PROJECT_TRUST", "项目配置已变化，需要重新建立信任") from None
+
+        task_id = uuid4()
+        orchestrator: OrchestratorPort | None = None
+        try:
+            if active.require_provider_profile:
+                if body.provider_profile_id is None:
+                    raise _error(409, "PROVIDER_CREDENTIAL_REQUIRED", "必须选择已配置的 Provider")
+                if active.profiles is None or active.credentials is None or active.provider_binding is None:
+                    raise _error(503, "RUNTIME_UNAVAILABLE", "Provider 运行时未配置")
+                async with active.provider_binding.hold(body.provider_profile_id):
+                    profile = await active.profiles.get(body.provider_profile_id)
+                    if profile is None:
+                        raise _error(404, "PROVIDER_PROFILE_NOT_FOUND", "Provider Profile 不存在")
+                    if not (await active.credentials.status(profile.id)).configured:
+                        raise _error(409, "PROVIDER_CREDENTIAL_REQUIRED", "Provider 会话凭据未配置")
+                    provider_profile_version = profile.version
+                    authorized_at = datetime.now(UTC)
+                    await verify_current_project_trust()
+                    orchestrator = _create_orchestrator(active)
+                    task = await create_bound_task()
+            else:
+                await verify_current_project_trust()
+                orchestrator = _create_orchestrator(active)
+                task = await create_bound_task()
         except asyncio.CancelledError as cancellation:
-            await _record_request_cancellation(orchestrator, task_id)
+            if orchestrator is not None:
+                await _record_request_cancellation(orchestrator, task_id)
             raise cancellation from None
         except WorkspaceBusyError as error:
             details: dict[str, object] = (
@@ -225,6 +239,7 @@ def create_router(dependencies: ApiDependencies | None, sessions: SessionGuard) 
             ) from None
         except RequirementTooLargeError:
             raise _error(422, "VALIDATION_ERROR", "请求格式无效") from None
+        assert orchestrator is not None
         try:
             proposed = await _propose_plan(orchestrator, task.id)
         except ProviderError:

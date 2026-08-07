@@ -1051,3 +1051,11 @@
 - **任务与技能：** 使用 `subagent-driven-development` 和 `verification-before-completion`，仅关闭既有 Provider 核心实现，不增加产品能力。受审范围为 `a49ad27..f17ac16`。
 - **独立复审：** 新鲜合并规约/质量审查确认默认 HTTP client 经真实 `ProviderRegistry.build_for_task()` 路径固定使用 `trust_env=False`、`follow_redirects=False`，测试由 `httpx.MockTransport` 离线驱动；结论为 Approved，Critical / Important / Minor 均为 0。共享 client 生命周期仍按计划由 Task 2 负责。
 - **主控新鲜验证：** 环境代理目标测试 `1 passed`，全 Provider 回归 `42 passed`；Ruff、mypy（54 个源文件）、秘密扫描、`git diff --check` 与工作树状态检查均退出 0。未联网、安装依赖、接触真实凭据、push 或扩展 Task 2。
+
+### 2026-08-07 — CL1 Task 2 审查返工
+
+- **基线与审查：** 从 `abac70b` 返工，合并审查计数为 Critical / Important / Minor=`0/4/2`。本轮只处理 I1— I3；两个 Minor 已登记，按精简计划不在本 Task 返工。
+- **I1：** Web 创建任务成功或失败均在 finally 清空仅会话 API Key，并有失败路径 DOM 回归。
+- **I2：** `RuntimeOrchestratorRouter` 增加受限工具执行器注入边界；离线 `httpx.MockTransport` 驱动真实 Provider adapter，验证失败反馈进入下一次 LLM 请求，并以实际不允许的 `delete_file` 动作证明六工具白名单生效。
+- **I3：** 单进程 `ProviderBindingCoordinator` 的同一 profile 租约同时包住真实任务的首次 profile/credential/version/UTC/当前信任复核、worktree 创建与 TaskRepository CAS；`update_model()` 共享同一租约。并发回归证明 runner barrier 内更新等待、任务保持 v1，释放后更新为 v2。没有 migration、重读补偿或删除 CAS。
+- **状态：** 返工完成，待复审；未联网、安装依赖、处理两个 Minor 或扩展 Task 3。

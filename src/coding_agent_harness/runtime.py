@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from uuid import UUID
 
-from coding_agent_harness.agent.orchestrator import AgentOrchestrator
+from coding_agent_harness.agent.orchestrator import AgentOrchestrator, ToolExecutor
 from coding_agent_harness.agent.parser import ActionParser
 from coding_agent_harness.api.dependencies import ApiDependencies, OrchestratorPort, RuntimeUnavailableError
 from coding_agent_harness.domain.models import Task
@@ -23,8 +24,14 @@ _ALLOWED_TOOLS = ("read_file", "search", "apply_patch", "run_verification", "git
 class RuntimeOrchestratorRouter(OrchestratorPort):
     """每次 API 调用都依据持久化 Task 重建受限的真实运行时。"""
 
-    def __init__(self, dependencies: ApiDependencies) -> None:
+    def __init__(
+        self,
+        dependencies: ApiDependencies,
+        *,
+        tool_registry_factory: Callable[[ToolContext], ToolExecutor] = ToolRegistry,
+    ) -> None:
         self._dependencies = dependencies
+        self._tool_registry_factory = tool_registry_factory
 
     async def propose_plan(self, task_id: UUID) -> Task:
         return await (await self._for(task_id)).propose_plan(task_id)
@@ -72,7 +79,7 @@ class RuntimeOrchestratorRouter(OrchestratorPort):
         return AgentOrchestrator(
             provider=await dependencies.provider_registry.build_for_task(task),
             parser=ActionParser(_ALLOWED_TOOLS),
-            tools=ToolRegistry(context),
+            tools=self._tool_registry_factory(context),
             event_store=dependencies.event_store,
             tasks=dependencies.tasks,
         )

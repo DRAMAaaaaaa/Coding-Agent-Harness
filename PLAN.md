@@ -1803,7 +1803,7 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 | Task | 状态 | 交付边界 |
 |---|---|---|
 | 1 Provider 核心关闭 | 已完成（`f17ac16`；复审 Approved，C/I/M=`0/0/0`） | 固定端点、会话/保留的安全 Vault、授权、受限 HTTP |
-| 2 Provider 纵向接线 | 待开始 | session API、真实 runtime、最小 WebUI |
+| 2 Provider 纵向接线 | 返工完成，待复审 | session API、真实 runtime、最小 WebUI；返工基线 `abac70b`，审查 C/I/M=`0/4/2` |
 | 3 意图卡与提问 | 待 Task 2 | 四类投影、失败节点零工具提问 |
 | 4 单级纠正分支 | 待 Task 3 | 父写租约冻结、唯一子分支、简化比较 |
 | 5 单条经验与最终验收 | 待 Task 4 | 用户批准、下一任务引用、唯一旗舰 E2E |
