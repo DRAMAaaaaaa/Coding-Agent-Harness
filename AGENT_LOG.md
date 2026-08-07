@@ -981,3 +981,9 @@
 - **范围与技能：** 用户最终批准共学回放设计并要求开始实施；使用 Superpowers `writing-plans`，先把四阶段拆为顺序子项目，再为 CL-1“真实 Provider 与凭据”编写精确文件、接口、RED/GREEN、验证、双重评审和逐 Task 提交计划。未修改实现代码、安装依赖、联网或接触凭据。
 - **增量边界：** CL-1 复用现有 `LLMProvider`、`AgentOrchestrator`、`EventStore`、治理、ToolRegistry 和 worktree；6 个 Task 依次交付配置持久化、凭据保险库、受限 Registry、Provider API、真实运行时和最小 WebUI/验收。CL-2—CL-4 在前一阶段接口稳定后分别生成精确计划，避免提前固化错误接口。
 - **规格同步：** `SPEC.md` 新增第 16 节，写入已批准特色、四阶段范围、安全边界和旗舰验收；`PLAN.md` 新增阶段路线、CL1-1—CL1-6 状态表和陌生智能体冷启动门禁。详细计划位于 `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md`，下一步是计划自审、提交和冷启动检查。
+
+### 2026-08-07 — COLD-START-CL1-REDUCED
+
+- **执行事实：** 计划提交为 `3974cb8`。两个无历史只读审计分别启动 CL1-1 与 CL1-2；根文档读取耗时超过预期后，用户要求减少冷启动时间和 Token，主 Agent 停止未完成的 CL1-2，不伪造结论。
+- **有效发现：** CL1-1 审计在 RED 前暂停，指出 Repository 构造/时间/ID、同值版本、三字段事务绑定、Unicode model、UTC、排序、稳定错误、无用途 Redactor 和 migration 并发/回滚矩阵不明确。
+- **修订与后续策略：** 详细计划已冻结上述语义并写入 `SPEC_PROCESS.md`。不再重复全量冷启动；后续 Subagent-Driven 每次只分发一个 Task 的必要规格段、限定文件和限定验证命令，以降低 Token，同时保留逐 Task TDD、规约审查、质量审查和提交。

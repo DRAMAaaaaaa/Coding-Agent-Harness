@@ -51,7 +51,7 @@
 - Modify: `tests/api/conftest.py`
 
 **Interfaces:**
-- Consumes: `Database.operation_lock`、现有 `TaskRepository` 和 `Redactor`。
+- Consumes: `Database.operation_lock` 和现有 `TaskRepository`；本 Task 不注入 `Redactor`，因为 Profile 不接收或保存秘密。
 - Produces:
 
 ```python
@@ -68,13 +68,22 @@ class ProviderProfile(BaseModel):
     updated_at: datetime
 
 class ProviderProfileRepository:
-    async def create(self, profile: ProviderProfile) -> ProviderProfile: ...
+    def __init__(
+        self,
+        database: Database,
+        *,
+        clock: Callable[[], datetime] = utc_now,
+        id_factory: Callable[[], UUID] = uuid4,
+    ) -> None: ...
+    async def create(self, kind: ProviderKind, model: str) -> ProviderProfile: ...
     async def get(self, profile_id: UUID) -> ProviderProfile | None: ...
     async def list(self) -> tuple[ProviderProfile, ...]: ...
     async def update_model(self, profile_id: UUID, model: str) -> ProviderProfile: ...
 ```
 
-`Task` 新增 `provider_profile_id: UUID | None = None`、`provider_profile_version: int | None = None` 与 `llm_api_authorized_at: datetime | None = None`。三者必须同时为空或同时非空；已有 Mock 任务保持三者为空。Profile 从 version 1 开始，修改 model 时在同一事务递增 version；任务授权绑定确切 version。
+Repository 负责生成 ID、时间和初始 version，调用者不能指定。所有时间必须是 UTC-aware `datetime`，SQLite 统一使用 `datetime.isoformat()`，读取时拒绝 naive 值。`list()` 固定按 `created_at ASC, id ASC` 返回。`update_model()` 在规范化后值相同时返回原记录且不递增 version；实际变化才在同一事务将 version 加一并更新 `updated_at`。
+
+`Task` 新增 `provider_profile_id: UUID | None = None`、`provider_profile_version: int | None = None` 与 `llm_api_authorized_at: datetime | None = None`。三者必须同时为空或同时非空；授权时间必须 UTC-aware；已有 Mock 任务保持三者为空。Profile 从 version 1 开始，任务授权绑定确切 version，Profile 更新不得改写已有 Task。
 
 - [ ] **Step 1: 写 migration 和严格模型 RED 测试**
 
@@ -82,7 +91,7 @@ class ProviderProfileRepository:
 async def test_v3_only_applies_004_and_preserves_existing_task(tmp_path: Path) -> None:
     database = await open_v3_fixture(tmp_path / "v3.db")
     row = await fetch_task_provider_columns(database)
-    assert row == (None, None)
+    assert row == (None, None, None)
     assert await user_version(database) == 4
 
 def test_task_requires_profile_and_authorization_together() -> None:
@@ -128,11 +137,11 @@ WHEN (NEW.provider_profile_id IS NULL) != (NEW.provider_profile_version IS NULL)
 BEGIN SELECT RAISE(ABORT, 'invalid provider binding'); END;
 ```
 
-模型名去除首尾空白后必须为 1—128 个 UTF-8 字节，拒绝控制字符；Repository 使用参数化 SQL、事务回滚和稳定 `ProviderProfileNotFoundError`，不得持久化任何凭据字段。
+模型名使用 Python `str.strip()` 去除 Unicode 首尾空白，结果必须为 1—128 个 UTF-8 字节，并拒绝 `unicodedata.category(character).startswith("C")` 的字符。Repository 使用参数化 SQL；`create` 和实际变化的 `update_model` 在 `Database.operation_lock` 内使用 `BEGIN IMMEDIATE`，异常统一 rollback。`get` 未命中返回 `None`，`update_model` 未命中抛出稳定 `ProviderProfileNotFoundError`，注入 ID 碰撞抛出 `ProviderProfileConflictError`；异常不拼接 SQLite 原文。
 
 - [ ] **Step 4: 扩展 TaskRepository 与 LocalTaskRunner**
 
-`TaskRepository` 的列集合、创建与读取必须覆盖两个新字段。`TaskRunner.create` 和 `LocalTaskRunner.create` 增加仅限关键字参数：
+`TaskRepository` 的列集合、创建与读取必须覆盖 `provider_profile_id`、`provider_profile_version` 和 `llm_api_authorized_at` 三个字段。三者非空时，`create_prepared` 必须在 `Database.operation_lock` 内执行 `BEGIN IMMEDIATE`，先读取当前 Profile version，再写 Task；不存在抛出 `ProviderBindingError("PROVIDER_PROFILE_NOT_FOUND")`，版本不匹配抛出 `ProviderBindingError("PROVIDER_AUTHORIZATION_STALE")`。该事务与 `ProviderProfileRepository.update_model` 使用同一数据库写锁/SQLite write lock，使版本校验和任务插入线性化。`TaskRunner.create` 和 `LocalTaskRunner.create` 增加仅限关键字参数：
 
 ```python
 async def create(
@@ -153,7 +162,7 @@ async def create(
 
 Run: `.venv\Scripts\python.exe -m pytest tests/storage/test_migration_004.py tests/storage/test_provider_profiles.py tests/storage/test_migration_003.py tests/storage/test_recovery.py tests/api/test_tasks.py -v`
 
-Expected: PASS；v0 依次执行 001—004，v3 只执行 004，v4 重开不执行 DDL，future database 使用版本 5 验证拒绝且不变异。
+Expected: PASS；v0 依次执行 001—004，v3 只执行 004，v4 重开不执行 DDL，future database 使用版本 5 验证拒绝且不变异；两个 SQL trigger 拒绝三字段部分为空；双连接并发创建/更新不会产生过时授权；注入一次 migration statement 失败后 schema 与 `user_version` 回滚。
 
 - [ ] **Step 6: 静态检查、双重评审和提交**
 

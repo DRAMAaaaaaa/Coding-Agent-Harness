@@ -327,3 +327,21 @@ v3 已证明修订后的陌生执行者能够从零取得正确 RED 和 GREEN。
 第八名全新审计智能体从 `2fb6548` 的隔离工作树开始，完整且仅读取 `SPEC.md` 与 `PLAN.md`。它确认无 Critical、无 Important：Task 4 可从步骤 6 立即写纠正性 RED，不能复用历史模块缺失；Task 11 的依赖仍未满足、暂不实施，但 task/worktree、action/transfer/approval ID、四组文件身份、003、事务绑定、幂等、原子替换和 `UNCERTAIN` 不重放均已闭合。
 
 审计仅给出两项 Minor：三次身份校验的短句应显式列全四组身份；临时文件名可以固定包含 transfer ID。主 Agent 已把这两项无范围扩张的澄清写回计划。至此，新 `AGENTS.md` 要求的最终规约批准、writing-plans 自审和不同类型陌生智能体冷启动门禁均有当前证据，Task 4 可以恢复 Subagent-Driven 纠正性 TDD。
+
+## 10. 2026-08-07 共学扩展 CL-1 冷启动
+
+### 10.1 审计范围与用户的 Token 约束
+
+计划提交 `3974cb8` 后，主 Agent 启动两个不继承当前对话的只读审计：实现工程师选择 CL1-1，安全测试工程师选择 CL1-2；二者初始只能读取 `SPEC.md` 和 `PLAN.md`，选定 Task 后才能读取详细计划对应段和列明文件，均禁止修改、联网和读取 Git 历史。
+
+根文档较长导致审计耗时超过预期。用户随后明确要求减少冷启动时间和 Token。主 Agent立即停止仍在运行的 CL1-2 审计，不伪造其结论；后续冷启动改为一次、单 Task、短规格段、限定文件和限定测试命令。
+
+### 10.2 CL1-1 有效暂停点
+
+陌生实现工程师在 Task 1 Step 1 前判定无法安全冷启动，主要阻塞为：Repository 构造、时钟和 ID 所有权不明；同值 model 更新是否递增版本不明；Task 三字段文字误写为两个；Profile 版本校验与 Task 插入没有明确同事务线性化；model Unicode 规范、UTC 时间、list 排序和稳定错误不明；`Redactor` 被列为依赖但没有职责；migration 004 的回滚、并发和 SQL 约束矩阵不足。
+
+### 10.3 计划修订
+
+主 Agent 接受这些暂停点并只修订 CL1-1：Repository 注入 `Database/clock/id_factory`，由 Repository 生成 version 1；所有时间固定 UTC-aware/ISO；同值更新不递增，实际变化使用 `BEGIN IMMEDIATE`；model 使用 `str.strip()`、UTF-8 1—128 字节并拒绝 Unicode C 类字符；list 固定排序；Task 三字段完整列名，在同一写事务校验 Profile 当前 version 后插入；增加稳定 not-found/conflict/stale 错误；删除无用途 Redactor；补充 SQL trigger、双连接并发和 migration 回滚测试。
+
+用户要求的缩短策略意味着不再启动第三个全量冷启动。上述修订由主控做类型一致性和规格覆盖自审，CL1-1 实现子智能体只获得 Task 1 局部上下文；每个 Task 的独立规约与质量审查保持不变。

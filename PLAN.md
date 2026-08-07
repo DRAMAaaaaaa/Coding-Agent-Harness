@@ -1793,7 +1793,7 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 
 | 阶段 | 状态 | 可独立验收的交付 | 精确计划 |
 |---|---|---|---|
-| CL-1 真实 Provider 与凭据 | 计划已编写，待冷启动检查 | DeepSeek/Qwen 配置、凭据生命周期、真实 Agent 接线、最小 WebUI 和显式冒烟验收 | `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md` |
+| CL-1 真实 Provider 与凭据 | 冷启动问题已修订，准备 CL1-1 | DeepSeek/Qwen 配置、凭据生命周期、真实 Agent 接线、最小 WebUI 和显式冒烟验收 | `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md` |
 | CL-2 意图卡与引导执行 | 待 CL-1 接口稳定后计划 | 结构化意图卡、语义检查点、只读提问和双执行模式 | 尚未生成精确文件计划 |
 | CL-3 检查点与分支回放 | 待 CL-2 接口稳定后计划 | 加密检查点、原轨迹不变、纠正分支、比较和恢复 | 尚未生成精确文件计划 |
 | CL-4 项目学习卡 | 待 CL-3 接口稳定后计划 | 用户批准记忆、作用域/版本、确定性检索、冲突和引用 | 尚未生成精确文件计划 |
@@ -1813,4 +1813,4 @@ CL-1 完成后才能把 `DW-MVP-003` 标记为 `RESOLVED`；若用户未提供�
 
 ### 新扩展冷启动门禁
 
-CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `SPEC.md` 和 `PLAN.md` 选择 CL1-1 或 CL1-2 尝试冷启动，并在不确定处暂停。暂停点、误读、接口差距和计划修订必须写入 `SPEC_PROCESS.md`。冷启动通过后采用 `subagent-driven-development` 逐 Task 实施。
+CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `SPEC.md` 和 `PLAN.md` 选择 CL1-1 或 CL1-2 尝试冷启动，并在不确定处暂停。暂停点、误读、接口差距和计划修订必须写入 `SPEC_PROCESS.md`。2026-08-07 用户要求降低冷启动时间和 Token：本阶段保留首个有效陌生实现审计，停止仍在扩展阅读的第二审计，不再重复整份根文档冷启动；主控修订被发现的阻塞接口后，直接采用 `subagent-driven-development`，每个实现子智能体只接收一个 Task 的必要规格段、文件和测试命令。
