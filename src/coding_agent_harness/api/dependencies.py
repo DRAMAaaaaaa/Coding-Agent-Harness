@@ -79,7 +79,16 @@ class BranchResolver(Protocol):
 
 
 class TaskRunner(Protocol):
-    async def create(self, workspace: Workspace, task_id: UUID, requirement: str) -> Task: ...
+    async def create(
+        self,
+        workspace: Workspace,
+        task_id: UUID,
+        requirement: str,
+        *,
+        provider_profile_id: UUID | None = None,
+        provider_profile_version: int | None = None,
+        llm_api_authorized_at: datetime | None = None,
+    ) -> Task: ...
 
 
 @dataclass(slots=True)
@@ -147,7 +156,16 @@ class LocalTaskRunner:
         self._time_budget_seconds = time_budget_seconds
         self._worker = worker or BlockingWorker()
 
-    async def create(self, workspace: Workspace, task_id: UUID, requirement: str) -> Task:
+    async def create(
+        self,
+        workspace: Workspace,
+        task_id: UUID,
+        requirement: str,
+        *,
+        provider_profile_id: UUID | None = None,
+        provider_profile_version: int | None = None,
+        llm_api_authorized_at: datetime | None = None,
+    ) -> Task:
         prepared_requirement = self._tasks.prepare_requirement(requirement)
 
         def create_worktree() -> WorktreeManager:
@@ -166,6 +184,9 @@ class LocalTaskRunner:
                 time_budget_seconds=self._time_budget_seconds,
                 created_at=datetime.now(UTC),
                 deadline_at=None,
+                provider_profile_id=provider_profile_id,
+                provider_profile_version=provider_profile_version,
+                llm_api_authorized_at=llm_api_authorized_at,
             )
             try:
                 return await self._tasks.create_prepared(task, prepared_requirement)
@@ -206,7 +227,16 @@ class SafeBranchResolver:
 
 
 class UnavailableTaskRunner:
-    async def create(self, workspace: Workspace, task_id: UUID, requirement: str) -> Task:
+    async def create(
+        self,
+        workspace: Workspace,
+        task_id: UUID,
+        requirement: str,
+        *,
+        provider_profile_id: UUID | None = None,
+        provider_profile_version: int | None = None,
+        llm_api_authorized_at: datetime | None = None,
+    ) -> Task:
         raise RuntimeUnavailableError("Agent 运行时未配置")
 
 

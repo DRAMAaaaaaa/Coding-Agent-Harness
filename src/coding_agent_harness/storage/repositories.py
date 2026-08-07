@@ -12,8 +12,13 @@ from coding_agent_harness.storage.database import Database
 
 _TASK_COLUMNS = """
     id, workspace_id, requirement, state, step_budget,
-    time_budget_seconds, created_at, deadline_at
+    time_budget_seconds, created_at, deadline_at, provider_profile_id,
+    provider_profile_version, llm_api_authorized_at
 """
+
+
+class ProviderBindingError(ValueError):
+    pass
 
 
 class TaskNotFoundError(LookupError):
@@ -56,10 +61,20 @@ class TaskRepository:
         task = task.model_copy(update={"requirement": prepared})
         async with self._database.operation_lock:
             try:
+                if task.provider_profile_id is not None:
+                    await self._database.connection.execute("BEGIN IMMEDIATE")
+                    profile_row = await (await self._database.connection.execute(
+                        "SELECT version FROM provider_profiles WHERE id = ?",
+                        (str(task.provider_profile_id),),
+                    )).fetchone()
+                    if profile_row is None:
+                        raise ProviderBindingError("PROVIDER_PROFILE_NOT_FOUND")
+                    if int(profile_row[0]) != task.provider_profile_version:
+                        raise ProviderBindingError("PROVIDER_AUTHORIZATION_STALE")
                 await self._database.connection.execute(
                     f"""
                     INSERT INTO tasks ({_TASK_COLUMNS})
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         str(task.id),
@@ -70,6 +85,11 @@ class TaskRepository:
                         task.time_budget_seconds,
                         task.created_at.isoformat(),
                         task.deadline_at.isoformat() if task.deadline_at else None,
+                        str(task.provider_profile_id) if task.provider_profile_id else None,
+                        task.provider_profile_version,
+                        task.llm_api_authorized_at.isoformat()
+                        if task.llm_api_authorized_at
+                        else None,
                     ),
                 )
                 await self._database.connection.commit()
@@ -123,4 +143,9 @@ def _task_from_row(row: sqlite3.Row) -> Task:
         time_budget_seconds=float(str(row[5])),
         created_at=datetime.fromisoformat(str(row[6])),
         deadline_at=datetime.fromisoformat(str(deadline)) if deadline is not None else None,
+        provider_profile_id=UUID(str(row[8])) if row[8] is not None else None,
+        provider_profile_version=int(row[9]) if row[9] is not None else None,
+        llm_api_authorized_at=(
+            datetime.fromisoformat(str(row[10])) if row[10] is not None else None
+        ),
     )

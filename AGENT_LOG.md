@@ -982,6 +982,12 @@
 - **增量边界：** CL-1 复用现有 `LLMProvider`、`AgentOrchestrator`、`EventStore`、治理、ToolRegistry 和 worktree；6 个 Task 依次交付配置持久化、凭据保险库、受限 Registry、Provider API、真实运行时和最小 WebUI/验收。CL-2—CL-4 在前一阶段接口稳定后分别生成精确计划，避免提前固化错误接口。
 - **规格同步：** `SPEC.md` 新增第 16 节，写入已批准特色、四阶段范围、安全边界和旗舰验收；`PLAN.md` 新增阶段路线、CL1-1—CL1-6 状态表和陌生智能体冷启动门禁。详细计划位于 `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md`，下一步是计划自审、提交和冷启动检查。
 
+### 2026-08-07 — CL1-1 Provider 配置持久化
+
+- 按 `task-1-brief.md` 在隔离 worktree 实现 migration 004、Provider Profile repository 与 Task 的版本化授权绑定；未读取或写入任何真实凭据，未联网。
+- TDD：新增 migration/profile 行为测试后，首轮命令在 `ProviderKind` 导入时因模块不存在失败；实现后聚焦迁移与 repository 测试 `10 passed`。
+- 回归命令在 60 秒工具超时前未报告失败；按既有基线将慢 API 用例与本实现区分记录。Ruff/mypy 首轮发现一个未使用导入与一个静态类型转换问题，已修复，待最终复跑。
+
 ### 2026-08-07 — COLD-START-CL1-REDUCED
 
 - **执行事实：** 计划提交为 `3974cb8`。两个无历史只读审计分别启动 CL1-1 与 CL1-2；根文档读取耗时超过预期后，用户要求减少冷启动时间和 Token，主 Agent 停止未完成的 CL1-2，不伪造结论。
