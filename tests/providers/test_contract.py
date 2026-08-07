@@ -155,7 +155,7 @@ async def test_http_errors_are_safely_classified(status_code: int, retryable: bo
     assert secret not in repr(vars(error))
 
 
-@pytest.mark.parametrize("exception_type", [httpx.ConnectError, httpx.ConnectTimeout])
+@pytest.mark.parametrize("exception_type", [httpx.ConnectError])
 async def test_temporary_network_errors_are_retryable_and_sanitized(
     exception_type: type[httpx.RequestError],
 ) -> None:
@@ -201,4 +201,44 @@ async def test_response_schema_errors_are_non_retryable_and_sanitized(
     assert captured.value.retryable is False
     assert secret not in str(captured.value)
     assert secret not in repr(captured.value)
+    assert secret not in repr(vars(captured.value))
+
+
+async def test_provider_rejects_response_over_two_mebibytes() -> None:
+    secret = "placeholder-size-secret"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"x" * (2 * 1024 * 1024 + 1))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenAICompatibleProvider(client, "https://provider.example/v1", "model", secret)
+        with pytest.raises(ProviderError) as captured:
+            await provider.complete(LLMRequest(messages=[]))
+
+    assert captured.value.kind == "response_too_large"
+    assert captured.value.retryable is False
+    assert secret not in repr(captured.value)
+
+
+@pytest.mark.parametrize(
+    "exception_type", [
+        httpx.ConnectTimeout,
+        httpx.ReadTimeout,
+        httpx.WriteTimeout,
+        httpx.PoolTimeout,
+    ],
+)
+async def test_timeouts_are_retryable_and_do_not_retain_request(exception_type: type[httpx.TimeoutException]) -> None:
+    secret = "placeholder-timeout-secret"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise exception_type(f"Authorization: Bearer {secret}", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenAICompatibleProvider(client, "https://provider.example/v1", "model", secret)
+        with pytest.raises(ProviderError) as captured:
+            await provider.complete(LLMRequest(messages=[]))
+
+    assert captured.value.kind == "timeout"
+    assert captured.value.retryable is True
     assert secret not in repr(vars(captured.value))

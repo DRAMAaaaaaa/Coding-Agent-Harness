@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 import httpx
@@ -12,9 +13,12 @@ def _is_retryable_http_status(status_code: int) -> bool:
     return status_code in _RETRYABLE_HTTP_STATUSES or 500 <= status_code < 600
 
 
-def _extract_content(response: httpx.Response) -> str | None:
+_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+
+
+def _extract_content(payload_bytes: bytes) -> str | None:
     try:
-        payload: Any = response.json()
+        payload: Any = json.loads(payload_bytes)
         content = payload["choices"][0]["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError):
         return None
@@ -35,32 +39,45 @@ class OpenAICompatibleProvider:
         self._api_key = api_key
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        response: httpx.Response | None
         try:
-            response = await self._client.post(
+            async with self._client.stream(
+                "POST",
                 f"{self._base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 json={"model": self._model, "messages": request.messages, "temperature": 0},
                 follow_redirects=False,
-            )
-        except (httpx.NetworkError, httpx.TimeoutException):
-            response = None
-
-        if response is None:
+            ) as response:
+                if not response.is_success:
+                    raise ProviderError(
+                        f"Provider returned HTTP status {response.status_code}.",
+                        kind="http_status",
+                        retryable=_is_retryable_http_status(response.status_code),
+                    )
+                chunks: list[bytes] = []
+                received = 0
+                async for chunk in response.aiter_bytes():
+                    received += len(chunk)
+                    if received > _MAX_RESPONSE_BYTES:
+                        raise ProviderError(
+                            "Provider response exceeded the 2 MiB limit.",
+                            kind="response_too_large",
+                            retryable=False,
+                        )
+                    chunks.append(chunk)
+        except ProviderError:
+            raise
+        except httpx.TimeoutException:
             raise ProviderError(
-                "Provider request failed due to a temporary network error.",
-                kind="network",
+                "Provider request timed out.",
+                kind="timeout",
                 retryable=True,
-            )
-
-        if not response.is_success:
+            ) from None
+        except httpx.RequestError:
             raise ProviderError(
-                f"Provider returned HTTP status {response.status_code}.",
-                kind="http_status",
-                retryable=_is_retryable_http_status(response.status_code),
-            )
+                "Provider request failed due to a temporary network error.", kind="network", retryable=True
+            ) from None
 
-        content = _extract_content(response)
+        content = _extract_content(b"".join(chunks))
         if content is None:
             raise ProviderError(
                 "Provider response did not match the expected schema.",

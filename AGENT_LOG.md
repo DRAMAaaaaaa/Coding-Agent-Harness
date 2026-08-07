@@ -1024,3 +1024,10 @@
 - **审查修复：** 处理 CL1-2 唯一 Important：原 Keyring 删除无条件吞掉 `PasswordDeleteError`，可能误报成功并留下持久化凭据。先新增缺失幂等和“已存在但删除失败”两个 RED；聚焦命令得到 `2 failed, 11 passed`，直接复现问题。
 - **最小 GREEN：** `delete()` 先经稳定 `get()` 确认状态；只有观察到缺失才幂等返回，观察到存在后任何删除异常均为 `CREDENTIAL_STORE_UNAVAILABLE`，不携带后端正文或秘密。读取/删除竞态下已观察到存在而删除失败仍 fail-closed。
 - **新鲜验证：** credentials/config 聚焦 `27 passed`，Ruff、mypy（53 个源文件）、`git diff --check` 与仓库秘密扫描均退出 0；测试只使用明显假值，并断言异常 message/repr 不泄漏。
+
+### 2026-08-07 CL1-3 Provider 注册表实施
+
+- **任务与范围：** 在独立 worktree `codex/cl1-providers` 实现固定 DeepSeek/Qwen 端点、受限 OpenAI-compatible HTTP adapter 与任务级 `ProviderRegistry`。
+- **技能与流程：** 使用 `test-driven-development`；先新增 Registry、授权、凭据、固定端点、2 MiB 流式响应和 timeout 契约测试，再执行 `.venv\\Scripts\\python.exe -m pytest tests/providers/test_registry.py tests/providers/test_contract.py -v`。RED 因 `ModuleNotFoundError: coding_agent_harness.providers.registry` 失败，确认缺少目标实现。
+- **GREEN 与安全边界：** 新增不可变端点映射与 `ProviderRegistry`；只从 Profile 取 model、只从 Broker 临时读取 key。未绑定/过期授权、缺失 Profile/凭据及锁定 vault 均返回稳定配置码。adapter 使用 `AsyncClient.stream`、禁用重定向、累计限制 2 MiB，并对 HTTP、网络、connect/read/write/pool timeout 与解析错误返回无原始请求、响应、header、body 或第三方异常的稳定 `ProviderError`。
+- **新鲜验证：** 聚焦 GREEN 为 `28 passed`；全 Provider 回归为 `41 passed`；`ruff check src tests`、`mypy src`（54 个源文件）、`scripts/secret_scan.py` 与 `git diff --check` 均退出 0。HTTP 测试全部使用 `httpx.MockTransport`，未发真实网络请求。

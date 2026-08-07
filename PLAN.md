@@ -1804,7 +1804,7 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 |---|---|---|
 | CL1-1 Provider 配置持久化 | 已实现，待提交 | migration 004、ProviderProfile repository、Task 绑定与授权时间 |
 | CL1-2 凭据保险库 | 已实现，待独立审查 | 会话、OS Keyring、Argon2id + AES-256-GCM 容器存储；实现提交待生成 |
-| CL1-3 Provider 注册表 | 待开始 | 固定端点、受限 HTTP、DeepSeek/Qwen adapter 构造与契约 |
+| CL1-3 Provider 注册表 | 已实现，待复审 | 固定端点、受限 HTTP、DeepSeek/Qwen adapter 构造与契约 |
 | CL1-4 Provider API | 待开始 | 配置、凭据状态/更新/删除、保险库解锁和显式连接检查 |
 | CL1-5 真实 Agent 运行时 | 待开始 | 任务级 Provider 选择/授权并复用现有 Agent、工具和 worktree |
 | CL1-6 最小 WebUI 与验收 | 待开始 | 功能入口、HTTP Stub E2E、显式真实冒烟命令和中文文档 |

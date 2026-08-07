@@ -16,6 +16,8 @@ class LLMResponse(BaseModel):
 
 
 class ProviderError(RuntimeError):
+    """仅公开稳定诊断，调用方不得附加或保留外部请求/响应对象。"""
+
     def __init__(self, message: str, *, kind: str, retryable: bool) -> None:
         super().__init__(message)
         self.kind = kind
