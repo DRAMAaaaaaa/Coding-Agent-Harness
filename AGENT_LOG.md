@@ -1079,6 +1079,13 @@
 - **交付结果：** 四类 `IntentCard` 从 `TaskEvent` 唯一事实源确定性投影；冲突 sequence 固定拒绝。只有验证失败卡可通过任务绑定 Provider 进行零工具提问，问题、事件摘要与回答分别执行 UTF-8 预算和脱敏，问题完整保留；审计事件保持 Task state，不修改文件、审批或 worktree。
 - **主控新鲜验证：** learning、learning API 与 storage event-store 聚焦 `25 passed`，其中 storage `19 passed`；Web 为 2 个文件 `25 passed`；Ruff、mypy（61 个源文件）、秘密扫描、ESLint、TypeScript typecheck、Vite 生产构建、`git diff --check` 和工作树状态均通过。未联网、安装依赖、使用真实 Key、push 或进入 Task 4 实现。
 
+### 2026-08-07 — 关闭精简计划 Task 4 单级纠正分支
+
+- **最终范围与复审：** Task 4 范围为 `1f0977d..646eed0`；实现 `bc46400`、首审返工 `304b83e`、兼容迁移 `e7fccd9`，过程提交为 `5bf22b1`、`48245f6`、`646eed0`。最终合并规约/质量复审为 Spec compliant Yes、Assessment Approved，Critical / Important=`0/0`；Task 5 migration 文字 Minor 已在启动前由 006 同步为 007。
+- **交付结果：** 验证失败可暂停在学习检查点；受限 checkpoint 仅接受已跟踪 UTF-8 修改/删除并安全处理短写；父 worktree 冻结后保留原现场并释放写租约，唯一 child 在副作用前持久化身份并成为新 writer；Provider 构建失败也能本地稳定暂停，比较不调用 LLM。旧 Mock 自动反馈默认保持不变。
+- **迁移兼容：** 005 保持历史 schema，006 通过安全重建移除 child 预留的外键限制；fresh v4 与旧 v5 均升级到 v6并保留数据。Task 5 学习迁移顺延为 007，不改变功能范围。
+- **主控新鲜验证：** replay、worktree、migration、repository、API、orchestrator 与 runtime 聚焦 `81 passed, 1 skipped`；唯一 skip 为既有 Windows 符号链接权限边界。Web 为 2 个文件 `26 passed`；Ruff、mypy（66 个源文件）、秘密扫描、ESLint、TypeScript typecheck、Vite 生产构建、`git diff --check` 和工作树状态均通过。未联网、安装依赖、使用真实 Key、push 或进入 Task 5 实现。
+
 ### 2026-08-07 — CL3 Task 4 单级纠正分支实现完成，待审
 
 - **范围与过程：** 在既有 Task 4 未提交工作树上继续，使用 `test-driven-development`、`systematic-debugging` 与 `verification-before-completion`；未安装依赖、联网、使用真实凭据或进入 Task 5。任务 brief/report 的指定旧路径不存在，改以已批准的精简计划 Task 4 条款作为唯一实现边界。

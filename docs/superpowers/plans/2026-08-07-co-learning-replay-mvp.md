@@ -270,8 +270,11 @@ git commit -m "feat: 提供意图卡与只读提问"
 
 ### Task 4: 单级纠正分支与简化比较
 
+**当前状态：** 已关闭。实现 `bc46400`，审查返工 `304b83e`，兼容迁移 `e7fccd9`；最终合并规约/质量复审为 Approved，Critical / Important 为 0 / 0，Task 5 文档 Minor 已在启动前修正。
+
 **Files:**
 - Create: `src/coding_agent_harness/storage/migrations/005_correction_branches.sql`
+- Create: `src/coding_agent_harness/storage/migrations/006_correction_branch_child_reservation.sql`
 - Create: `src/coding_agent_harness/replay/__init__.py`
 - Create: `src/coding_agent_harness/replay/checkpoints.py`
 - Create: `src/coding_agent_harness/replay/branches.py`
@@ -317,19 +320,19 @@ class CorrectionBranchService:
     async def compare(self, branch_id: UUID) -> BranchComparison: ...
 ```
 
-- [ ] **Step 1: 写失败暂停、检查点边界和单写者 RED**
+- [x] **Step 1: 写失败暂停、检查点边界和单写者 RED**
 
 `AgentOrchestrator(pause_on_verification_failure=True)` 在 `VERIFICATION_FAILED` 后追加 `USER_INPUT_REQUIRED(reason_code="LEARNING_CHECKPOINT")` 并返回；默认 `False` 保持现有 Mock 三机制自动反馈。
 
 检查点测试覆盖 1 MiB 边界、UTF-8、NUL、binary、untracked、rename、摘要篡改。worktree 测试证明 `freeze(task_id)` 保留父 target/branch、写入私有 frozen marker、移除精确 `.active` owner，随后只允许一个新 writer；`assert_writable(task_id)` 对冻结父任务固定失败，Runtime 在每次 `run_until_wait` 前调用它。
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/replay tests/workspace/test_worktrees.py tests/storage/test_migration_005.py tests/api/test_replay.py -q`
 
 Expected: FAIL，缺少 migration 005、replay package 和 `freeze`。
 
-- [ ] **Step 3: 实现 migration 005 与幂等仓储**
+- [x] **Step 3: 实现 migration 005 与幂等仓储**
 
 ```sql
 CREATE TABLE correction_branches (
@@ -350,19 +353,19 @@ CREATE TABLE correction_branches (
 
 Service 先只读捕获 patch 到内存，再由 Repository 用 `BEGIN IMMEDIATE` 预留唯一记录；只有赢得 `CREATING` 记录的 owner 可以写 checkpoint 或执行 worktree 副作用。并发第二请求读取并返回同一记录；若首请求停在 `CREATING`，重试固定返回 `BRANCH_CREATION_UNCERTAIN`，不得重复 worktree 副作用。
 
-- [ ] **Step 4: 实现安全检查点和父 worktree 冻结**
+- [x] **Step 4: 实现安全检查点和父 worktree 冻结**
 
 只接受 `git status --porcelain=v1 -z` 表明没有 untracked/rename/copy，以及 `git diff --no-ext-diff --no-color --binary HEAD --` 产生的 UTF-8、无 NUL、无 `GIT binary patch`、不超过 1 MiB 的 patch。以 `O_EXCL` 临时文件、flush/fsync、`os.replace` 写入 `state_root/checkpoints/{branch_id}.patch`，数据库只保存文件名和摘要。
 
 `WorktreeManager.freeze(task_id)` 必须验证 marker owner、linked worktree 注册和 Git 身份；先创建私有 frozen marker并 fsync，再删除 `.active`。`assert_writable(task_id)` 只接受当前 `.active` owner 且拒绝 frozen marker。任一后验不确定固定抛 `WorktreeUncertainError`，不删除父现场。
 
-- [ ] **Step 5: 实现唯一子任务和比较**
+- [x] **Step 5: 实现唯一子任务和比较**
 
 扩展 `LocalTaskRunner.create(..., base_commit="HEAD", initial_patch: bytes | None = None)`；有 patch 时在新 worktree 通过 `SafeGit.run(..., ["apply", "--whitespace=nowarn", "-"], stdin=patch)` 恢复，失败保留子现场并把 branch 标成 `UNCERTAIN`。
 
 任何副作用前先用 `ProviderRegistry.build_for_task(parent)` 复验父任务的精确 Profile/version 与 session credential。子任务复制该绑定，需求为原 requirement 与经过 Redactor/8 KiB 限长的用户 correction。TaskRunner 持久化后由同一 `RuntimeOrchestratorRouter.propose_plan(child_id)` 生成计划；若 Provider 此时失败，记录稳定 runtime failure 并保留已创建 child，不重建 worktree。比较只读取父 checkpoint、父/子事件，返回两边 task state、最近验证摘要和最终 diff；不执行 LLM。
 
-- [ ] **Step 6: 增加 API/UI**
+- [x] **Step 6: 增加 API/UI**
 
 ```text
 POST /api/tasks/{task_id}/correction-branches {source_event_sequence, correction}
@@ -371,7 +374,7 @@ GET  /api/correction-branches/{branch_id}/comparison
 
 只有 `verification_failure` 卡显示“从此纠正”。UI 只并排显示状态、验证摘要和 diff 文本，不做通用时间轴。
 
-- [ ] **Step 7: GREEN、迁移矩阵、审查与提交**
+- [x] **Step 7: GREEN、迁移矩阵、审查与提交**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/replay tests/workspace/test_worktrees.py tests/storage/test_migration_005.py tests/api/test_replay.py tests/agent/test_orchestrator.py -q`
 
@@ -449,7 +452,7 @@ async def test_only_approved_latest_card_changes_next_action(fixture) -> None:
 
 Run: `.venv\Scripts\python.exe -m pytest tests/learning/test_cards.py tests/storage/test_migration_007.py tests/agent/test_runtime.py tests/api/test_learning.py -q`
 
-Expected: FAIL，migration 006、repository 和 service 不存在。
+Expected: FAIL，migration 007、repository 和 service 不存在。
 
 - [ ] **Step 3: 实现 migration、批准与下一任务注入**
 
