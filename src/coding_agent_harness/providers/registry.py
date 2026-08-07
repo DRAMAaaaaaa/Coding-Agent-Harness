@@ -23,6 +23,10 @@ PROVIDER_ENDPOINTS: Mapping[ProviderKind, str] = MappingProxyType(
 )
 
 
+def _default_client_factory() -> httpx.AsyncClient:
+    return httpx.AsyncClient(trust_env=False, follow_redirects=False)
+
+
 class ProviderConfigurationError(RuntimeError):
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -35,11 +39,11 @@ class ProviderRegistry:
         profiles: ProviderProfileRepository,
         credentials: CredentialBroker,
         *,
-        client_factory: Callable[[], httpx.AsyncClient] = httpx.AsyncClient,
+        client_factory: Callable[[], httpx.AsyncClient] | None = None,
     ) -> None:
         self._profiles = profiles
         self._credentials = credentials
-        self._client_factory = client_factory
+        self._client_factory = client_factory or _default_client_factory
 
     async def build_for_task(self, task: Task) -> LLMProvider:
         if (

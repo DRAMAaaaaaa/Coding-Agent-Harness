@@ -1031,3 +1031,9 @@
 - **技能与流程：** 使用 `test-driven-development`；先新增 Registry、授权、凭据、固定端点、2 MiB 流式响应和 timeout 契约测试，再执行 `.venv\\Scripts\\python.exe -m pytest tests/providers/test_registry.py tests/providers/test_contract.py -v`。RED 因 `ModuleNotFoundError: coding_agent_harness.providers.registry` 失败，确认缺少目标实现。
 - **GREEN 与安全边界：** 新增不可变端点映射与 `ProviderRegistry`；只从 Profile 取 model、只从 Broker 临时读取 key。未绑定/过期授权、缺失 Profile/凭据及锁定 vault 均返回稳定配置码。adapter 使用 `AsyncClient.stream`、禁用重定向、累计限制 2 MiB，并对 HTTP、网络、connect/read/write/pool timeout 与解析错误返回无原始请求、响应、header、body 或第三方异常的稳定 `ProviderError`。
 - **新鲜验证：** 聚焦 GREEN 为 `28 passed`；全 Provider 回归为 `41 passed`；`ruff check src tests`、`mypy src`（54 个源文件）、`scripts/secret_scan.py` 与 `git diff --check` 均退出 0。HTTP 测试全部使用 `httpx.MockTransport`，未发真实网络请求。
+
+### 2026-08-07 FIX-CL1-3-DEFAULT-HTTP-CLIENT
+
+- **问题与 RED：** 安全审查发现 Registry 默认 `httpx.AsyncClient` 可采用环境代理。新增构造边界记录测试，并经实际 `build_for_task()` 路径执行；命令 `.venv\\Scripts\\python.exe -m pytest tests/providers/test_registry.py::test_registry_default_client_factory_disables_environment_and_redirects -v` 得到预期 `1 failed`，因为旧实现没有向构造器传入安全参数。
+- **GREEN：** 默认工厂固定为 `httpx.AsyncClient(trust_env=False, follow_redirects=False)`；不接受环境或调用者传入的安全参数，且不扩大到 Task 4 的共享 client 生命周期。相同命令得到 `1 passed`；完整回归、静态检查和秘密扫描将在提交前重跑。
+- **新鲜验证：** Task 3 聚焦为 `29 passed`，全 Provider 回归为 `42 passed`；`ruff check src tests`、`mypy src`（54 个源文件）、`scripts/secret_scan.py` 与 `git diff --check` 均退出 0。

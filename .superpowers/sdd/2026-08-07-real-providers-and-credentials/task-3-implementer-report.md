@@ -41,3 +41,10 @@ git diff --check                                                # exit 0
 - `tests/providers/test_contract.py`
 - `PLAN.md`
 - `AGENT_LOG.md`
+
+## 修复轮次 1/5：默认 client 禁用环境代理
+
+- **问题：** 默认 `httpx.AsyncClient` 的 `trust_env=True` 会读取 `HTTP(S)_PROXY` 等环境设置，可能把带 Authorization 的请求交给代理。
+- **RED：** 新增 `test_registry_default_client_factory_disables_environment_and_redirects`，在 HTTP client 构造边界替换为记录 kwargs 的构造器，通过实际 `ProviderRegistry(...).build_for_task(...)` 路径断言安全参数。运行 `.venv\\Scripts\\python.exe -m pytest tests/providers/test_registry.py::test_registry_default_client_factory_disables_environment_and_redirects -v`，结果 `1 failed`；记录为空，证明旧默认参数未显式传入。
+- **GREEN：** 默认工厂改为 `_default_client_factory()`，固定调用 `httpx.AsyncClient(trust_env=False, follow_redirects=False)`；没有新增 client 关闭路径或其他 Task 4 范围的行为。运行同一命令，结果 `1 passed`。
+- **修复后验证：** `.venv\\Scripts\\python.exe -m pytest tests/providers/test_registry.py tests/providers/test_contract.py -v` 为 `29 passed`；`.venv\\Scripts\\python.exe -m pytest tests/providers -v` 为 `42 passed`；Ruff、mypy（54 个源文件）、秘密扫描与 `git diff --check` 均退出 0。

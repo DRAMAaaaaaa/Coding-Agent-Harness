@@ -9,6 +9,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
+import coding_agent_harness.providers.registry as registry_module
 from coding_agent_harness.domain.actions import TaskState
 from coding_agent_harness.domain.models import Task
 from coding_agent_harness.providers.credentials import CredentialVaultError
@@ -122,6 +123,23 @@ async def test_registry_builds_only_with_fixed_endpoint_and_profile_model() -> N
     assert (await provider.complete(LLMRequest(messages=[]))).content == "done"
     assert str(requests[0].url) == "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
     assert b'"model":"tested-model"' in requests[0].content
+
+
+async def test_registry_default_client_factory_disables_environment_and_redirects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+    original_async_client = httpx.AsyncClient
+
+    def recording_async_client(**kwargs: object) -> httpx.AsyncClient:
+        calls.append(kwargs)
+        return original_async_client(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
+
+    monkeypatch.setattr(registry_module.httpx, "AsyncClient", recording_async_client)
+
+    await ProviderRegistry(ProfileRepository(profile()), Broker()).build_for_task(task())
+
+    assert calls == [{"trust_env": False, "follow_redirects": False}]
 
 
 async def test_probe_uses_a_fixed_minimal_message() -> None:
