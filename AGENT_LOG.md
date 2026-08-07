@@ -1066,3 +1066,9 @@
 - **最终范围与复审：** Task 2 技术与过程范围为 `a238e67..691e272`；实现 `abac70b`、审查返工 `d39baef`、延期记录修订 `ff9e37d` 与 `691e272`。最终合并规约/质量复审为 Spec compliant Yes、Assessment Approved，Critical / Important / Minor=`0/0/0`；M1—M3 已作为 `DW-MVP-007` 的可追踪 deferred Minor，不计为未关闭问题。
 - **交付结果：** 默认生产路径已连通会话 API Key、DeepSeek/Qwen 固定端点、共享受限 HTTP client、现有 `AgentOrchestrator` 确定性反馈闭环、六工具白名单与最小 WebUI；Provider 绑定协调租约防止单进程内 model update 插入首次读取和最终 CAS 之间。Mock 演示路径继续允许空 profile。
 - **主控新鲜验证：** Task 2 后端聚焦 `82 passed`；Web 为 2 个文件 `24 passed`；Ruff、mypy（57 个源文件）、秘密扫描、ESLint、TypeScript typecheck、Vite 生产构建、`git diff --check` 和工作树状态检查均退出 0。未真实联网、安装依赖、使用真实 Key、push 或进入 Task 3 实现。
+
+### 2026-08-07 — CL2 Task 3 首审返工
+
+- **范围与技能：** 基于 `e979612` 仅处理 I1—I5；使用 `receiving-code-review`、`test-driven-development` 和 `verification-before-completion`。未联网、安装依赖、使用真实 Key，亦未进入 Task 4。
+- **RED→GREEN：** 新增冲突 sequence、16 KiB 多字节回答、最大卡片下完整问题与支撑事件摘要测试。首轮因缺少稳定冲突错误而收集失败；GREEN 后 learning/API/storage 聚焦测试通过。`BUSINESS_TABLES` 断言同步纳入既有 `provider_profiles`，未修改迁移或产品存储。
+- **状态：** I1—I5 返工完成，待规约符合性与代码质量复审；最终提交 hash 由 closure 台账记录。

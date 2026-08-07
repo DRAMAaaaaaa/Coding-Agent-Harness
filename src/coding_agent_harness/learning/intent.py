@@ -16,6 +16,10 @@ from coding_agent_harness.governance.redaction import Redactor
 MAX_CARD_TEXT_BYTES = 8 * 1024
 
 
+class IntentProjectionError(ValueError):
+    """事件序列无法形成唯一、可重放的投影。"""
+
+
 class IntentKind(StrEnum):
     PLAN = "plan"
     FIRST_EDIT = "first_edit"
@@ -44,7 +48,14 @@ class IntentProjector:
         self._redactor = redactor or Redactor()
 
     def project(self, task_id: UUID, events: Sequence[TaskEvent]) -> tuple[IntentCard, ...]:
-        unique = {event.sequence: event for event in events if event.task_id == task_id}
+        unique: dict[int, TaskEvent] = {}
+        for event in events:
+            if event.task_id != task_id:
+                continue
+            previous = unique.get(event.sequence)
+            if previous is not None and previous != event:
+                raise IntentProjectionError("EVENT_SEQUENCE_CONFLICT")
+            unique[event.sequence] = event
         ordered = tuple(unique[key] for key in sorted(unique))
         cards: list[IntentCard] = []
         plan = _first(ordered, "PLAN_PROPOSED")

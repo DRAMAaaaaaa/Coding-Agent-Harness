@@ -28,4 +28,5 @@
 
 ## 提交
 
-- 实现提交 hash：`33fe0a54419f9648f98454d4a1e34c985dc7c89d`。
+- 基础实现提交 hash：`e9796120d22c63fc6f00e6a2f807de1ddbc97eaa`。
+- 本轮首审返工范围：I1 独立 16 KiB 回答边界；I2 分段预算的卡片、支撑事件摘要与完整用户问题；I3 冲突 sequence 的稳定拒绝；I4 本报告基础 hash 更正；I5 `provider_profiles` 表基线断言同步。最终返工提交 hash 由父任务 closure 台账记录。

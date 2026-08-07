@@ -28,6 +28,7 @@ BUSINESS_TABLES = {
     "artifacts",
     "memory_records",
     "credential_references",
+    "provider_profiles",
 }
 
 

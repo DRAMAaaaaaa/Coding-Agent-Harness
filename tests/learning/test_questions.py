@@ -14,10 +14,11 @@ from coding_agent_harness.providers.base import LLMRequest, LLMResponse
 class StubProvider:
     def __init__(self) -> None:
         self.requests: list[LLMRequest] = []
+        self.response = "Stub explanation"
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         self.requests.append(request)
-        return LLMResponse(content="Stub explanation")
+        return LLMResponse(content=self.response)
 
 
 class Tasks:
@@ -76,3 +77,20 @@ async def test_question_rejects_non_failure_card_and_oversized_utf8_input() -> N
         await service.ask(TASK_ID, f"{TASK_ID}:plan:1", "why")
     with pytest.raises(ValueError, match="QUESTION_TOO_LARGE"):
         await service.ask(TASK_ID, "missing", "你" * 1400)
+
+
+@pytest.mark.asyncio
+async def test_question_keeps_maximum_multibyte_answer_and_complete_question_after_large_card() -> None:
+    task = Task(id=TASK_ID, workspace_id=uuid4(), requirement="fix", state=TaskState.WAITING_USER, step_budget=1, time_budget_seconds=1, created_at=datetime.now(UTC), deadline_at=None)
+    events = Events([make_event(1, "VERIFICATION_RECORDED", {"run": {"diagnostic": "卡" * 8_000}}), make_event(2, "VERIFICATION_FAILED", {"reason_code": "TEST_FAILURE"})])
+    provider = StubProvider()
+    provider.response = "答" * 6_000
+    service = QuestionService(Tasks(task), events, provider_for_task=lambda _: provider)
+    question = "问" * 1_358 + "唯一问题标记"
+
+    answer = await service.ask(TASK_ID, f"{TASK_ID}:verification_failure:2", question)
+
+    content = provider.requests[0].messages[0]["content"]
+    assert isinstance(content, str) and question in content and "事件摘要:" in content
+    assert len(answer.content.encode("utf-8")) <= 16 * 1024
+    assert len(answer.content) < len(provider.response)

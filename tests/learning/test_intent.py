@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
+
 from coding_agent_harness.domain.actions import TaskState
 from coding_agent_harness.domain.events import TaskEvent
-from coding_agent_harness.learning.intent import IntentKind, IntentProjector
+from coding_agent_harness.learning.intent import IntentKind, IntentProjectionError, IntentProjector
 
 
 def event(sequence: int, event_type: str, payload: dict[str, object]) -> TaskEvent:
@@ -22,6 +24,7 @@ TASK_ID = uuid4()
 
 
 def test_projects_four_stable_cards_from_unsorted_duplicate_events() -> None:
+    edit = event(3, "TOOL_EXECUTION_COMPLETED", {"result": {"changed_paths": ["src/a.py"]}})
     cards = IntentProjector().project(
         TASK_ID,
         [
@@ -29,8 +32,8 @@ def test_projects_four_stable_cards_from_unsorted_duplicate_events() -> None:
             event(5, "VERIFICATION_FAILED", {"reason_code": "TEST_FAILURE"}),
             event(4, "FEEDBACK_RECORDED", {"output": "assertion failed"}),
             event(2, "PLAN_PROPOSED", {"plan": "change one file"}),
-            event(3, "TOOL_EXECUTION_COMPLETED", {"result": {"changed_paths": ["src/a.py"]}}),
-            event(3, "TOOL_EXECUTION_COMPLETED", {"result": {"changed_paths": ["src/a.py"]}}),
+            edit,
+            edit,
             event(1, "SCAN_STARTED", {}),
         ],
     )
@@ -48,3 +51,12 @@ def test_projects_four_stable_cards_from_unsorted_duplicate_events() -> None:
         f"{TASK_ID}:final_delivery:8",
     ]
     assert cards[2].evidence_sequences == (4, 5)
+
+
+def test_rejects_conflicting_duplicate_sequences_independent_of_input_order() -> None:
+    first = event(3, "PLAN_PROPOSED", {"plan": "one"})
+    second = event(3, "PLAN_PROPOSED", {"plan": "two"})
+
+    for values in ([first, second], [second, first]):
+        with pytest.raises(IntentProjectionError, match="EVENT_SEQUENCE_CONFLICT"):
+            IntentProjector().project(TASK_ID, values)
