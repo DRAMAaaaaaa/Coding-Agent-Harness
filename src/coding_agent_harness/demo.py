@@ -454,9 +454,11 @@ class DemoOrchestratorRouter:
         workspace = stored.workspace
         await asyncio.to_thread(WorktreeManager(workspace, self._state_root).freeze, task_id)
         if task.state is TaskState.COMPLETED:
+            self._workspaces_by_task.pop(task_id, None)
             return task
         orchestrator = await self._for(task_id)
         completed = await orchestrator.approve_final(task_id)
+        self._workspaces_by_task.pop(task_id, None)
         if self._on_completed is not None:
             self._on_completed()
         return completed

@@ -35,3 +35,10 @@
 - `freeze` 对同一任务的 frozen marker 幂等，但仍验证 marker 内容、linked worktree 注册与 Git 顶层身份。Demo 不再提前移除 workspace 映射。
 - `serve_demo.py` 默认恢复单任务完成回调并退出 0；`--keep-alive` 显式供 Playwright 多任务路径使用。旗舰 E2E 在子任务终审后重新读取 comparison，且下一任务通过真实 SSE `task-event` 断言第一条 `ACTION_PARSED` 为 `run_verification`。
 - 新鲜证据：`pytest tests/workspace/test_worktrees.py tests/demo/test_router.py tests/demo/test_serve_cleanup.py tests/agent/test_runtime.py -q` 为 `63 passed, 1 skipped`；相关 Ruff、mypy 均通过；`npm.cmd run e2e -- --grep "真实浏览器"` 为 `1 passed`。
+
+## 终审事务二次返工（待复审）
+
+- frozen marker 已写入但同 owner `.active` 尚未删除的崩溃窗口现在可在重试时完成清理；不同 owner 的活动 writer 保留不动。
+- `FINAL_REVIEW_APPROVED` 已落入事件流而任务状态写入失败时，下一次 `approve_final` 会从事件恢复并在单次调用内返回 `COMPLETED`。
+- Demo 仅在成功 freeze 和完成持久化后才移除活动 workspace 映射；默认服务 cleanup 不再对 frozen worktree 调用 release。
+- 新鲜证据：`pytest tests/workspace/test_worktrees.py tests/agent/test_orchestrator.py tests/demo/test_router.py tests/demo/test_serve_cleanup.py tests/agent/test_runtime.py -q` 为 `85 passed, 1 skipped`；相关 Ruff、mypy 均通过。

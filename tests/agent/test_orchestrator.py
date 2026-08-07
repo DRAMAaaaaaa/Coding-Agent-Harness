@@ -100,6 +100,28 @@ async def harness(tmp_path):
         await database.close()
 
 
+async def test_final_approval_recovers_completed_event_after_state_write_failure(harness, monkeypatch: pytest.MonkeyPatch) -> None:
+    orchestrator, _provider, task, _database = harness
+    await orchestrator.propose_plan(task.id)
+    await orchestrator.approve_plan(task.id)
+    await orchestrator.run_until_wait(task.id)
+    original = orchestrator._tasks.update_state
+    failed = False
+
+    async def fail_completed_once(task_id, state):
+        nonlocal failed
+        if state is TaskState.COMPLETED and not failed:
+            failed = True
+            raise RuntimeError("state write failed")
+        return await original(task_id, state)
+
+    monkeypatch.setattr(orchestrator._tasks, "update_state", fail_completed_once)
+    with pytest.raises(RuntimeError, match="state write failed"):
+        await orchestrator.approve_final(task.id)
+
+    assert (await orchestrator.approve_final(task.id)).state is TaskState.COMPLETED
+
+
 async def test_feedback_changes_next_action_after_injected_failure(harness) -> None:
     orchestrator, provider, task, database = harness
 

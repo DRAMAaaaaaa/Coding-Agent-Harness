@@ -119,6 +119,8 @@ class WorktreeManager:
             if not same_path(reported, target):
                 raise WorktreeUncertainError("父任务 worktree 身份不确定，需要人工处理")
             if already_frozen:
+                if self._read_active_marker() == str(task_id):
+                    self._remove_active_marker()
                 return
             descriptor = os.open(frozen, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             try:

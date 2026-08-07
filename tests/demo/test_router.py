@@ -86,6 +86,8 @@ async def test_final_approval_freezes_child_writer_and_allows_next_task(
         assert manager._registration_for(info.path) is not None
         next_info = WorktreeManager(workspace, state_root).create(uuid4(), "HEAD")
         assert next_info.path.is_dir()
+        router.cleanup()
+        assert child.id not in router._workspaces_by_task
     finally:
         await database.close()
 

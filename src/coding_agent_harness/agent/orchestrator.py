@@ -144,6 +144,8 @@ class AgentOrchestrator:
 
     async def approve_final(self, task_id: UUID) -> Task:
         task = await self.task(task_id)
+        if task.state is TaskState.COMPLETED:
+            return task
         if task.state is not TaskState.WAITING_FINAL_REVIEW:
             raise TaskStateError("任务当前不等待最终审查")
         return await self._emit(task, "FINAL_REVIEW_APPROVED", {"approved_by": "user"})

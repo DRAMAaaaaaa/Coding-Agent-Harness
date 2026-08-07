@@ -183,6 +183,39 @@ def test_freeze_is_idempotent_after_verifying_the_frozen_worktree_identity(
     assert manager._registration_for(parent.path) is not None
 
 
+def test_freeze_recovery_removes_matching_active_marker_after_marker_write_crash(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path], tmp_path: Path,
+) -> None:
+    root = git_repository_factory("freeze-recovery", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    manager = WorktreeManager(workspace, tmp_path / "state")
+    task_id = uuid4()
+    manager.create(task_id, head(root))
+    frozen = manager._workspace_state / f".frozen-{task_id}"
+    frozen.write_text(str(task_id), encoding="ascii")
+
+    manager.freeze(task_id)
+
+    assert not manager._active_marker.exists()
+
+
+def test_freeze_recovery_preserves_a_different_active_writer(
+    git_repository_factory: Callable[[str, Mapping[str, str]], Path], tmp_path: Path,
+) -> None:
+    root = git_repository_factory("freeze-recovery-child", {"README.md": "base\n"})
+    workspace = workspace_for(root)
+    manager = WorktreeManager(workspace, tmp_path / "state")
+    task_id, child_id = uuid4(), uuid4()
+    manager.create(task_id, head(root))
+    frozen = manager._workspace_state / f".frozen-{task_id}"
+    frozen.write_text(str(task_id), encoding="ascii")
+    manager._active_marker.write_text(str(child_id), encoding="ascii")
+
+    manager.freeze(task_id)
+
+    assert manager._active_marker.read_text(encoding="ascii") == str(child_id)
+
+
 def test_rejects_state_directory_inside_project(
     git_repository_factory: Callable[[str, Mapping[str, str]], Path],
 ) -> None:

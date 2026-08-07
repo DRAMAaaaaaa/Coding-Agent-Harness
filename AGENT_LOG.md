@@ -696,6 +696,8 @@
 - **RED → GREEN：** 在真实临时 Git worktree 中，先通过 test 验证，再由 Provider 在 CompleteAction 返回前创建未跟踪 `external.py`；旧实现错误进入 `WAITING_FINAL_REVIEW`，新实现固定进入 `WAITING_USER/VERIFICATION_REQUIRED`。补充断言证明受跟踪文件改写改变快照、未跟踪文件改变快照，而删除/重命名已跟踪文件使快照不可用并 fail closed。
 
 - **Task 5 终审返工（TDD）：** RED 证明第二次 `freeze(task_id)` 因活动 writer 已释放而失败，且 Demo 先写入 `COMPLETED` 后 freeze 失败会遗留错误终态；GREEN 将 Runtime/Demo 事务改为 freeze 后再持久化，frozen 重试持续验证 worktree 身份。新增 Demo 重试回归、Runtime 顺序/完成重验回归与普通/keep-alive demo 生命周期回归。旗舰 Playwright 以真实 SSE `task-event` 校验学习注入后的下一任务首个 `ACTION_PARSED` 为 `run_verification`，并在子任务完成后重新 GET comparison 断言 `COMPLETED` 与最终 diff。验证：相关 pytest `63 passed, 1 skipped`，Ruff/mypy 与旗舰 Playwright `1 passed`。
+
+- **Task 5 终审二次返工（TDD）：** RED 覆盖 frozen marker 写入后进程崩溃仍保留同 owner `.active`、事件已追加但任务状态写入失败、以及 Demo cleanup 错误尝试 release 已冻结 worktree。GREEN 仅在 `.active` 精确匹配 frozen owner 时清除它，保留不同 child writer；`approve_final` 从事件恢复 `COMPLETED` 时幂等返回；Demo 仅在 freeze 与完成均成功后（含已完成重试）移除活动映射。聚焦验证：`85 passed, 1 skipped`，Ruff 与 mypy 均通过。
 - **实现与证据：** 快照现在 no-follow、有界遍历当前 worktree 文件系统，动态纳入所有普通文件并区分已跟踪/未跟踪；`.git` 被排除，若显式 state_root 位于 worktree 内则拒绝读取并不放行。目录、链接/reparse、非普通文件、遍历/读取错误、大小/数量上限以及静态已跟踪文件缺失均固定返回不可用。聚焦 `tests/tools/test_verification.py tests/agent/test_orchestrator.py tests/agent/test_real_tool_loop.py` 为 `21 passed`；Ruff、mypy（4 个源文件）和 diff check 通过。待 amend 同名 B 提交，返工 C 保持待执行。
 
 ### 2026-07-27 — IMPL-MVP-2-FINAL-REWORK-B-SCAN-BOUND
