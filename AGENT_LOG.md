@@ -1132,3 +1132,9 @@
 - **交付结果：** 已连通验证失败意图卡、零工具提问、单级纠正分支、子任务验证与比较、最终批准、用户批准项目经验、同 Workspace 下一任务注入；旗舰真实 REST/SSE E2E 证明下一任务第一条 `ACTION_PARSED` 为 `run_verification`。终审先冻结再完成持久化，事件/状态分步失败可单次重试恢复；单进程共享锁保护跨实例 worktree marker 生命周期，冻结父任务不会被 Demo cleanup 释放。
 - **主控新鲜证据：** 同一次 `mingw32-make test` 退出 0：Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`；Ruff、mypy（68 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过。`mingw32-make demo` 三项 PASS，秘密扫描、`pip check`、`git diff --check` 与工作树状态检查通过。
 - **范围与限制：** 未联网调用 DeepSeek/Qwen、未使用真实 Key、未安装新依赖、未 push。Provider 管理/持久凭据 UI、真实 smoke、通用或加密检查点、多级分支、复杂学习卡与最终视觉设计继续按 `DEFERRED_WORK.md` 延期，不影响本轮安全、主路径或验收。
+
+### 2026-08-08 — MERGE-CO-LEARNING-MVP
+
+- **本地集成：** `codex/cl1-providers` 从基线 `3b45271` 以 `--ff-only` 快进合并到本地 `p1`，Task 关闭 Head 为 `3ab7530`；全部 Task 提交记录保留。未 pull、未 push、未接触真实凭据。
+- **合并后新鲜验证：** 在 `p1` 再次运行 `mingw32-make test` 退出 0：Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy（68 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过。
+- **清理事实：** Git worktree 注册已解除，已合并功能分支已安全删除；Windows 上残留目录仍被已结束会话的进程句柄占用，因此未强制终止来源不明的进程或删除该普通目录。该目录不再关联 Git 分支，不影响 `p1` 或后续 push。

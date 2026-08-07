@@ -393,7 +393,7 @@ git commit -m "feat: 支持单级纠正分支"
 
 ### Task 5: 单条项目经验与最终旗舰验收
 
-**当前状态：** 已关闭。实现与返工提交为 `b0a7a00`、`81b3d3d`、`e689fc1`、`9f9b25f`、`1f61d5d`、`3be3d5c`、`2c765a8`、`e71d6b0`；最终合并规约/质量复审为 Spec Yes、Approved，Critical / Important / Minor 均为 0，Ready to merge Yes。
+**当前状态：** 已关闭并本地快进合并到 `p1`。实现与返工提交为 `b0a7a00`、`81b3d3d`、`e689fc1`、`9f9b25f`、`1f61d5d`、`3be3d5c`、`2c765a8`、`e71d6b0`，Task 关闭 Head 为 `3ab7530`；最终合并规约/质量复审为 Spec Yes、Approved，Critical / Important / Minor 均为 0。
 
 **Files:**
 - Create: `src/coding_agent_harness/storage/migrations/007_project_learning.sql`
