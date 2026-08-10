@@ -1177,3 +1177,9 @@
 - **本地集成：** `codex/fix-ci-powershell-tests` 从 `fdda928` 以 `--ff-only` 快进合并到本地 `p1`，Task 关闭 Head 为 `81c79dc`，设计、计划、实现与返工提交记录全部保留；未 pull、未 push。
 - **合并后验证：** 在 `p1` 重新运行 `mingw32-make test` 退出 0：Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`；Ruff、mypy（68 个源文件）、Web lint/typecheck/build 全部通过。
 - **安全清理：** 先验证并解除 worktree 内指向共享 `.venv` 与 `web/node_modules` 的两个 Junction，确认共享目标仍完整，再移除 worktree 注册与目录并删除已合并功能分支；未触碰主工作区既有 `.tmp/` 和 `.venv-py39-backup/`。
+
+### 2026-08-10 — 恢复 DeepSeek/Qwen WebUI 真实连接验收设计
+
+- **技能与范围：** 使用 `using-superpowers` 与 `brainstorming`。只读取 Provider、凭据、API、WebUI、延期台账和旧计划；未编写实现代码、未调用真实 Provider、未读取或记录 API Key。
+- **用户决定：** 用户当前只有 DeepSeek Key；本次在 WebUI 同时保留 DeepSeek/Qwen，但只对 `deepseek-chat` 执行一次固定最小真实 Probe，Qwen 完成离线契约后继续如实标记未联网验收。用户选择会话型 WebUI 密码输入，不使用终端 smoke 或持久凭据；前端提交后立即清空，后端会话内存暂存并支持主动清除。
+- **设计结论：** 复用现有 Profile、`CredentialBroker`、`ProviderRegistry.probe()` 和 OpenAI-compatible 适配器，新增 Probe/清除 API 与最小 WebUI 状态。真实 Provider 不驱动 Agent 主循环，不进入 CI 或 Mock 三机制；错误只暴露稳定脱敏类别。三部分设计均获用户确认，书面规格为 `docs/superpowers/specs/2026-08-10-provider-webui-probe-design.md`。
