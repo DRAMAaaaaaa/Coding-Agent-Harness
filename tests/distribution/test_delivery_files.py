@@ -212,6 +212,17 @@ def test_github_ci_runs_all_delivery_gates_on_push_and_pull_request() -> None:
     workflow = _yaml(".github/workflows/ci.yml")
     assert set(workflow["on"]) == {"push", "pull_request"}  # type: ignore[arg-type]
     jobs = workflow["jobs"]  # type: ignore[assignment]
+    windows_job = jobs["windows-powershell"]
+    assert windows_job["runs-on"] == "windows-latest"
+    windows_commands = [
+        step.get("run", "")
+        for step in windows_job["steps"]
+        if isinstance(step, dict)
+    ]
+    assert (
+        ".venv\\Scripts\\python.exe -m pytest tests/demo/test_mechanism_demo.py -q"
+        in windows_commands
+    )
     commands = [
         step.get("run", "")
         for job in jobs.values()

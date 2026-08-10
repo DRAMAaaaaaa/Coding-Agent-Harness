@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXPECTED_LINES = [
@@ -46,6 +48,7 @@ def test_demo_cli_is_deterministic_and_prints_only_pass_lines() -> None:
     assert first.stderr == second.stderr == ""
 
 
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows PowerShell 启动器语义")
 def test_test_script_fails_closed_when_python_environment_is_missing(tmp_path: Path) -> None:
     result = subprocess.run(
         [
@@ -71,6 +74,7 @@ def test_test_script_fails_closed_when_python_environment_is_missing(tmp_path: P
     )
 
 
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows PowerShell 启动器语义")
 def test_test_script_fails_closed_when_web_dependencies_are_missing(tmp_path: Path) -> None:
     scripts = tmp_path / ".venv" / "Scripts"
     scripts.mkdir(parents=True)
@@ -98,6 +102,7 @@ def test_test_script_fails_closed_when_web_dependencies_are_missing(tmp_path: Pa
     assert "ERROR: Web dependencies missing; run npm --prefix web ci." in result.stdout
 
 
+@pytest.mark.skipif(os.name != "nt", reason="仅 Windows PowerShell 启动器语义")
 def test_test_script_fails_closed_when_npm_is_missing(tmp_path: Path) -> None:
     scripts = tmp_path / ".venv" / "Scripts"
     scripts.mkdir(parents=True)

@@ -30,7 +30,7 @@
 - Consumes: 现有 `scripts/test.ps1`、Ubuntu `make test` 和 GitHub Actions 交付契约。
 - Produces: `windows-powershell` CI 作业；三个仅 Windows 的 pytest 测试；防止 Windows 覆盖被移除的静态契约。
 
-- [ ] **Step 1: 写入失败的 CI 交付契约**
+- [x] **Step 1: 写入失败的 CI 交付契约**
 
 在 `test_github_ci_runs_all_delivery_gates_on_push_and_pull_request` 中增加：
 
@@ -48,13 +48,13 @@ assert (
 )
 ```
 
-- [ ] **Step 2: 运行 RED 并确认失败原因**
+- [x] **Step 2: 运行 RED 并确认失败原因**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/distribution/test_delivery_files.py::test_github_ci_runs_all_delivery_gates_on_push_and_pull_request -q`
 
 Expected: FAIL，原因是 `jobs` 中不存在 `windows-powershell`，不是语法或依赖错误。
 
-- [ ] **Step 3: 最小实现平台分工**
+- [x] **Step 3: 最小实现平台分工**
 
 在 `tests/demo/test_mechanism_demo.py` 导入 pytest，并给三个 PowerShell 启动脚本测试逐一增加：
 
@@ -82,7 +82,7 @@ Expected: FAIL，原因是 `jobs` 中不存在 `windows-powershell`，不是语�
         run: .venv\Scripts\python.exe -m pytest tests/demo/test_mechanism_demo.py -q
 ```
 
-- [ ] **Step 4: 运行 GREEN 与静态检查**
+- [x] **Step 4: 运行 GREEN 与静态检查**
 
 Run:
 

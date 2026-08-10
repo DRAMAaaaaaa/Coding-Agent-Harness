@@ -1152,3 +1152,9 @@
 - **设计决定：** 保留 Ubuntu 完整 `make test`，仅在非 Windows 跳过三个 `.ps1` 专用测试，并增加轻量 Windows 聚焦作业真实覆盖它们；不安装额外 PowerShell、不扩大 Makefile 改造。
 - **工作区：** 从 `p1@fdda928` 创建隔离分支 `codex/fix-ci-powershell-tests`。复用依赖目录联接前已确认主环境存在；清理 worktree 前必须先解除两个联接，避免重演 2026-08-08 事故。
 - **批准事实：** 用户在收到上述推荐方案和根因说明后明确要求“请你帮我修复”，并已规定后续计划修改与审查无需再次询问；因此按已批准的最小设计继续。
+
+### 2026-08-10 — CI PowerShell 测试兼容性实现完成，待审
+
+- **RED→GREEN：** 先扩展交付契约，确认因缺少 `windows-powershell` 作业而以 `KeyError` 失败；随后只增加三个非 Windows skip 标记和 Windows 聚焦作业，聚焦集合 `6 passed`，Windows 本机三个 `.ps1` 负向测试均实际执行。
+- **完整验证：** `mingw32-make test` 退出 0：Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`；Ruff、mypy（68 个源文件）、Web lint/typecheck/build 全部通过。`mingw32-make demo` 三项 PASS；秘密扫描、`pip check`、工作流 YAML 解析和 `git diff --check` 退出 0。
+- **范围：** 未修改产品代码、Makefile、GitLab CI、Docker 或秘密扫描；未联网调用真实 LLM、未使用真实 Key、未安装新依赖、未 push。下一步为独立规约符合性审查和代码质量审查。
