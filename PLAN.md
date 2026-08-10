@@ -1,5 +1,14 @@
 # Coding Agent Harness 实施计划
 
+## 2026-08-10：恢复 Provider WebUI 真实连接验收
+
+- **状态：** 规格已批准，实施计划已编写，尚未创建实现 worktree。
+- **批准规格：** `docs/superpowers/specs/2026-08-10-provider-webui-probe-design.md`，提交 `ea08737`。
+- **详细计划：** `docs/superpowers/plans/2026-08-10-provider-webui-probe.md`。
+- **范围：** WebUI 会话 Key、DeepSeek/Qwen Probe、主动清除、DeepSeek 一次真实验收；真实 Coding Agent 继续由 Mock 驱动，Qwen 因无凭据只完成离线契约。
+- **执行单元：** Task 1 Provider 核心与 API；Task 2 WebUI 与离线浏览器验收；Task 3 真实 DeepSeek 验收、文档和 PR。
+- **下一门禁：** 用户选择 Subagent-Driven 或 Inline Execution 后，使用 `using-git-worktrees` 从包含批准规格 `ea08737` 和本计划提交的 `p1` 当前 HEAD 创建 `codex/provider-webui-probe`。
+
 > **供智能体执行者使用：** 必须使用 `subagent-driven-development`（推荐）或 `executing-plans` 逐项实施本计划。所有步骤使用 `- [ ]` 跟踪；每个行为必须先执行红—绿—重构 TDD，再依次进行规约符合性审查和代码质量审查。
 
 **目标：** 构建一个本地优先、带 WebUI、能够在隔离 Git worktree 中根据客观验证反馈自动修正代码，并以确定性治理和有界反馈闭环为核心贡献的 Coding Agent Harness。

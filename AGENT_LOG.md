@@ -1183,3 +1183,9 @@
 - **技能与范围：** 使用 `using-superpowers` 与 `brainstorming`。只读取 Provider、凭据、API、WebUI、延期台账和旧计划；未编写实现代码、未调用真实 Provider、未读取或记录 API Key。
 - **用户决定：** 用户当前只有 DeepSeek Key；本次在 WebUI 同时保留 DeepSeek/Qwen，但只对 `deepseek-chat` 执行一次固定最小真实 Probe，Qwen 完成离线契约后继续如实标记未联网验收。用户选择会话型 WebUI 密码输入，不使用终端 smoke 或持久凭据；前端提交后立即清空，后端会话内存暂存并支持主动清除。
 - **设计结论：** 复用现有 Profile、`CredentialBroker`、`ProviderRegistry.probe()` 和 OpenAI-compatible 适配器，新增 Probe/清除 API 与最小 WebUI 状态。真实 Provider 不驱动 Agent 主循环，不进入 CI 或 Mock 三机制；错误只暴露稳定脱敏类别。三部分设计均获用户确认，书面规格为 `docs/superpowers/specs/2026-08-10-provider-webui-probe-design.md`。
+
+### 2026-08-10 — Provider WebUI 真实连接实施计划
+
+- **技能与输入：** 用户批准书面规格后使用 `writing-plans`；重新核对 Provider 核心、FastAPI 依赖、会话路由、Demo Registry、React、Playwright 和交付文档。未写实现代码、未联网、未接触真实 Key。
+- **关键边界：** 发现 `serve_demo.py` 的任务路径使用 `DemoProviderRegistry`；计划新增独立 `provider_probe_registry`，使真实 Probe 可用而 Coding Agent 继续由 Scripted Mock 驱动，避免两种 Provider 权限混用。
+- **执行拆分：** 三个可审查 Task 分别交付安全 API、WebUI/离线浏览器路径和真实 DeepSeek 人工验收/文档；每个 Task 单独 TDD、双重审查和中文提交，最终创建 `codex/provider-webui-probe -> p1` PR。
