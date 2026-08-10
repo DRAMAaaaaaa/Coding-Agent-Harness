@@ -1171,3 +1171,9 @@
 - **最终范围：** 技术受审 Head 为 `f424190`。Ubuntu 完整 `make test` 保持不变；三个 `.ps1` 专用测试在非 Windows 明确跳过；Windows 聚焦作业固定 Python 3.11、Node 24 并真实运行机制演示测试文件。
 - **双重审查：** 规约审查 Spec compliant Yes；质量返工后复审 Ready to merge Yes，Critical / Important / Minor=`0/0/0`。
 - **验证证据：** 返工后的完整一键测试、三机制演示、秘密扫描、`pip check`、YAML 语义检查和差异检查均退出 0；未联网调用真实 LLM、未使用真实 Key、未安装新依赖、未 push。
+
+### 2026-08-10 — 合并 CI PowerShell 测试兼容性修复
+
+- **本地集成：** `codex/fix-ci-powershell-tests` 从 `fdda928` 以 `--ff-only` 快进合并到本地 `p1`，Task 关闭 Head 为 `81c79dc`，设计、计划、实现与返工提交记录全部保留；未 pull、未 push。
+- **合并后验证：** 在 `p1` 重新运行 `mingw32-make test` 退出 0：Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`；Ruff、mypy（68 个源文件）、Web lint/typecheck/build 全部通过。
+- **安全清理：** 先验证并解除 worktree 内指向共享 `.venv` 与 `web/node_modules` 的两个 Junction，确认共享目标仍完整，再移除 worktree 注册与目录并删除已合并功能分支；未触碰主工作区既有 `.tmp/` 和 `.venv-py39-backup/`。
