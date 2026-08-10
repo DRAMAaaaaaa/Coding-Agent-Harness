@@ -1165,3 +1165,9 @@
 - **质量首审：** 初始报告 C/I/M=`1/2/0`。其中“不带 `.` 的反斜杠相对路径必然无法由 PowerShell 执行”与本机真实执行证据不符，但改为规范 `.` 前缀可消除 runner 解析歧义；另外两项指出作业可被静默禁用的契约缺口，以及 Web 依赖负向测试隐式依赖 runner 预装 npm。
 - **RED→GREEN：** 先收紧交付契约，RED 因缺少 `actions/setup-node@v4` 失败；随后 Windows 作业显式固定 Node 24，所有 venv 命令使用 `.` 相对前缀，并断言作业及聚焦测试步骤没有 `if` 或 `continue-on-error`。聚焦测试恢复为 `6 passed`，Ruff 与 YAML 语义检查通过。
 - **返工后新鲜验证：** `mingw32-make test` 再次退出 0：Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`；Ruff、mypy、Web lint/typecheck/build 通过。机制演示三项 PASS，秘密扫描、`pip check`、YAML 语义检查和 `git diff --check` 退出 0，待质量复审。
+
+### 2026-08-10 — 关闭 CI PowerShell 测试兼容性修复
+
+- **最终范围：** 技术受审 Head 为 `f424190`。Ubuntu 完整 `make test` 保持不变；三个 `.ps1` 专用测试在非 Windows 明确跳过；Windows 聚焦作业固定 Python 3.11、Node 24 并真实运行机制演示测试文件。
+- **双重审查：** 规约审查 Spec compliant Yes；质量返工后复审 Ready to merge Yes，Critical / Important / Minor=`0/0/0`。
+- **验证证据：** 返工后的完整一键测试、三机制演示、秘密扫描、`pip check`、YAML 语义检查和差异检查均退出 0；未联网调用真实 LLM、未使用真实 Key、未安装新依赖、未 push。

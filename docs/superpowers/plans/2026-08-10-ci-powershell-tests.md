@@ -114,7 +114,7 @@ Run:
 
 Expected: 全部退出 0；在 Windows 本机三个 PowerShell 测试实际执行而非 skip。
 
-- [ ] **Step 5: 运行完整门禁和双重审查**
+- [x] **Step 5: 运行完整门禁和双重审查**
 
 Run:
 
@@ -130,7 +130,7 @@ Expected: 完整测试、三机制演示、秘密扫描和差异检查退出 0�
 质量首审后的定向 RED 还必须证明：Windows 作业显式固定 Node 24，且作业与聚焦
 pytest 步骤不能通过 `if` 或 `continue-on-error` 静默失效。
 
-- [ ] **Step 6: 更新记录并提交**
+- [x] **Step 6: 更新记录并提交**
 
 在 `PLAN.md` 和 `AGENT_LOG.md` 记录 RED、GREEN、完整验证、审查结论及提交哈希，然后执行：
 
