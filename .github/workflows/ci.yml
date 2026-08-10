@@ -41,13 +41,16 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - name: 安装 Python 测试依赖
         run: |
           python -m venv .venv
-          .venv\Scripts\python.exe -m pip install --upgrade pip
-          .venv\Scripts\python.exe -m pip install -e ".[dev]"
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
       - name: 验证 Windows PowerShell 入口与机制演示
-        run: .venv\Scripts\python.exe -m pytest tests/demo/test_mechanism_demo.py -q
+        run: .\.venv\Scripts\python.exe -m pytest tests/demo/test_mechanism_demo.py -q
 
   secret-scan:
     runs-on: ubuntu-24.04

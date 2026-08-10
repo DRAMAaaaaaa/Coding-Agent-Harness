@@ -21,9 +21,10 @@ Harness 产品代码。
 1. 三个 `scripts/test.ps1` 行为测试明确标记为仅 Windows 执行；Ubuntu 收集它们时给出
    可解释的 skip，而不是启动不存在的程序。
 2. GitHub Actions 保留 Ubuntu 24.04 `test` 作业及原有 `make test`。
-3. 新增轻量 `windows-powershell` 作业：使用 `windows-latest`、Python 3.11，安装
-   `.[dev]` 后只运行 `tests/demo/test_mechanism_demo.py`。该文件同时验证 Mock 三机制报告
-   与 PowerShell 启动脚本的三类 fail-closed 诊断。
+3. 新增轻量 `windows-powershell` 作业：使用 `windows-latest`、Python 3.11 和 Node 24，
+   安装 `.[dev]` 后只运行 `tests/demo/test_mechanism_demo.py`。该文件同时验证 Mock 三机制
+   报告与 PowerShell 启动脚本的三类 fail-closed 诊断；显式 Node 版本保证缺少 Web 依赖
+   的测试不会依赖 runner 预装环境。
 4. 交付契约测试固定 Windows 作业的 runner 与聚焦 pytest 命令，防止未来只跳过测试却
    意外移除 Windows 覆盖。
 

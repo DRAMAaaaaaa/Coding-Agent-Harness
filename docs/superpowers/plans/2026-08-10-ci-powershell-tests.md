@@ -37,15 +37,32 @@
 ```python
 windows_job = jobs["windows-powershell"]
 assert windows_job["runs-on"] == "windows-latest"
+assert "if" not in windows_job
+assert windows_job.get("continue-on-error", False) is False
+setup_node_steps = [
+    step
+    for step in windows_job["steps"]
+    if isinstance(step, dict) and step.get("uses") == "actions/setup-node@v4"
+]
+assert len(setup_node_steps) == 1
+assert setup_node_steps[0]["with"]["node-version"] == "24"
 windows_commands = [
     step.get("run", "")
     for step in windows_job["steps"]
     if isinstance(step, dict)
 ]
-assert (
-    ".venv\\Scripts\\python.exe -m pytest tests/demo/test_mechanism_demo.py -q"
-    in windows_commands
+test_command = (
+    ".\\.venv\\Scripts\\python.exe -m pytest "
+    "tests/demo/test_mechanism_demo.py -q"
 )
+assert test_command in windows_commands
+test_step = next(
+    step
+    for step in windows_job["steps"]
+    if isinstance(step, dict) and step.get("run") == test_command
+)
+assert "if" not in test_step
+assert test_step.get("continue-on-error", False) is False
 ```
 
 - [x] **Step 2: 运行 RED 并确认失败原因**
@@ -73,13 +90,16 @@ Expected: FAIL，原因是 `jobs` 中不存在 `windows-powershell`，不是语�
         with:
           python-version: "3.11"
           cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - name: 安装 Python 测试依赖
         run: |
           python -m venv .venv
-          .venv\Scripts\python.exe -m pip install --upgrade pip
-          .venv\Scripts\python.exe -m pip install -e ".[dev]"
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
       - name: 验证 Windows PowerShell 入口与机制演示
-        run: .venv\Scripts\python.exe -m pytest tests/demo/test_mechanism_demo.py -q
+        run: .\.venv\Scripts\python.exe -m pytest tests/demo/test_mechanism_demo.py -q
 ```
 
 - [x] **Step 4: 运行 GREEN 与静态检查**
@@ -106,6 +126,9 @@ git diff --check
 ```
 
 Expected: 完整测试、三机制演示、秘密扫描和差异检查退出 0。随后分别进行规约符合性与代码质量审查，Critical/Important 清零。
+
+质量首审后的定向 RED 还必须证明：Windows 作业显式固定 Node 24，且作业与聚焦
+pytest 步骤不能通过 `if` 或 `continue-on-error` 静默失效。
 
 - [ ] **Step 6: 更新记录并提交**
 

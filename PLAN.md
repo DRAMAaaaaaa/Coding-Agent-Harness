@@ -1816,7 +1816,7 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 
 ## 2026-08-10 CI PowerShell 测试兼容性修复
 
-- **状态：** 实现完成，待规约符合性与代码质量审查（`codex/fix-ci-powershell-tests` worktree）。
+- **状态：** 规约审查通过，代码质量审查返工中（`codex/fix-ci-powershell-tests` worktree）。
 - **根因：** Ubuntu 24.04 完整测试误执行三个硬编码 `powershell.exe` 的 Windows 专用测试。
 - **批准设计：** `docs/superpowers/specs/2026-08-10-ci-powershell-tests-design.md`（提交 `988a2ae`）。
 - **精确计划：** `docs/superpowers/plans/2026-08-10-ci-powershell-tests.md`，单 Task，保持 Ubuntu 完整门禁并新增 Windows 聚焦作业。
