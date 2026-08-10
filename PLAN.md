@@ -1813,3 +1813,11 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 ### 新扩展冷启动门禁
 
 CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `SPEC.md` 和 `PLAN.md` 选择 CL1-1 或 CL1-2 尝试冷启动，并在不确定处暂停。暂停点、误读、接口差距和计划修订必须写入 `SPEC_PROCESS.md`。2026-08-07 用户要求降低冷启动时间和 Token：本阶段保留首个有效陌生实现审计，停止仍在扩展阅读的第二审计，不再重复整份根文档冷启动；主控修订被发现的阻塞接口后，直接采用 `subagent-driven-development`，每个实现子智能体只接收一个 Task 的必要规格段、文件和测试命令。
+
+## 2026-08-10 CI PowerShell 测试兼容性修复
+
+- **状态：** 进行中（`codex/fix-ci-powershell-tests` worktree）。
+- **根因：** Ubuntu 24.04 完整测试误执行三个硬编码 `powershell.exe` 的 Windows 专用测试。
+- **批准设计：** `docs/superpowers/specs/2026-08-10-ci-powershell-tests-design.md`（提交 `988a2ae`）。
+- **精确计划：** `docs/superpowers/plans/2026-08-10-ci-powershell-tests.md`，单 Task，保持 Ubuntu 完整门禁并新增 Windows 聚焦作业。
+- **完成门禁：** RED→GREEN、完整一键测试、机制演示、秘密扫描、YAML 解析、规约审查与质量审查。
