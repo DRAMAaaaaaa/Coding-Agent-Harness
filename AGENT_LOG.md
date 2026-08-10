@@ -1145,3 +1145,10 @@
 - **处置：** 停止继续删除仍被进程占用的普通残留目录；使用 `requirements/windows-py311.lock` 的哈希约束执行完整强制重装，恢复 Python 3.11 虚拟环境。未使用真实凭据，也未修改锁文件或产品代码。
 - **恢复证据：** 依赖导入检查与 `pip check` 通过，`mingw32-make demo` 三项 PASS；随后在锁定依赖环境中重新运行 `mingw32-make test`，结果为 Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy、Web lint/typecheck/build 全部通过。
 - **经验：** Windows 上不得让 `git worktree remove` 直接处理包含指向共享依赖目录联接的工作树；必须先验证并解除联接，再调用 Git 清理。若 Git 已解除注册但目录删除失败，应保留普通残留并人工处理，不能再次递归触碰共享目标。
+
+### 2026-08-10 — GitHub Actions PowerShell 测试兼容性诊断与设计
+
+- **技能与证据：** 使用 `systematic-debugging`、`brainstorming`、`writing-plans`、`using-git-worktrees` 与 `test-driven-development`。认证只读下载的失败日志显示 Ubuntu 24.04 中三个测试因找不到 `powershell.exe` 失败，汇总为 `3 failed, 760 passed, 77 skipped`；Docker 与秘密扫描作业成功。
+- **设计决定：** 保留 Ubuntu 完整 `make test`，仅在非 Windows 跳过三个 `.ps1` 专用测试，并增加轻量 Windows 聚焦作业真实覆盖它们；不安装额外 PowerShell、不扩大 Makefile 改造。
+- **工作区：** 从 `p1@fdda928` 创建隔离分支 `codex/fix-ci-powershell-tests`。复用依赖目录联接前已确认主环境存在；清理 worktree 前必须先解除两个联接，避免重演 2026-08-08 事故。
+- **批准事实：** 用户在收到上述推荐方案和根因说明后明确要求“请你帮我修复”，并已规定后续计划修改与审查无需再次询问；因此按已批准的最小设计继续。
