@@ -1266,3 +1266,9 @@
 - **接口结论：** `workflow.ts` 统一输出阶段解锁、最新证据和自动推进；`App` 保持 `HarnessApi` 注入兼容，Provider Key 局限在高级设置组件。后端 API、事件字段和部署协议不变。
 - **安全与过程：** 本阶段仅新增联合计划、更新过程台账，没有修改前端实现、移动历史文档、安装依赖或调用网络；秘密和用户临时目录边界保持不变。
 - **用户授权：** 用户明确要求联合计划完成后直接执行、无需再次审批；继续沿用此前选择的 Subagent-Driven、隔离 worktree、逐 Task TDD 和双重审查，只有真实阻塞才暂停。
+
+### 2026-08-14 — 联合计划隔离基线与冷启动
+
+- **worktree：** 使用 `using-git-worktrees` 从 `67de2e0` 创建 `E:\Coding Agent Harness\.worktrees\co-learning-workbench-docs`，分支 `codex/co-learning-workbench-docs`；主工作区 `.tmp/`、`.venv-py39-backup/` 未复制或修改。
+- **基线：** 根 `web/node_modules` 是空目录，首次命令未进入测试；改为只复用现有 `foundation` worktree 的完整 Node/Python 依赖 Junction，没有安装或联网。随后 Vitest `28 passed`，ESLint、TypeScript、Vite build 退出 0。
+- **冷启动：** 陌生审计员只读 `SPEC.md`、联合计划与 Task 1 明列的 `types.ts`，结论为 READY；公开签名、阶段/事件规则、RED/GREEN 和验收均无阻塞，未要求计划修订。

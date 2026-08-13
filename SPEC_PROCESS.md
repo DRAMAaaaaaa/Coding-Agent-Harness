@@ -358,3 +358,9 @@ v3 已证明修订后的陌生执行者能够从零取得正确 RED 和 GREEN。
 - **基线结论：** `BLOCKED`。一是 Compose 覆盖使用必填插值，但计划的 `docker compose ... config` 命令未先提供变量；二是 Python 接口允许任意 IPv4，而 Nginx 固定只接受 `47.76.86.198`。审计另建议锁定基础启动入口确实消费环境变量，并提供可重复的 Nginx 语法检查。
 - **修订：** 公网入口收紧为本次批准的固定 IP/Origin；测试覆盖其他合法 IPv4 也必须拒绝，并锁定 Docker CMD 仍调用 `serve_demo.py`。所有 Compose 验证命令增加 PowerShell/POSIX 成对变量输入；Docker daemon 可用时用固定 `nginx:1.28-alpine` 执行 `nginx -t`。
 - **初审当时状态（历史记录）：** 当时等待同一陌生审计员仅依据修订后的设计与计划复核；复核通过前不开始实现。后续复核已在实现前完成并给出 READY，见本文开头“2026-08-14 公网 IP Mock 演示冷启动审计”和受忽略报告 `.superpowers/sdd/public-ip-cold-start-report.md`；本段不代表当前门禁状态。
+
+## 2026-08-14 共学工作台与文档联合计划冷启动审计
+
+- **隔离与范围：** 从计划提交 `67de2e0` 创建 `codex/co-learning-workbench-docs` worktree。陌生审计员不继承主对话，只允许读取 `SPEC.md`、联合计划，以及 Task 1 明确列出的 `web/src/types.ts`；禁止读取 Git 历史、其他过程文档或修改文件。
+- **结论：** `READY（Task 1）`。审计员确认 `workflow.ts` 的目标文件、公开类型/函数签名、状态和事件规则、RED/GREEN 命令与验收条件均明确；现有 `Task`、`TaskEvent`、`IntentCard`、`Workspace` 类型足以安全冷启动。
+- **修订：** 无实现接口阻塞，不修改 Task 1 计划。基线 Vitest `28 passed`，ESLint、TypeScript、Vite build 退出 0；首次命令仅暴露根 Node 缓存为空，随后只复用已有 `foundation` worktree 的完整依赖 Junction，没有联网安装。
