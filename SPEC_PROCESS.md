@@ -357,4 +357,4 @@ v3 已证明修订后的陌生执行者能够从零取得正确 RED 和 GREEN。
 - **审计范围：** 陌生审计员只读取批准设计与精确计划，不读取源码、旧过程日志、Git 历史或主对话。
 - **基线结论：** `BLOCKED`。一是 Compose 覆盖使用必填插值，但计划的 `docker compose ... config` 命令未先提供变量；二是 Python 接口允许任意 IPv4，而 Nginx 固定只接受 `47.76.86.198`。审计另建议锁定基础启动入口确实消费环境变量，并提供可重复的 Nginx 语法检查。
 - **修订：** 公网入口收紧为本次批准的固定 IP/Origin；测试覆盖其他合法 IPv4 也必须拒绝，并锁定 Docker CMD 仍调用 `serve_demo.py`。所有 Compose 验证命令增加 PowerShell/POSIX 成对变量输入；Docker daemon 可用时用固定 `nginx:1.28-alpine` 执行 `nginx -t`。
-- **状态：** 等待同一陌生审计员仅依据修订后的设计与计划复核；复核通过前不开始实现。
+- **初审当时状态（历史记录）：** 当时等待同一陌生审计员仅依据修订后的设计与计划复核；复核通过前不开始实现。后续复核已在实现前完成并给出 READY，见本文开头“2026-08-14 公网 IP Mock 演示冷启动审计”和受忽略报告 `.superpowers/sdd/public-ip-cold-start-report.md`；本段不代表当前门禁状态。

@@ -1835,7 +1835,7 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 
 ## 2026-08-14 公网 IP Mock 演示部署
 
-- **状态：** 已完成静态实现与最终审查返工，待父任务按集成流程处理（`codex/public-ip-mock-demo`，基线 `836ce93`；提交 `b19a4d3`、`aecdbe8`、`51b5dff`，本轮提交见 Git 历史）。Docker daemon/Nginx 容器/ECS 动态验收仍未执行。
+- **状态：** 代码静态实现、规约/质量审查和最终返工已完成，待父任务按集成流程处理；尚未合并或 push。提交时间线：计划基线 `420b7bf`，冷启动修订 `836ce93`，实现 `b19a4d3`，过程记录 `aecdbe8`，首轮返工 `51b5dff`，最终安全/CI 返工 `c99730a`，本轮收尾提交见当前分支 HEAD。静态门禁最新为 Python `840 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`；Docker daemon/Nginx 容器/ECS 动态验收仍待外部执行，未标记通过。
 - **目标：** 通过阿里云香港 ECS 的 `http://47.76.86.198` 短时展示只读示例项目与确定性 Mock Harness；容器 8000 继续只绑定宿主 localhost。
 - **批准设计：** `docs/superpowers/specs/2026-08-14-public-ip-mock-demo-design.md`（提交 `f4cb194`）。
 - **精确计划：** `docs/superpowers/plans/2026-08-14-public-ip-mock-demo.md`，单 Task 纵向切片。
