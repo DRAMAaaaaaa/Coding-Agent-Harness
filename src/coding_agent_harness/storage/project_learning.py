@@ -32,7 +32,7 @@ class ProjectLearningRepository:
             row = await (await self._database.connection.execute(
                 "SELECT id, workspace_id, text, source_task_id, source_event_sequence, approved_at "
                 "FROM project_learning_cards WHERE workspace_id=? "
-                "ORDER BY approved_at DESC, id ASC LIMIT 1", (str(workspace_id),)
+                "ORDER BY approved_at DESC, rowid DESC LIMIT 1", (str(workspace_id),)
             )).fetchone()
         return _card(row) if row is not None else None
 

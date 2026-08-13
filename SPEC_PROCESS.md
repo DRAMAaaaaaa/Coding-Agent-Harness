@@ -1,5 +1,11 @@
 # Spec Process
 
+## 2026-08-14 公网 IP Mock 演示冷启动审计
+
+- **审计员与输入：** 同一陌生审计员仅依据批准设计 `docs/superpowers/specs/2026-08-14-public-ip-mock-demo-design.md` 与实施计划 `docs/superpowers/plans/2026-08-14-public-ip-mock-demo.md`，在实现前完成复核；报告位于 `.superpowers/sdd/public-ip-cold-start-report.md`（受忽略的过程报告）。
+- **结论：** READY（可冷启动实施）。原阻塞已关闭：固定 `47.76.86.198`/精确 HTTP Origin 一致，Compose 必填变量有 PowerShell/POSIX 可复制设置；入口消费、localhost Compose 合并、Nginx SSE/未知 Host 拒绝和静态验证命令均无未定义前提。未读取真实 ECS 凭据或以旧对话补充审计输入。
+- **边界：** 此结论仅批准实现前的静态路径，不代表 Docker daemon、Nginx 容器语法或 ECS 外网验收已经执行。
+
 ## 1. 过程范围
 
 本文记录 2026-07-14 使用 Superpowers `brainstorming` 生成 Coding Agent Harness 设计与 `SPEC.md` 的过程。主开发 agent 为 OpenAI Codex。整个阶段遵守“一次一个问题”“比较多个方案”“分段确认设计”和“设计获批前不写实现代码”的门禁。

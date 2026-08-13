@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -39,6 +40,38 @@ def _docker_instructions(dockerfile: str) -> list[tuple[str, str]]:
         pending = ""
     assert not pending
     return logical_lines
+
+
+def _render_public_ip_compose() -> dict[str, object]:
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("Docker CLI 不可用，跳过 Compose 合并契约；CI docker-build 作业强制执行")
+    environment = {
+        "HARNESS_PUBLIC_HOST": "47.76.86.198",
+        "HARNESS_PUBLIC_ORIGIN": "http://47.76.86.198",
+    }
+    rendered = subprocess.run(
+        [
+            docker,
+            "compose",
+            "-f",
+            "compose.yaml",
+            "-f",
+            "deploy/compose.public-ip.yaml",
+            "config",
+            "--format",
+            "json",
+        ],
+        cwd=ROOT,
+        env={**os.environ, **environment},
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert rendered.returncode == 0, rendered.stderr
+    loaded = json.loads(rendered.stdout)
+    assert isinstance(loaded, dict)
+    return loaded
 
 
 def test_required_delivery_files_exist() -> None:
@@ -139,31 +172,7 @@ def test_public_ip_overlay_keeps_mock_local_bind_and_passes_public_targets() -> 
 
 
 def test_public_ip_compose_render_preserves_local_mock_delivery_contract() -> None:
-    environment = {
-        "HARNESS_PUBLIC_HOST": "47.76.86.198",
-        "HARNESS_PUBLIC_ORIGIN": "http://47.76.86.198",
-    }
-    rendered = subprocess.run(
-        [
-            "docker",
-            "compose",
-            "-f",
-            "compose.yaml",
-            "-f",
-            "deploy/compose.public-ip.yaml",
-            "config",
-            "--format",
-            "json",
-        ],
-        cwd=ROOT,
-        env={**os.environ, **environment},
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-
-    assert rendered.returncode == 0, rendered.stderr
-    service = json.loads(rendered.stdout)["services"]["harness"]
+    service = _render_public_ip_compose()["services"]["harness"]  # type: ignore[index]
     assert service["ports"] == [
         {
             "mode": "ingress",
@@ -187,6 +196,15 @@ def test_public_ip_compose_render_preserves_local_mock_delivery_contract() -> No
     assert service["security_opt"] == ["no-new-privileges:true"]
 
 
+def test_public_ip_compose_contract_skips_explicitly_without_docker_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(shutil, "which", lambda _command: None)
+
+    with pytest.raises(pytest.skip.Exception, match="Docker CLI 不可用"):
+        _render_public_ip_compose()
+
+
 def test_public_ip_nginx_is_http_only_sse_proxy_with_default_host_rejection() -> None:
     nginx = (ROOT / "deploy/nginx/coding-agent-harness-ip.conf").read_text(encoding="utf-8")
 
@@ -203,6 +221,9 @@ def test_public_ip_nginx_is_http_only_sse_proxy_with_default_host_rejection() ->
         "proxy_buffering off",
         "proxy_read_timeout 300s",
         "client_max_body_size 64k",
+        "add_header X-Content-Type-Options nosniff always",
+        "add_header X-Frame-Options DENY always",
+        "add_header Referrer-Policy no-referrer always",
     ):
         assert directive in nginx
     assert "443" not in nginx
@@ -215,6 +236,20 @@ def test_public_ip_docs_disable_conflicting_default_nginx_site() -> None:
         document = (ROOT / path).read_text(encoding="utf-8")
         assert "sudo rm -f /etc/nginx/sites-enabled/default" in document
         assert "sudo ln -sfn /etc/nginx/sites-available/coding-agent-harness" in document
+
+
+def test_public_ip_docs_describe_explicit_env_down_and_http_risk() -> None:
+    deployment = (ROOT / "docs/DEPLOYMENT.md").read_text(encoding="utf-8")
+    assert (
+        "HARNESS_PUBLIC_HOST=47.76.86.198 HARNESS_PUBLIC_ORIGIN=http://47.76.86.198 "
+        "docker compose -f compose.yaml -f deploy/compose.public-ip.yaml down"
+    ) in deployment
+    for path in ("README.md", "docs/DEPLOYMENT.md"):
+        document = (ROOT / path).read_text(encoding="utf-8")
+        assert "HTTP 页面、请求及临时会话头均为明文" in document
+        assert "无身份认证，任何可访问者都能交互" in document
+        assert "仅允许用户在场进行短时 Mock 演示" in document
+        assert "长期生产" in document
 
 
 def test_demo_server_accepts_explicit_container_bind(
@@ -347,6 +382,24 @@ def test_github_ci_runs_all_delivery_gates_on_push_and_pull_request() -> None:
     assert "python3 scripts/secret_scan.py" in commands
     assert "docker build --tag coding-agent-harness:ci ." in commands
     assert (ROOT / "scripts" / "secret_scan.py").is_file()
+
+
+def test_github_docker_job_forces_public_ip_compose_render() -> None:
+    workflow = _yaml(".github/workflows/ci.yml")
+    docker_steps = workflow["jobs"]["docker-build"]["steps"]  # type: ignore[index]
+    compose_step = next(
+        step
+        for step in docker_steps
+        if isinstance(step, dict) and "config --format json" in step.get("run", "")
+    )
+    assert compose_step["env"] == {
+        "HARNESS_PUBLIC_HOST": "47.76.86.198",
+        "HARNESS_PUBLIC_ORIGIN": "http://47.76.86.198",
+    }
+    assert compose_step["run"] == (
+        "docker compose -f compose.yaml -f deploy/compose.public-ip.yaml "
+        "config --format json"
+    )
 
 
 def test_gitlab_has_exact_unit_test_job() -> None:

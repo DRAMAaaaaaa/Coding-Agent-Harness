@@ -65,5 +65,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: 渲染公网 Mock Compose 交付契约
+        env:
+          HARNESS_PUBLIC_HOST: 47.76.86.198
+          HARNESS_PUBLIC_ORIGIN: http://47.76.86.198
+        run: docker compose -f compose.yaml -f deploy/compose.public-ip.yaml config --format json
       - name: 构建本地验收镜像
         run: docker build --tag coding-agent-harness:ci .

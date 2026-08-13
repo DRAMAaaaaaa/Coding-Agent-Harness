@@ -48,7 +48,7 @@
 - Consumes: `HarnessSettings(trusted_hosts=..., trusted_origins=...)` 的现有规范化校验；基础 `compose.yaml` 的 localhost 发布和安全挂载。
 - Produces: `_trusted_request_targets(bind_port: int, public_host: str | None, public_origin: str | None) -> tuple[tuple[str, ...], tuple[str, ...]]`；环境变量 `HARNESS_PUBLIC_HOST`、`HARNESS_PUBLIC_ORIGIN`；Nginx 公网入口 `http://47.76.86.198`。
 
-- [ ] **Step 1: 创建隔离 worktree 并登记进行中状态**
+- [x] **Step 1: 创建隔离 worktree 并登记进行中状态**
 
 从最新 `p1` 创建 `codex/public-ip-mock-demo` worktree。只把 `PLAN.md` 对应条目标为“进行中”，并在 `AGENT_LOG.md` 写入基线提交、worktree 路径与技能；不得复制 `.env`、私钥或运行时状态。
 
@@ -61,13 +61,13 @@ git worktree add .worktrees/public-ip-mock-demo -b codex/public-ip-mock-demo p1
 
 预期：worktree 创建成功；主目录既有 `.tmp/` 与 `.venv-py39-backup/` 保持未跟踪且不进入新分支提交。
 
-- [ ] **Step 2: 执行陌生冷启动审计**
+- [x] **Step 2: 执行陌生冷启动审计**
 
 审计输入仅包含批准规格 `docs/superpowers/specs/2026-08-14-public-ip-mock-demo-design.md` 和本计划。审计员检查：环境变量是否能到达 Python 入口、Compose 合并后是否仍只绑定 localhost、Nginx 是否支持 SSE/拒绝未知 Host、测试命令是否可独立执行。把暂停点和修订写入 `SPEC_PROCESS.md`；若无阻塞，明确记录“可冷启动”。
 
 预期：没有通过主对话、旧日志或真实 ECS 凭据补充隐含信息。
 
-- [ ] **Step 3: 写公网目标与交付契约失败测试**
+- [x] **Step 3: 写公网目标与交付契约失败测试**
 
 在 `tests/demo/test_serve_cleanup.py` 增加：
 
@@ -102,7 +102,7 @@ def test_public_demo_targets_append_exact_http_ipv4() -> None:
 
 在 `tests/distribution/test_delivery_files.py` 增加断言：覆盖文件只传 `HARNESS_PUBLIC_HOST`/`HARNESS_PUBLIC_ORIGIN` 且 Provider 为 `mock`；基础服务命令仍调用 `scripts/serve_demo.py`，证明环境变量进入消费它们的 Python 入口；渲染后的端口仍为 `127.0.0.1:8000:8000`；Nginx 包含 `listen 80`、固定 `server_name 47.76.86.198`、拒绝默认 Host、`proxy_pass http://127.0.0.1:8000`、`proxy_set_header Host $host`、`proxy_buffering off`，且不包含 443/HSTS/API Key。
 
-- [ ] **Step 4: 运行测试并确认 RED**
+- [x] **Step 4: 运行测试并确认 RED**
 
 运行：
 
@@ -112,7 +112,7 @@ def test_public_demo_targets_append_exact_http_ipv4() -> None:
 
 预期：FAIL，原因是 `_trusted_request_targets`、`deploy/compose.public-ip.yaml` 与 Nginx 配置尚不存在；既有测试继续通过。
 
-- [ ] **Step 5: 实现最小可信公网目标解析**
+- [x] **Step 5: 实现最小可信公网目标解析**
 
 在 `scripts/serve_demo.py` 导入 `ip_address`，增加：
 
@@ -142,7 +142,7 @@ def _trusted_request_targets(
 
 给 `_serve()` 增加关键字参数 `public_host`、`public_origin`，并用该函数结果构造 `HarnessSettings`。给参数解析器增加 `--public-host` 和 `--public-origin`，默认分别读取 `HARNESS_PUBLIC_HOST`、`HARNESS_PUBLIC_ORIGIN`；`main()` 把两值显式传入 `_serve()`。不得更改 Provider 构造，仍由 `ScriptedMockProvider(demo_script())` 驱动。
 
-- [ ] **Step 6: 增加 Compose 覆盖和 Nginx 配置**
+- [x] **Step 6: 增加 Compose 覆盖和 Nginx 配置**
 
 创建 `deploy/compose.public-ip.yaml`：
 
@@ -157,7 +157,7 @@ services:
 
 创建 `deploy/nginx/coding-agent-harness-ip.conf`，包含默认 `return 444` server 和只接受 `47.76.86.198` 的 server；业务 location 使用 `proxy_http_version 1.1`、`proxy_set_header Host $host`、`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`、`proxy_set_header X-Forwarded-Proto $scheme`、`proxy_buffering off`、`proxy_read_timeout 300s`、`client_max_body_size 64k`，并转发到 `http://127.0.0.1:8000`。
 
-- [ ] **Step 7: 更新部署说明并转绿**
+- [x] **Step 7: 更新部署说明并转绿**
 
 在 README 与 `docs/DEPLOYMENT.md` 写入以下准确流程：设置两个非秘密环境变量，使用两个 Compose 文件启动，将 Nginx 配置安装到 `/etc/nginx/sites-available/coding-agent-harness` 并链接到 `sites-enabled`，执行 `nginx -t` 后 reload；安全组仅开放 TCP 80；依次验证后端 GET、本机带 Host 的代理 GET、公网 GET和浏览器 Mock 主路径；演示后停止容器/Nginx并撤销 80 规则。
 
@@ -186,11 +186,11 @@ HARNESS_PUBLIC_HOST=47.76.86.198 HARNESS_PUBLIC_ORIGIN=http://47.76.86.198 docke
 
 预期：聚焦测试、Ruff、mypy、Compose 渲染和差异检查全部退出 0；Compose 渲染仍显示 `127.0.0.1:8000:8000` 和 `HARNESS_LLM_PROVIDER: mock`。若本机没有 Docker daemon，Compose `config` 仍应可执行且不需要构建/启动容器。
 
-- [ ] **Step 8: 规约审查、质量审查与返工**
+- [x] **Step 8: 规约审查、质量审查与返工**
 
 规约审查逐条核对：只读 Mock、localhost 8000、精确公网 Host/Origin、Nginx/SSE、完整启停文档与无密钥。规约通过后再做质量审查，重点检查环境变量 fail-closed、IPv4 规范化、Nginx 未知 Host、Compose 合并语义、测试确定性和文档没有虚假验收结论。所有 Critical/Important 清零后才能继续。
 
-- [ ] **Step 9: 执行完整新鲜验证**
+- [x] **Step 9: 执行完整新鲜验证（静态门禁）；Docker daemon/Nginx 容器/ECS 动态验收未执行**
 
 运行：
 

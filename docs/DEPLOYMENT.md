@@ -66,10 +66,12 @@ curl -i -H 'Host: 47.76.86.198' http://127.0.0.1/
 curl -i http://47.76.86.198/
 ```
 
+该入口是 HTTP：HTTP 页面、请求及临时会话头均为明文；无身份认证，任何可访问者都能交互。仅允许用户在场进行短时 Mock 演示，完成后立即关闭入口；长期生产必须使用 HTTPS、身份认证、会话与网络隔离等完整安全设计。
+
 演示结束后停止容器和 Nginx，并在安全组撤销 TCP 80 规则：
 
 ```bash
-docker compose -f compose.yaml -f deploy/compose.public-ip.yaml down
+HARNESS_PUBLIC_HOST=47.76.86.198 HARNESS_PUBLIC_ORIGIN=http://47.76.86.198 docker compose -f compose.yaml -f deploy/compose.public-ip.yaml down
 sudo systemctl stop nginx
 ```
 

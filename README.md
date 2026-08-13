@@ -87,6 +87,8 @@ docker compose -f compose.yaml -f deploy/compose.public-ip.yaml up --build
 
 将 `deploy/nginx/coding-agent-harness-ip.conf` 安装为 `/etc/nginx/sites-available/coding-agent-harness`。确认无需保留发行版默认站点后，先执行 `sudo rm -f /etc/nginx/sites-enabled/default`，再用 `sudo ln -sfn /etc/nginx/sites-available/coding-agent-harness /etc/nginx/sites-enabled/coding-agent-harness` 创建或替换链接、执行 `nginx -t` 后 reload。安全组只开放 TCP 80。依次验证后端 GET、本机带 `Host: 47.76.86.198` 的代理 GET、公网 GET 和浏览器中的 Mock 主路径。演示结束后停止容器和 Nginx，并撤销 TCP 80 安全组规则；不得公开 8000、使用真实 Provider 或读取 API Key。完整步骤见 `docs/DEPLOYMENT.md`。
 
+该入口是 HTTP：HTTP 页面、请求及临时会话头均为明文；无身份认证，任何可访问者都能交互。仅允许用户在场进行短时 Mock 演示，完成后立即关闭入口；长期生产必须使用 HTTPS、身份认证、会话与网络隔离等完整安全设计。
+
 ## 目录结构
 
 ```text
