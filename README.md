@@ -75,6 +75,18 @@ docker compose up --build
 
 访问 `http://127.0.0.1:8000`。镜像用 Node/Python 多阶段构建并以非 root `harness` 用户运行；镜像不内置运行项目，容器 CMD 要求 `/workspace/project` 是显式挂载的现有目录。Compose 只把 localhost 端口、只读 `examples/python_demo` 和独立 state 卷暴露给容器。默认运行 Scripted Mock 演示，不需要 Key，完成最终批准后容器正常退出。缺少项目挂载或挂载目标不是目录时启动会 fail closed，不会删除宿主源。不要把用户主目录、真实 `.env` 或凭据目录挂入容器。
 
+### 短时公网 IP Mock 演示
+
+仅为答辩短时启用 `http://47.76.86.198`，不用于生产服务。先设置两个非秘密变量，再叠加公网覆盖；基础 Compose 端口仍是 `127.0.0.1:8000:8000`，Provider 固定为 `mock`：
+
+```powershell
+$env:HARNESS_PUBLIC_HOST='47.76.86.198'
+$env:HARNESS_PUBLIC_ORIGIN='http://47.76.86.198'
+docker compose -f compose.yaml -f deploy/compose.public-ip.yaml up --build
+```
+
+将 `deploy/nginx/coding-agent-harness-ip.conf` 安装为 `/etc/nginx/sites-available/coding-agent-harness`。确认无需保留发行版默认站点后，先执行 `sudo rm /etc/nginx/sites-enabled/default`，再创建 `sites-enabled` 链接、执行 `nginx -t` 后 reload。安全组只开放 TCP 80。依次验证后端 GET、本机带 `Host: 47.76.86.198` 的代理 GET、公网 GET 和浏览器中的 Mock 主路径。演示结束后停止容器和 Nginx，并撤销 TCP 80 安全组规则；不得公开 8000、使用真实 Provider 或读取 API Key。完整步骤见 `docs/DEPLOYMENT.md`。
+
 ## 目录结构
 
 ```text
@@ -96,7 +108,7 @@ Harness 只信任已批准的项目根、验证命令与配置指纹；普通工
 
 ## 已知限制
 
-- 公网部署尚未验收，也没有公开 URL、GHCR 镜像或多架构发布。
+- 公网部署尚未验收。公网 IP 配置仅为短时 Mock 演示；真实外网验收必须由用户完成后端、代理、公网和浏览器主路径检查，当前不预先宣称已验收。
 - Docker 动态构建/冷启动仍应在 Docker daemon 可用的机器上按 `docs/DEPLOYMENT.md` 验证；本次开发环境的 daemon 未运行。
 - 首版不提供长期记忆、多 Agent 并发、真实 Provider 联网、凭据存储、依赖安装、网络工具或远端 Git 操作。
 - 同一 UID 下的恶意原生进程不在首版防护保证内；发现路径身份或副作用不确定时必须人工检查。

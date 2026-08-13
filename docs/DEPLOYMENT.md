@@ -28,6 +28,53 @@ Compose 将 `examples/python_demo` 只读挂载到专用 `/workspace/project`，
 
 首次构建需要从镜像仓库和包仓库下载基础镜像及依赖。该网络动作应由用户在可信环境中显式执行，不是 Harness Agent 的网络工具能力。
 
+## 短时公网 IP Mock 演示
+
+本节仅用于 `http://47.76.86.198` 的短时答辩演示，不是生产部署。不要使用真实 Provider、API Key 或隐私项目；容器 8000 始终仅绑定宿主 localhost。
+
+在目标主机的当前 PowerShell 会话设置两个非秘密变量，并使用两个 Compose 文件启动：
+
+```powershell
+$env:HARNESS_PUBLIC_HOST='47.76.86.198'
+$env:HARNESS_PUBLIC_ORIGIN='http://47.76.86.198'
+docker compose -f compose.yaml -f deploy/compose.public-ip.yaml up --build
+```
+
+POSIX/ECS 等价命令为：
+
+```bash
+HARNESS_PUBLIC_HOST=47.76.86.198 HARNESS_PUBLIC_ORIGIN=http://47.76.86.198 docker compose -f compose.yaml -f deploy/compose.public-ip.yaml up --build
+```
+
+把 `deploy/nginx/coding-agent-harness-ip.conf` 安装为 `/etc/nginx/sites-available/coding-agent-harness`，并链接到 `sites-enabled`：
+
+```bash
+sudo install -m 644 deploy/nginx/coding-agent-harness-ip.conf /etc/nginx/sites-available/coding-agent-harness
+sudo rm /etc/nginx/sites-enabled/default
+sudo ln -s /etc/nginx/sites-available/coding-agent-harness /etc/nginx/sites-enabled/coding-agent-harness
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+若目标主机有其他 Nginx 站点，先人工确认其不需要作为默认 TCP 80 站点；本演示配置必须是唯一的 `default_server`，否则 `nginx -t` 会拒绝重复默认服务器。
+
+安全组只开放 TCP 80，不开放 443 或 8000。依次验证容器后端 GET、本机带固定 Host 的 Nginx 代理 GET、公网 GET 和浏览器中的 Mock 主路径；只有用户从外部网络完成这些实际检查后，才能标记公网验收通过：
+
+```bash
+curl -i http://127.0.0.1:8000/
+curl -i -H 'Host: 47.76.86.198' http://127.0.0.1/
+curl -i http://47.76.86.198/
+```
+
+演示结束后停止容器和 Nginx，并在安全组撤销 TCP 80 规则：
+
+```bash
+docker compose -f compose.yaml -f deploy/compose.public-ip.yaml down
+sudo systemctl stop nginx
+```
+
+随后从安全组删除 TCP 80 入站规则。需要再次演示时，重新执行上述完整流程和验证；不要保留公网入口。
+
 ## 动态验收清单
 
 Docker daemon 可用时逐项执行：

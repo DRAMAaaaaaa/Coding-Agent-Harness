@@ -120,6 +120,52 @@ def test_compose_is_local_mock_with_explicit_mounts() -> None:
     assert service["security_opt"] == ["no-new-privileges:true"]  # type: ignore[index]
 
 
+def test_public_ip_overlay_keeps_mock_local_bind_and_passes_public_targets() -> None:
+    base = _yaml("compose.yaml")
+    overlay = _yaml("deploy/compose.public-ip.yaml")
+    base_service = base["services"]["harness"]  # type: ignore[index]
+    overlay_service = overlay["services"]["harness"]  # type: ignore[index]
+
+    assert base_service["ports"] == ["127.0.0.1:8000:8000"]
+    assert base_service["environment"]["HARNESS_LLM_PROVIDER"] == "mock"
+    assert overlay_service["environment"] == {
+        "HARNESS_LLM_PROVIDER": "mock",
+        "HARNESS_PUBLIC_HOST": "${HARNESS_PUBLIC_HOST:?必须设置公网 IPv4}",
+        "HARNESS_PUBLIC_ORIGIN": "${HARNESS_PUBLIC_ORIGIN:?必须设置 HTTP Origin}",
+    }
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "scripts/serve_demo.py" in dockerfile
+
+
+def test_public_ip_nginx_is_http_only_sse_proxy_with_default_host_rejection() -> None:
+    nginx = (ROOT / "deploy/nginx/coding-agent-harness-ip.conf").read_text(encoding="utf-8")
+
+    for directive in (
+        "listen 80 default_server",
+        "return 444",
+        "listen 80",
+        "server_name 47.76.86.198",
+        "proxy_pass http://127.0.0.1:8000",
+        "proxy_http_version 1.1",
+        "proxy_set_header Host $host",
+        "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for",
+        "proxy_set_header X-Forwarded-Proto $scheme",
+        "proxy_buffering off",
+        "proxy_read_timeout 300s",
+        "client_max_body_size 64k",
+    ):
+        assert directive in nginx
+    assert "443" not in nginx
+    assert "HSTS" not in nginx
+    assert "API Key" not in nginx
+
+
+def test_public_ip_docs_disable_conflicting_default_nginx_site() -> None:
+    for path in ("README.md", "docs/DEPLOYMENT.md"):
+        document = (ROOT / path).read_text(encoding="utf-8")
+        assert "sudo rm /etc/nginx/sites-enabled/default" in document
+
+
 def test_demo_server_accepts_explicit_container_bind(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

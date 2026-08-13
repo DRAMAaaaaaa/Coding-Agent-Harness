@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from ipaddress import ip_address
 import json
 import os
 from pathlib import Path
@@ -43,6 +44,33 @@ from coding_agent_harness.workspace.scanner import WorkspaceScanner  # noqa: E40
 
 
 _CLEANUP_TIMEOUT_SECONDS = 10.0
+
+
+def _trusted_request_targets(
+    bind_port: int,
+    public_host: str | None,
+    public_origin: str | None,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    hosts = (f"127.0.0.1:{bind_port}", f"localhost:{bind_port}")
+    origins = tuple(f"http://{host}" for host in hosts)
+    if public_host is None and public_origin is None:
+        return hosts, origins
+    if public_host is None or public_origin is None:
+        raise ValueError("公网演示 Host 与 Origin 必须同时配置")
+    try:
+        address = ip_address(public_host)
+    except ValueError:
+        raise ValueError("公网演示 Host 必须是无端口 IPv4 地址") from None
+    if (
+        address.version != 4
+        or public_host != str(address)
+        or public_host != "47.76.86.198"
+    ):
+        raise ValueError("公网演示 Host 必须是批准的固定 IPv4 地址")
+    expected_origin = f"http://{public_host}"
+    if public_origin != expected_origin:
+        raise ValueError("公网演示 Origin 必须精确匹配 HTTP IPv4 Host")
+    return (*hosts, public_host), (*origins, public_origin)
 
 
 class _ServerLike(Protocol):
@@ -251,6 +279,8 @@ async def _serve(
     *,
     bind_host: str = "127.0.0.1",
     bind_port: int = 0,
+    public_host: str | None = None,
+    public_origin: str | None = None,
     project_source: Path | None = None,
     keep_alive: bool = False,
 ) -> int:
@@ -274,6 +304,9 @@ async def _serve(
             if bind_host == "127.0.0.1" and bind_port == 0
             else _reserve_local_socket(bind_host, bind_port)
         )
+        trusted_hosts, trusted_origins = _trusted_request_targets(
+            port, public_host, public_origin,
+        )
         completed = asyncio.Event()
         workspaces = WorkspaceRepository(database)
         tasks = TaskRepository(database)
@@ -296,11 +329,8 @@ async def _serve(
             bind_port=port,
             state_root=state_root,
             database_path=state_root / "harness.db",
-            trusted_hosts=(f"127.0.0.1:{port}", f"localhost:{port}"),
-            trusted_origins=(
-                f"http://127.0.0.1:{port}",
-                f"http://localhost:{port}",
-            ),
+            trusted_hosts=trusted_hosts,
+            trusted_origins=trusted_origins,
         )
         task_runner = LocalTaskRunner(
             tasks, state_root, step_budget=8, time_budget_seconds=120, worker=worker,
@@ -392,6 +422,8 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--project-source", type=Path)
+    parser.add_argument("--public-host", default=os.environ.get("HARNESS_PUBLIC_HOST"))
+    parser.add_argument("--public-origin", default=os.environ.get("HARNESS_PUBLIC_ORIGIN"))
     parser.add_argument("--keep-alive", action="store_true", help="允许同一演示会话连续创建多个任务")
     return parser.parse_args()
 
@@ -411,6 +443,8 @@ def main() -> int:
                 arguments.max_seconds,
                 bind_host=arguments.host,
                 bind_port=arguments.port,
+                public_host=arguments.public_host,
+                public_origin=arguments.public_origin,
                 project_source=arguments.project_source,
                 keep_alive=arguments.keep_alive,
             )
@@ -423,6 +457,8 @@ def main() -> int:
                 arguments.max_seconds,
                 bind_host=arguments.host,
                 bind_port=arguments.port,
+                public_host=arguments.public_host,
+                public_origin=arguments.public_origin,
                 project_source=arguments.project_source,
                 keep_alive=arguments.keep_alive,
             )

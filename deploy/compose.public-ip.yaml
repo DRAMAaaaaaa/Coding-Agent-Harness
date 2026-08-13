@@ -1,0 +1,6 @@
+services:
+  harness:
+    environment:
+      HARNESS_LLM_PROVIDER: mock
+      HARNESS_PUBLIC_HOST: ${HARNESS_PUBLIC_HOST:?必须设置公网 IPv4}
+      HARNESS_PUBLIC_ORIGIN: ${HARNESS_PUBLIC_ORIGIN:?必须设置 HTTP Origin}

@@ -2,11 +2,71 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+import sys
 import threading
 
 import pytest
 
 from scripts import serve_demo
+
+
+@pytest.mark.parametrize(
+    ("host", "origin"),
+    [
+        (None, "http://47.76.86.198"),
+        ("47.76.86.198", None),
+        ("47.76.86.199", "http://47.76.86.199"),
+        ("example.com", "http://example.com"),
+        ("47.76.86.198:80", "http://47.76.86.198:80"),
+        ("47.76.86.198", "https://47.76.86.198"),
+    ],
+)
+def test_public_demo_targets_fail_closed(host: str | None, origin: str | None) -> None:
+    with pytest.raises(ValueError, match="公网演示"):
+        serve_demo._trusted_request_targets(8000, host, origin)
+
+
+def test_public_demo_targets_append_exact_http_ipv4() -> None:
+    hosts, origins = serve_demo._trusted_request_targets(
+        8000, "47.76.86.198", "http://47.76.86.198",
+    )
+
+    assert hosts == ("127.0.0.1:8000", "localhost:8000", "47.76.86.198")
+    assert origins == (
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://47.76.86.198",
+    )
+
+
+def test_main_reads_public_target_environment_into_serve(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_serve(*_args: object, **options: object) -> int:
+        captured.update(options)
+        return 0
+
+    monkeypatch.setattr(serve_demo, "_serve", fake_serve)
+    monkeypatch.setenv("HARNESS_PUBLIC_HOST", "47.76.86.198")
+    monkeypatch.setenv("HARNESS_PUBLIC_ORIGIN", "http://47.76.86.198")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "serve_demo.py",
+            "--ready-file",
+            str(tmp_path / "ready.json"),
+            "--runtime-root",
+            str(tmp_path / "runtime"),
+        ],
+    )
+
+    assert serve_demo.main() == 0
+    assert captured["public_host"] == "47.76.86.198"
+    assert captured["public_origin"] == "http://47.76.86.198"
 
 
 class _Server:
