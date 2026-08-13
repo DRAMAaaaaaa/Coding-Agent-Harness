@@ -1237,3 +1237,10 @@
 - **本地集成与验证：** `codex/public-ip-mock-demo` 以 `--ff-only` 合并到 `p1`。合并后 `mingw32-make test` 退出 0：Python `840 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`；Ruff、mypy、ESLint、TypeScript、Vite build 全部通过。三机制演示全部 PASS，秘密扫描、`pip check`、固定变量 Compose JSON 和 `git diff --check` 退出 0。
 - **远程集成：** 用户明确要求完成后自动推送并合并 `main`。先确认 `origin/p1`、`origin/main` 均为本地历史祖先且没有远端分叉；随后非强制推送 `p1`，将本地 `main` 以 `--ff-only` 快进到 `991b50c` 并非强制推送。两个远程分支均保留完整 Task 提交历史，没有 force push。
 - **安全清理与待验收：** 由本次流程创建的 `.worktrees/public-ip-mock-demo` 已移除，功能分支已安全删除；主工作区既有 `.tmp/` 与 `.venv-py39-backup/` 未触碰。Docker daemon 下的 Nginx 语法、镜像冷启动以及 `http://47.76.86.198` 外网浏览器主路径仍待 ECS 实机执行，因此尚不宣称公网部署成功。
+
+### 2026-08-14 — 共学回放式 Harness 文档整理设计
+
+- **技能与范围：** 使用 `brainstorming`，读取两份课程要求、全部已跟踪 Markdown、当前产品文档和路径引用；没有移动、删除或重写现有说明，没有修改 Harness 代码。
+- **用户决定：** 新版介绍只陈述已经完成的功能和特色；历史 Superpowers 设计/计划选择移动到 `docs/archive/`，而不是删除。根 `SPEC.md`、`PLAN.md`、`SPEC_PROCESS.md`、`AGENT_LOG.md` 与 README 保留标准文件名。
+- **设计结论：** README 作为产品首页，新建 `docs/FEATURES.md` 解释共学回放纵向流程；顶层 docs 只保留功能、演示、部署与安全说明。历史设计、计划、问题/延期台账和已跟踪 subagent 报告分类归档。缺失的 `REFLECTION.md` 只建立学生本人填写提纲，不代写正文。
+- **安全边界：** 不触碰本机 `.tmp/`、`.venv-py39-backup/` 或未跟踪过程文件；不把真实 Provider、生产公网、多 Agent 等延期能力写成已完成。书面设计为 `docs/superpowers/specs/2026-08-14-documentation-refresh-design.md`。
