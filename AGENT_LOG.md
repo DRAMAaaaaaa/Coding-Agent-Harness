@@ -1196,3 +1196,10 @@
 - **用户决定：** ECS 位于中国香港；用户不购买域名，选择通过公网 IP 的 HTTP 方案，并明确只演示 `ScriptedMockProvider`，不使用真实 Provider 或 API Key。
 - **设计结论：** 采用 Nginx `:80 -> 127.0.0.1:8000`，容器端口继续只绑定 localhost；增加显式可信公网 Host/Origin 配置和专用 Compose 覆盖，同时固定只读示例项目与 Mock。HTTP 方案仅用于短时答辩，演示结束后撤销 80 端口。
 - **边界：** 本阶段只编写书面设计，未修改实现、未登录或操作 ECS、未接触密码/私钥/Key、未开放任何端口。设计文件为 `docs/superpowers/specs/2026-08-14-public-ip-mock-demo-design.md`。
+
+### 2026-08-14 — 公网 IP Mock 演示实施计划
+
+- **技能与输入：** 用户批准书面规格后使用 `writing-plans`；重新核对 `HarnessSettings`、演示入口、Compose、Docker 交付契约和现有部署说明，未修改产品实现。
+- **计划结论：** 采用单 Task 纵向切片，复用现有 Host/Origin 规范化与会话护栏；新增成对的公网 IPv4/HTTP Origin、Compose 覆盖、拒绝未知 Host 的 Nginx 配置和完整撤销步骤。
+- **门禁：** 实施前进行一次仅依据规格/计划的陌生冷启动审计；实现执行 TDD、规约/质量双审查及完整新鲜验证。计划文件为 `docs/superpowers/plans/2026-08-14-public-ip-mock-demo.md`。
+- **安全事实：** 未登录 ECS、未安装依赖、未开放端口、未读取或记录密码/私钥/API Key；公网地址仅作为用户批准的非秘密部署目标。

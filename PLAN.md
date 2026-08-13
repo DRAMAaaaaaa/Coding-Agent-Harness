@@ -1832,3 +1832,11 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 - **完成门禁：** RED→GREEN、完整一键测试、机制演示、秘密扫描、YAML 解析、规约审查与质量审查。
 - **TDD 与验证：** RED 为缺少 `windows-powershell` 作业导致交付契约 `KeyError`；GREEN 聚焦 `6 passed`。`mingw32-make test` 为 Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy、Web lint/typecheck/build 全部通过；机制演示三项 PASS，秘密扫描、`pip check`、YAML 解析和 `git diff --check` 退出 0。
 - **审查：** 规约审查 Spec compliant Yes；质量首审问题已通过 `f424190` 定向返工，最终质量复审 Ready to merge Yes，Critical / Important / Minor=`0/0/0`。
+
+## 2026-08-14 公网 IP Mock 演示部署
+
+- **状态：** 设计已批准，实施计划已完成，等待选择执行方式。
+- **目标：** 通过阿里云香港 ECS 的 `http://47.76.86.198` 短时展示只读示例项目与确定性 Mock Harness；容器 8000 继续只绑定宿主 localhost。
+- **批准设计：** `docs/superpowers/specs/2026-08-14-public-ip-mock-demo-design.md`（提交 `f4cb194`）。
+- **精确计划：** `docs/superpowers/plans/2026-08-14-public-ip-mock-demo.md`，单 Task 纵向切片。
+- **硬边界：** 不使用真实 Provider/Key，不公开 8000，不挂载隐私项目，不宣称生产部署；演示结束后撤销公网 80。
