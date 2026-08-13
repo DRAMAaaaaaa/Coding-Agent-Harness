@@ -1211,3 +1211,4 @@
 - **GREEN：** 最小实现固定且规范化的 `47.76.86.198`/`http://47.76.86.198`，环境变量仅通过 `serve_demo.py` 进入可信 Host/Origin，Compose 保持 localhost 8000 与 Mock，Nginx 拒绝未知 Host 并关闭代理缓冲以支持 SSE。GREEN 聚焦集为 32 passed。
 - **审查返工与结论：** 规约审查发现发行版默认 Nginx 站点可能与 `default_server` 冲突；先新增文档 RED，再要求确认无其他站点后移除 `sites-enabled/default`，复验聚焦集为 33 passed。质量审查发现原样 mypy 命令未声明源码根；在 `pyproject.toml` 固化 `mypy_path = "src"` 后，原样命令通过。规约与质量复审均为 Critical/Important=`0/0`；共同保留 Minor：交付测试未自动渲染 Compose 合并语义，但本轮 `docker compose ... config` 已实际确认 mock、两变量和 `127.0.0.1:8000`。
 - **最终验证与限制：** `mingw32-make test`：Python `835 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy、ESLint、TypeScript 与 Vite build 通过；`mingw32-make demo` 三项 PASS；秘密扫描、`pip check`、Compose 渲染与 `git diff --check` 通过。Docker daemon 不可用，因此 `docker run ... nginx -t` 与容器动态冷启动未执行；未宣称通过，也未操作 ECS。
+- **提交：** `b19a4d3`（`feat: 提供公网 IP Mock 演示部署`）；未 push、未合并，等待父任务按集成流程处理。
