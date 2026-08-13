@@ -1189,3 +1189,10 @@
 - **技能与输入：** 用户批准书面规格后使用 `writing-plans`；重新核对 Provider 核心、FastAPI 依赖、会话路由、Demo Registry、React、Playwright 和交付文档。未写实现代码、未联网、未接触真实 Key。
 - **关键边界：** 发现 `serve_demo.py` 的任务路径使用 `DemoProviderRegistry`；计划新增独立 `provider_probe_registry`，使真实 Probe 可用而 Coding Agent 继续由 Scripted Mock 驱动，避免两种 Provider 权限混用。
 - **执行拆分：** 三个可审查 Task 分别交付安全 API、WebUI/离线浏览器路径和真实 DeepSeek 人工验收/文档；每个 Task 单独 TDD、双重审查和中文提交，最终创建 `codex/provider-webui-probe -> p1` PR。
+
+### 2026-08-14 — 公网 IP Mock 演示部署设计
+
+- **技能与诊断：** 使用 `brainstorming` 与 `systematic-debugging`，核对 Docker、Compose、演示入口和 Host/Origin 会话护栏。外部短超时探测确认 ECS 的 SSH 端口可达而 80/443/8000 不可达；用户随后提供的 `ss` 与 `curl` 证据证明 Uvicorn 正常监听 `127.0.0.1:8000`，`HEAD /` 返回 405 属于路由方法限制而非服务故障。
+- **用户决定：** ECS 位于中国香港；用户不购买域名，选择通过公网 IP 的 HTTP 方案，并明确只演示 `ScriptedMockProvider`，不使用真实 Provider 或 API Key。
+- **设计结论：** 采用 Nginx `:80 -> 127.0.0.1:8000`，容器端口继续只绑定 localhost；增加显式可信公网 Host/Origin 配置和专用 Compose 覆盖，同时固定只读示例项目与 Mock。HTTP 方案仅用于短时答辩，演示结束后撤销 80 端口。
+- **边界：** 本阶段只编写书面设计，未修改实现、未登录或操作 ECS、未接触密码/私钥/Key、未开放任何端口。设计文件为 `docs/superpowers/specs/2026-08-14-public-ip-mock-demo-design.md`。
