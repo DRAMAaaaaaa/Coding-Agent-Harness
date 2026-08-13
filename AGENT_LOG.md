@@ -1244,3 +1244,10 @@
 - **用户决定：** 新版介绍只陈述已经完成的功能和特色；历史 Superpowers 设计/计划选择移动到 `docs/archive/`，而不是删除。根 `SPEC.md`、`PLAN.md`、`SPEC_PROCESS.md`、`AGENT_LOG.md` 与 README 保留标准文件名。
 - **设计结论：** README 作为产品首页，新建 `docs/FEATURES.md` 解释共学回放纵向流程；顶层 docs 只保留功能、演示、部署与安全说明。历史设计、计划、问题/延期台账和已跟踪 subagent 报告分类归档。缺失的 `REFLECTION.md` 只建立学生本人填写提纲，不代写正文。
 - **安全边界：** 不触碰本机 `.tmp/`、`.venv-py39-backup/` 或未跟踪过程文件；不把真实 Provider、生产公网、多 Agent 等延期能力写成已完成。书面设计为 `docs/superpowers/specs/2026-08-14-documentation-refresh-design.md`。
+
+### 2026-08-14 — 共学回放式 Harness 文档整理实施计划
+
+- **技能与拆分：** 用户批准设计后使用 `writing-plans`，把工作拆成串行的 Task 1“历史归档与路径完整性”和 Task 2“当前介绍与课程导航”；每个 Task 都定义文档契约 RED/GREEN、双重审查和中文提交。
+- **证据勘误：** 计划前核对 `runtime.py`、`ProviderRegistry`、Provider API 与 WebUI，确认当前 `main` 已有 DeepSeek/Qwen Profile、会话凭据、固定端点、任务绑定和真实 Agent 运行时，但没有 WebUI Probe/主动清除入口，也没有真实外网任务验收；已据此修订批准设计，防止把其他分支计划写成当前功能。
+- **课程补充：** 复核课程原始要求后，把 README 的第三方组件/许可证说明和 `REFLECTION.md` 1500–2500 字学生本人提纲纳入 Task 2；不代写反思正文。
+- **安全与范围：** 本阶段只写计划、更新过程状态和设计勘误，没有移动历史文件、修改产品代码、安装依赖、联网调用 Provider 或接触凭据；原有 `.tmp/`、`.venv-py39-backup/` 未触碰。

@@ -1840,3 +1840,11 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 - **批准设计：** `docs/superpowers/specs/2026-08-14-public-ip-mock-demo-design.md`（提交 `f4cb194`）。
 - **精确计划：** `docs/superpowers/plans/2026-08-14-public-ip-mock-demo.md`，单 Task 纵向切片。
 - **硬边界：** 不使用真实 Provider/Key，不公开 8000，不挂载隐私项目，不宣称生产部署；演示结束后撤销公网 80。
+
+## 2026-08-14 共学回放式 Harness 文档整理
+
+- **状态：** 设计与精确计划已完成，等待选择执行方式；尚未移动或重写交付文档。
+- **目标：** 把文档整理为当前产品说明、课程必交根文档和可追溯历史归档，并只介绍当前 `main` 有代码/测试证据的共学能力。
+- **批准设计：** `docs/superpowers/specs/2026-08-14-documentation-refresh-design.md`（初始设计提交 `1f0b525`；计划前 Provider 证据勘误随本计划提交）。
+- **精确计划：** `docs/superpowers/plans/2026-08-14-documentation-refresh.md`；Task 1 归档与路径完整性，Task 2 当前介绍、演示、安全、部署、许可证与学生反思提纲，严格串行。
+- **真实性边界：** 当前真实 Provider 运行时已接线，但 WebUI Probe/主动清除和真实外网任务验收未合入或未执行；`REFLECTION.md` 只生成学生本人填写提纲。
