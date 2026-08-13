@@ -50,8 +50,8 @@ HARNESS_PUBLIC_HOST=47.76.86.198 HARNESS_PUBLIC_ORIGIN=http://47.76.86.198 docke
 
 ```bash
 sudo install -m 644 deploy/nginx/coding-agent-harness-ip.conf /etc/nginx/sites-available/coding-agent-harness
-sudo rm /etc/nginx/sites-enabled/default
-sudo ln -s /etc/nginx/sites-available/coding-agent-harness /etc/nginx/sites-enabled/coding-agent-harness
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo ln -sfn /etc/nginx/sites-available/coding-agent-harness /etc/nginx/sites-enabled/coding-agent-harness
 sudo nginx -t
 sudo systemctl reload nginx
 ```

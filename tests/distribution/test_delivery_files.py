@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -137,6 +138,55 @@ def test_public_ip_overlay_keeps_mock_local_bind_and_passes_public_targets() -> 
     assert "scripts/serve_demo.py" in dockerfile
 
 
+def test_public_ip_compose_render_preserves_local_mock_delivery_contract() -> None:
+    environment = {
+        "HARNESS_PUBLIC_HOST": "47.76.86.198",
+        "HARNESS_PUBLIC_ORIGIN": "http://47.76.86.198",
+    }
+    rendered = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            "compose.yaml",
+            "-f",
+            "deploy/compose.public-ip.yaml",
+            "config",
+            "--format",
+            "json",
+        ],
+        cwd=ROOT,
+        env={**os.environ, **environment},
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert rendered.returncode == 0, rendered.stderr
+    service = json.loads(rendered.stdout)["services"]["harness"]
+    assert service["ports"] == [
+        {
+            "mode": "ingress",
+            "host_ip": "127.0.0.1",
+            "target": 8000,
+            "published": "8000",
+            "protocol": "tcp",
+        }
+    ]
+    assert service["environment"] == {
+        "HARNESS_LLM_PROVIDER": "mock",
+        "HARNESS_PUBLIC_HOST": "47.76.86.198",
+        "HARNESS_PUBLIC_ORIGIN": "http://47.76.86.198",
+    }
+    assert any(
+        volume["target"] == "/workspace/project" and volume["read_only"]
+        for volume in service["volumes"]
+    )
+    assert service["read_only"]
+    assert service["cap_drop"] == ["ALL"]
+    assert service["security_opt"] == ["no-new-privileges:true"]
+
+
 def test_public_ip_nginx_is_http_only_sse_proxy_with_default_host_rejection() -> None:
     nginx = (ROOT / "deploy/nginx/coding-agent-harness-ip.conf").read_text(encoding="utf-8")
 
@@ -163,7 +213,8 @@ def test_public_ip_nginx_is_http_only_sse_proxy_with_default_host_rejection() ->
 def test_public_ip_docs_disable_conflicting_default_nginx_site() -> None:
     for path in ("README.md", "docs/DEPLOYMENT.md"):
         document = (ROOT / path).read_text(encoding="utf-8")
-        assert "sudo rm /etc/nginx/sites-enabled/default" in document
+        assert "sudo rm -f /etc/nginx/sites-enabled/default" in document
+        assert "sudo ln -sfn /etc/nginx/sites-available/coding-agent-harness" in document
 
 
 def test_demo_server_accepts_explicit_container_bind(

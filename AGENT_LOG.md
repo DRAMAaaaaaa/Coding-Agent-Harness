@@ -1212,3 +1212,9 @@
 - **审查返工与结论：** 规约审查发现发行版默认 Nginx 站点可能与 `default_server` 冲突；先新增文档 RED，再要求确认无其他站点后移除 `sites-enabled/default`，复验聚焦集为 33 passed。质量审查发现原样 mypy 命令未声明源码根；在 `pyproject.toml` 固化 `mypy_path = "src"` 后，原样命令通过。规约与质量复审均为 Critical/Important=`0/0`；共同保留 Minor：交付测试未自动渲染 Compose 合并语义，但本轮 `docker compose ... config` 已实际确认 mock、两变量和 `127.0.0.1:8000`。
 - **最终验证与限制：** `mingw32-make test`：Python `835 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy、ESLint、TypeScript 与 Vite build 通过；`mingw32-make demo` 三项 PASS；秘密扫描、`pip check`、Compose 渲染与 `git diff --check` 通过。Docker daemon 不可用，因此 `docker run ... nginx -t` 与容器动态冷启动未执行；未宣称通过，也未操作 ECS。
 - **提交：** `b19a4d3`（`feat: 提供公网 IP Mock 演示部署`）；未 push、未合并，等待父任务按集成流程处理。
+
+### 2026-08-14 — 公网 IP Mock 演示审查修复
+
+- **反馈与 TDD：** 审查要求把 Compose 合并结果纳入自动交付契约，并把 Nginx 默认站点链接操作改为幂等。新增 Compose JSON 渲染测试后立即通过，证明既有覆盖已实际保留 loopback、Mock、只读挂载与安全设置；随后收紧 Nginx 文档契约，RED 命令 ` .venv\\Scripts\\python.exe -m pytest tests/distribution/test_delivery_files.py::test_public_ip_docs_disable_conflicting_default_nginx_site -q` 结果为 `1 failed`，因为文档仍使用非幂等 `rm`/`ln -s`。
+- **GREEN：** 交付测试通过 subprocess 使用固定非秘密变量执行 `docker compose -f compose.yaml -f deploy/compose.public-ip.yaml config --format json`，并解析最终 `harness` 服务，断言唯一 loopback 8000 发布、Mock 和批准的两个公网变量、只读示例挂载、`read_only`、`cap_drop ALL`、`no-new-privileges`。部署文档改为 `rm -f` 和 `ln -sfn`。聚焦 `tests/distribution/test_delivery_files.py` 为 `17 passed`，Ruff、Compose JSON 和差异检查通过。
+- **新鲜最终验证：** 旧 `835 passed` 是新增最后交付契约前的中间证据，不作为最终结果。修复后 `mingw32-make test` 退出 0：Python `837 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy、ESLint、TypeScript 和 Vite build 通过；`mingw32-make demo` 三项 PASS；秘密扫描、`pip check`、带变量 Compose JSON 与 `git diff --check` 均退出 0。未 push、未合并、未操作真实 ECS；Docker daemon 动态 Nginx/容器验收仍未执行。
