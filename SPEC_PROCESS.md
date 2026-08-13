@@ -345,3 +345,10 @@ v3 已证明修订后的陌生执行者能够从零取得正确 RED 和 GREEN。
 主 Agent 接受这些暂停点并只修订 CL1-1：Repository 注入 `Database/clock/id_factory`，由 Repository 生成 version 1；所有时间固定 UTC-aware/ISO；同值更新不递增，实际变化使用 `BEGIN IMMEDIATE`；model 使用 `str.strip()`、UTF-8 1—128 字节并拒绝 Unicode C 类字符；list 固定排序；Task 三字段完整列名，在同一写事务校验 Profile 当前 version 后插入；增加稳定 not-found/conflict/stale 错误；删除无用途 Redactor；补充 SQL trigger、双连接并发和 migration 回滚测试。
 
 用户要求的缩短策略意味着不再启动第三个全量冷启动。上述修订由主控做类型一致性和规格覆盖自审，CL1-1 实现子智能体只获得 Task 1 局部上下文；每个 Task 的独立规约与质量审查保持不变。
+
+## 2026-08-14 公网 IP Mock 演示冷启动审计
+
+- **审计范围：** 陌生审计员只读取批准设计与精确计划，不读取源码、旧过程日志、Git 历史或主对话。
+- **基线结论：** `BLOCKED`。一是 Compose 覆盖使用必填插值，但计划的 `docker compose ... config` 命令未先提供变量；二是 Python 接口允许任意 IPv4，而 Nginx 固定只接受 `47.76.86.198`。审计另建议锁定基础启动入口确实消费环境变量，并提供可重复的 Nginx 语法检查。
+- **修订：** 公网入口收紧为本次批准的固定 IP/Origin；测试覆盖其他合法 IPv4 也必须拒绝，并锁定 Docker CMD 仍调用 `serve_demo.py`。所有 Compose 验证命令增加 PowerShell/POSIX 成对变量输入；Docker daemon 可用时用固定 `nginx:1.28-alpine` 执行 `nginx -t`。
+- **状态：** 等待同一陌生审计员仅依据修订后的设计与计划复核；复核通过前不开始实现。

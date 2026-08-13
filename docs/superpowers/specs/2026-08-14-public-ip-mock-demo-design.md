@@ -43,12 +43,12 @@ Nginx 保留客户端的公网 Host，并显式传递 `Host`、`X-Forwarded-For`
 
 ## 4. 配置边界
 
-公网覆盖通过显式环境变量接收：
+公网覆盖通过显式环境变量接收，并只接受本次批准的固定演示地址：
 
 - `HARNESS_PUBLIC_HOST=47.76.86.198`
 - `HARNESS_PUBLIC_ORIGIN=http://47.76.86.198`
 
-启动入口只在公网演示模式下读取这两个值，并将其加入可信 Host/Origin。两者必须成对存在、使用 ASCII、Host 不得包含路径，Origin 必须为本次批准的 `http` 源；非法或缺失时服务拒绝启动。默认本地入口继续只信任实际监听端口上的 `127.0.0.1` 和 `localhost`。
+启动入口只在公网演示模式下读取这两个值，并将其加入可信 Host/Origin。两者必须成对存在并精确等于 `47.76.86.198` 与 `http://47.76.86.198`；其他地址、非法值或缺失值均使服务拒绝启动。Nginx 的固定 `server_name` 与同一地址保持一致。默认本地入口继续只信任实际监听端口上的 `127.0.0.1` 和 `localhost`。
 
 公网覆盖继续固定 `HARNESS_LLM_PROVIDER=mock`，不接受 `.env` 中的模型 Key。运行项目仍是仓库内 `examples/python_demo` 的只读挂载，状态只写入专用 Docker 卷。
 
@@ -80,7 +80,7 @@ Nginx 仅创建一个端口 80 的站点：
 
 ## 7. TDD 与交付
 
-实施采用红—绿—重构：先增加失败的配置与交付契约测试，覆盖公网 Host/Origin 成对校验、默认 localhost 行为、公网覆盖仍绑定宿主 localhost、Mock 固定和 Nginx/SSE 契约；再进行最小实现。最终运行聚焦测试、完整一键测试、三机制演示、秘密扫描、Compose 配置渲染、Nginx 静态检查（可用环境中）及 `git diff --check`。
+实施采用红—绿—重构：先增加失败的配置与交付契约测试，覆盖公网 Host/Origin 成对校验、固定地址拒绝、默认 localhost 行为、公网覆盖仍绑定宿主 localhost、Mock 固定、基础启动入口消费环境变量和 Nginx/SSE 契约；再进行最小实现。Compose 渲染命令必须显式提供两个非秘密变量。最终运行聚焦测试、完整一键测试、三机制演示、秘密扫描、Compose 配置渲染、容器化 Nginx 语法检查（Docker daemon 可用时）及 `git diff --check`。
 
 设计和实现分别提交中文 Git 记录。真实 ECS 操作由用户在自己的终端执行；仓库不保存 ECS 登录信息、密码、SSH 私钥或 API Key。
 

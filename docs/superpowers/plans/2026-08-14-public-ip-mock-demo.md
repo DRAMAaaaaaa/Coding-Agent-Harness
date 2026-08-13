@@ -12,7 +12,7 @@
 
 - 公网模式必须固定 `HARNESS_LLM_PROVIDER=mock`，不得读取、提交或演示真实 API Key。
 - `compose.yaml` 的 `127.0.0.1:8000:8000`、只读示例挂载、只读根文件系统、`cap_drop: ALL` 与 `no-new-privileges` 必须保持不变。
-- 公网 Host 与 Origin 必须成对配置；本任务只允许无端口 IPv4 Host 与完全相等的 `http://<IPv4>` Origin。
+- 公网 Host 与 Origin 必须成对配置；本任务只允许 `47.76.86.198` 与 `http://47.76.86.198`，其他地址一律拒绝。
 - Nginx 只公开 TCP 80；TCP 8000、443、Docker API、数据库与管理端口不得开放。
 - HTTP 仅用于短时课程 Mock 演示；禁止真实凭据、隐私项目与长期生产运行。
 - 新建/修改的说明文档和 Git 提交尽量使用中文。
@@ -77,6 +77,7 @@ git worktree add .worktrees/public-ip-mock-demo -b codex/public-ip-mock-demo p1
     [
         (None, "http://47.76.86.198"),
         ("47.76.86.198", None),
+        ("47.76.86.199", "http://47.76.86.199"),
         ("example.com", "http://example.com"),
         ("47.76.86.198:80", "http://47.76.86.198:80"),
         ("47.76.86.198", "https://47.76.86.198"),
@@ -99,7 +100,7 @@ def test_public_demo_targets_append_exact_http_ipv4() -> None:
     )
 ```
 
-在 `tests/distribution/test_delivery_files.py` 增加断言：覆盖文件只传 `HARNESS_PUBLIC_HOST`/`HARNESS_PUBLIC_ORIGIN` 且 Provider 为 `mock`；渲染后的端口仍为 `127.0.0.1:8000:8000`；Nginx 包含 `listen 80`、拒绝默认 Host、`proxy_pass http://127.0.0.1:8000`、`proxy_set_header Host $host`、`proxy_buffering off`，且不包含 443/HSTS/API Key。
+在 `tests/distribution/test_delivery_files.py` 增加断言：覆盖文件只传 `HARNESS_PUBLIC_HOST`/`HARNESS_PUBLIC_ORIGIN` 且 Provider 为 `mock`；基础服务命令仍调用 `scripts/serve_demo.py`，证明环境变量进入消费它们的 Python 入口；渲染后的端口仍为 `127.0.0.1:8000:8000`；Nginx 包含 `listen 80`、固定 `server_name 47.76.86.198`、拒绝默认 Host、`proxy_pass http://127.0.0.1:8000`、`proxy_set_header Host $host`、`proxy_buffering off`，且不包含 443/HSTS/API Key。
 
 - [ ] **Step 4: 运行测试并确认 RED**
 
@@ -131,8 +132,8 @@ def _trusted_request_targets(
         address = ip_address(public_host)
     except ValueError:
         raise ValueError("公网演示 Host 必须是无端口 IPv4 地址") from None
-    if address.version != 4 or public_host != str(address):
-        raise ValueError("公网演示 Host 必须是无端口 IPv4 地址")
+    if address.version != 4 or public_host != str(address) or public_host != "47.76.86.198":
+        raise ValueError("公网演示 Host 必须是批准的固定 IPv4 地址")
     expected_origin = f"http://{public_host}"
     if public_origin != expected_origin:
         raise ValueError("公网演示 Origin 必须精确匹配 HTTP IPv4 Host")
@@ -170,6 +171,19 @@ docker compose -f compose.yaml -f deploy/compose.public-ip.yaml config
 git diff --check
 ```
 
+运行 Compose 渲染前，在当前 PowerShell 会话显式设置非秘密变量：
+
+```powershell
+$env:HARNESS_PUBLIC_HOST='47.76.86.198'
+$env:HARNESS_PUBLIC_ORIGIN='http://47.76.86.198'
+```
+
+POSIX/ECS 等价命令为：
+
+```bash
+HARNESS_PUBLIC_HOST=47.76.86.198 HARNESS_PUBLIC_ORIGIN=http://47.76.86.198 docker compose -f compose.yaml -f deploy/compose.public-ip.yaml config
+```
+
 预期：聚焦测试、Ruff、mypy、Compose 渲染和差异检查全部退出 0；Compose 渲染仍显示 `127.0.0.1:8000:8000` 和 `HARNESS_LLM_PROVIDER: mock`。若本机没有 Docker daemon，Compose `config` 仍应可执行且不需要构建/启动容器。
 
 - [ ] **Step 8: 规约审查、质量审查与返工**
@@ -189,6 +203,12 @@ docker compose -f compose.yaml -f deploy/compose.public-ip.yaml config
 git diff --check
 ```
 
+该步骤同样先设置 Step 7 的两个 PowerShell 非秘密环境变量。Docker daemon 可用时再执行确定性 Nginx 语法检查：
+
+```powershell
+docker run --rm -v "${PWD}/deploy/nginx/coding-agent-harness-ip.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.28-alpine nginx -t
+```
+
 预期：一键测试、三机制演示、秘密扫描、依赖检查、Compose 渲染和差异检查全部退出 0。Docker daemon 可用时额外执行镜像构建和容器本机冷启动；不可用时如实登记为 ECS 动态验收步骤，不宣称通过。
 
 - [ ] **Step 10: 提交、合并并给出 ECS 命令**
@@ -205,4 +225,4 @@ feat: 提供公网 IP Mock 演示部署
 
 - 规格覆盖：公网 Host/Origin、localhost 端口、Mock、Nginx/SSE、测试、启停和风险声明均映射到 Task 1。
 - 占位扫描：没有未决占位词、延后实施表述或未定义接口。
-- 类型一致性：`_trusted_request_targets()` 的参数和返回类型在测试、入口与 `HarnessSettings` 消费处一致；环境变量名称与 Compose 完全一致。
+- 类型一致性：`_trusted_request_targets()` 的参数和返回类型在测试、入口与 `HarnessSettings` 消费处一致；固定 IP、Nginx `server_name`、环境变量名称与 Compose 完全一致。
