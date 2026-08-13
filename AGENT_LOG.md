@@ -1227,6 +1227,6 @@
 
 ### 2026-08-14 — 公网 IP Mock 演示最终收尾
 
-- **时间线与状态：** 基线 `420b7bf`，冷启动修订 `836ce93`，实现 `b19a4d3`，过程记录 `aecdbe8`，首轮返工 `51b5dff`，最终安全/CI 返工 `c99730a`，本轮收尾提交见当前分支 HEAD。`SPEC_PROCESS.md` 已把“等待复核”更正为初审当时的历史状态，并指向实现前 READY 与 `.superpowers/sdd/public-ip-cold-start-report.md`。代码静态实现与审查返工完成；Step 10 尚未合并或 push；Docker daemon、Nginx 容器语法和 ECS 外网动态验收仍待外部执行，未虚报通过。
+- **时间线与状态：** 基线 `420b7bf`，冷启动修订 `836ce93`，实现 `b19a4d3`，过程记录 `aecdbe8`，首轮返工 `51b5dff`，最终安全/CI 返工 `c99730a`，收尾过程对齐 `86bf967`。`SPEC_PROCESS.md` 已把“等待复核”更正为初审当时的历史状态，并指向实现前 READY 与 `.superpowers/sdd/public-ip-cold-start-report.md`。代码静态实现与审查返工完成；Step 10 尚未合并或 push；Docker daemon、Nginx 容器语法和 ECS 外网动态验收仍待外部执行，未虚报通过。
 - **范围回退：** `c99730a` 中与公网切片无关的 `project_learning.py` `rowid DESC` 排序改动已回退为原 `approved_at DESC, id ASC`；`tests/learning/test_cards.py` 没有新增或仅为该改动服务的测试，无需回退测试文件。`840 passed, 15 skipped` 等为 `c99730a` 的静态门禁证据；本轮收尾后必须取得新的最终 Head 证据。
 - **最终 Head 验证：** 收尾前最新 `mingw32-make test` 退出 0：Python `840 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`；Ruff、mypy、ESLint、TypeScript 与 Vite build 通过。`mingw32-make demo` 三项 PASS，秘密扫描、`pip check`、固定变量 Compose JSON 与 `git diff --check` 均退出 0。当前提交将只记录过程对齐与越界回退；未 push、未 merge，动态 Nginx/容器/ECS 验收仍待外部执行。
