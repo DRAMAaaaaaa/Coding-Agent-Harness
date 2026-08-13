@@ -1230,3 +1230,10 @@
 - **时间线与状态：** 基线 `420b7bf`，冷启动修订 `836ce93`，实现 `b19a4d3`，过程记录 `aecdbe8`，首轮返工 `51b5dff`，最终安全/CI 返工 `c99730a`，收尾过程对齐 `86bf967`，收尾编号补充 `413336d`。`SPEC_PROCESS.md` 已把“等待复核”更正为初审当时的历史状态，并指向实现前 READY 与 `.superpowers/sdd/public-ip-cold-start-report.md`。代码静态实现与审查返工完成；Step 10 尚未合并或 push；Docker daemon、Nginx 容器语法和 ECS 外网动态验收仍待外部执行，未虚报通过。
 - **范围回退：** `c99730a` 中与公网切片无关的 `project_learning.py` `rowid DESC` 排序改动已回退为原 `approved_at DESC, id ASC`；`tests/learning/test_cards.py` 没有新增或仅为该改动服务的测试，无需回退测试文件。`840 passed, 15 skipped` 等为 `c99730a` 的静态门禁证据；本轮收尾后必须取得新的最终 Head 证据。
 - **最终 Head 验证：** 收尾前最新 `mingw32-make test` 退出 0：Python `840 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`；Ruff、mypy、ESLint、TypeScript 与 Vite build 通过。`mingw32-make demo` 三项 PASS，秘密扫描、`pip check`、固定变量 Compose JSON 与 `git diff --check` 均退出 0。当前提交将只记录过程对齐与越界回退；未 push、未 merge，动态 Nginx/容器/ECS 验收仍待外部执行。
+
+### 2026-08-14 — 合并并推送公网 IP Mock 演示
+
+- **最终审查：** 独立整分支复审在 Head `991b50c` 给出 Ready to merge Yes，Critical / Important / Minor=`0/0/0`；确认过程时间线闭合、越界学习卡改动已回退，Docker/Nginx/ECS 动态项未被虚报。
+- **本地集成与验证：** `codex/public-ip-mock-demo` 以 `--ff-only` 合并到 `p1`。合并后 `mingw32-make test` 退出 0：Python `840 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`；Ruff、mypy、ESLint、TypeScript、Vite build 全部通过。三机制演示全部 PASS，秘密扫描、`pip check`、固定变量 Compose JSON 和 `git diff --check` 退出 0。
+- **远程集成：** 用户明确要求完成后自动推送并合并 `main`。先确认 `origin/p1`、`origin/main` 均为本地历史祖先且没有远端分叉；随后非强制推送 `p1`，将本地 `main` 以 `--ff-only` 快进到 `991b50c` 并非强制推送。两个远程分支均保留完整 Task 提交历史，没有 force push。
+- **安全清理与待验收：** 由本次流程创建的 `.worktrees/public-ip-mock-demo` 已移除，功能分支已安全删除；主工作区既有 `.tmp/` 与 `.venv-py39-backup/` 未触碰。Docker daemon 下的 Nginx 语法、镜像冷启动以及 `http://47.76.86.198` 外网浏览器主路径仍待 ECS 实机执行，因此尚不宣称公网部署成功。

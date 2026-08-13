@@ -211,7 +211,7 @@ docker run --rm -v "${PWD}/deploy/nginx/coding-agent-harness-ip.conf:/etc/nginx/
 
 预期：一键测试、三机制演示、秘密扫描、依赖检查、Compose 渲染和差异检查全部退出 0。Docker daemon 可用时额外执行镜像构建和容器本机冷启动；不可用时如实登记为 ECS 动态验收步骤，不宣称通过。
 
-- [ ] **Step 10: 提交、合并并给出 ECS 命令**
+- [x] **Step 10: 提交、合并并给出 ECS 命令（代码已集成并推送；ECS 动态验收待用户执行）**
 
 更新 `PLAN.md`、`AGENT_LOG.md` 和本计划复选框，写入技术提交和审查结论。提交标题：
 
@@ -219,7 +219,7 @@ docker run --rm -v "${PWD}/deploy/nginx/coding-agent-harness-ip.conf:/etc/nginx/
 feat: 提供公网 IP Mock 演示部署
 ```
 
-通过 `finishing-a-development-branch` 本地合并回 `p1`，不自动 push。合并后再次运行聚焦测试，并向用户提供 `git pull`、环境变量、Compose、Nginx、安全组与撤销命令；只有用户从外部网络实际打开 `http://47.76.86.198` 并完成 Mock 主路径后，才能把真实公网验收标记为通过。
+通过 `finishing-a-development-branch` 本地合并回 `p1`。用户随后明确授权自动推送并合并 `main`，因此 `p1` 与 `main` 已在非强制模式下推送到同一集成 Head。合并后已重新执行完整静态门禁；ECS 命令由 `docs/DEPLOYMENT.md` 提供。只有用户从外部网络实际打开 `http://47.76.86.198` 并完成 Mock 主路径后，才能把真实公网验收标记为通过。
 
 ## 自审结果
 
