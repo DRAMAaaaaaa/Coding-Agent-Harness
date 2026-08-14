@@ -10,7 +10,7 @@
 
 ## TDD
 
-建议 180–250 字：挑一个亲自经历的 RED→GREEN→重构循环，RED 为何能证明契约缺失？哪些后续验证支持或限制结论？证据路径：`tests/distribution/test_delivery_files.py`、`AGENT_LOG.md`、`.superpowers/sdd/task-5-report.md`。
+建议 180–250 字：挑一个亲自经历的 RED→GREEN→重构循环，RED 为何能证明契约缺失？哪些后续验证支持或限制结论？证据路径：`tests/distribution/test_delivery_files.py`、`PLAN.md`、`AGENT_LOG.md`。
 
 ## subagent-driven
 

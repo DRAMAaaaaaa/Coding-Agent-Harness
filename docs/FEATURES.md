@@ -16,7 +16,7 @@ Agent 循环、动作解析、工具分发、状态机、Provider 抽象和停�
 
 ## 治理、隔离与停止
 
-计划审批先于执行；任务在 worktree 中运行，路径/副作用异常 fail closed 并保留现场。源码：`src/coding_agent_harness/governance/`、`src/coding_agent_harness/workspaces/`；证据：`tests/governance/`、`tests/workspaces/`、`tests/demo/test_mechanism_demo.py`。
+计划审批先于执行；任务在 worktree 中运行，路径/副作用异常 fail closed 并保留现场。源码：`src/coding_agent_harness/governance`、`src/coding_agent_harness/workspace`；证据：`tests/governance`、`tests/workspace`、`tests/demo/test_mechanism_demo.py`。
 
 ## 六阶段工作台
 
@@ -32,7 +32,7 @@ Agent 循环、动作解析、工具分发、状态机、Provider 抽象和停�
 
 ## Provider / Mock 边界
 
-课程演示固定为 `ScriptedMockProvider`，不访问网络；真实 Provider 的运行时存在不等于外网任务已验收。源码：`src/coding_agent_harness/providers/mock.py`、`scripts/mechanism_demo.py`；证据：`tests/demo/test_mechanism_demo.py`、`docs/DEMO.md`。
+课程演示固定为 `ScriptedMockProvider`，不访问网络。仓库也有真实 Provider 的 OpenAI-compatible 运行时适配与注册表，但本地契约测试不能替代真实外网任务验收。源码：`src/coding_agent_harness/providers/mock.py`、`src/coding_agent_harness/providers/openai_compatible.py`、`scripts/mechanism_demo.py`；证据：`tests/providers/test_registry.py`、`tests/providers/test_contract.py`、`tests/demo/test_mechanism_demo.py`。
 
 ## 工程交付
 

@@ -537,6 +537,59 @@ def test_features_are_evidence_backed_and_reflection_is_student_authored() -> No
         assert f"## {heading}" in reflection
 
 
+def test_delivery_docs_keep_evidence_tracked_and_document_replay_steps() -> None:
+    features = (ROOT / "docs/FEATURES.md").read_text(encoding="utf-8")
+    evidence_paths = (
+        "src/coding_agent_harness/agent/orchestrator.py",
+        "src/coding_agent_harness/providers/mock.py",
+        "src/coding_agent_harness/providers/openai_compatible.py",
+        "src/coding_agent_harness/feedback/engine.py",
+        "src/coding_agent_harness/learning/intent.py",
+        "src/coding_agent_harness/replay/branches.py",
+        "src/coding_agent_harness/governance",
+        "src/coding_agent_harness/workspace",
+        "web/src/workbench/workflow.ts",
+        "scripts/mechanism_demo.py",
+        "tests/agent/test_orchestrator.py",
+        "tests/providers/test_registry.py",
+        "tests/feedback/test_engine.py",
+        "tests/learning/test_intent.py",
+        "tests/replay/test_branches.py",
+        "tests/workspace",
+        "web/e2e/harness.spec.ts",
+    )
+    for relative in evidence_paths:
+        assert f"`{relative}`" in features
+        assert (ROOT / relative).exists(), relative
+
+    reflection = (ROOT / "REFLECTION.md").read_text(encoding="utf-8")
+    assert ".superpowers/" not in reflection
+    assert "`PLAN.md`" in reflection
+    assert "`AGENT_LOG.md`" in reflection
+    for document in (
+        (ROOT / "PLAN.md").read_text(encoding="utf-8"),
+        (ROOT / "AGENT_LOG.md").read_text(encoding="utf-8"),
+    ):
+        assert "1945fad" in document
+
+    demo = (ROOT / "docs/DEMO.md").read_text(encoding="utf-8")
+    setup_steps = (
+        ".tmp\\ready.json",
+        "ready JSON",
+        "建立信任",
+    )
+    correction_steps = (
+        "从此纠正",
+        "子任务切换后",
+        "再次进入“计划审批”",
+        "等到其计划完整出现再点击“批准计划”",
+        "回看“纠正分支比较”",
+    )
+    for steps in (setup_steps, correction_steps):
+        positions = [demo.index(step) for step in steps]
+        assert positions == sorted(positions)
+
+
 def test_delivery_docs_and_env_use_safe_placeholders() -> None:
     security = (ROOT / "docs/SECURITY.md").read_text(encoding="utf-8")
     deployment = (ROOT / "docs/DEPLOYMENT.md").read_text(encoding="utf-8")
