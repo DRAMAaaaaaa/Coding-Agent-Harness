@@ -212,7 +212,7 @@ describe("App", () => {
       getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "失败", evidence_sequences: [2], action: "验证", expected_result: "通过", actual_result: "失败", status: "recorded", source_event_sequence: 2, learning_card_id: null }]),
       createCorrectionBranch: vi.fn(async () => ({ id: "branch-1", workspace_id: workspace.id, parent_task_id: taskId, source_event_sequence: 2, child_task_id: "child-1", status: "READY" as const, created_at: "2026-08-14T00:00:00Z" })),
       getCorrectionComparison: vi.fn(() => immediateRejectedComparison),
-      getTask: vi.fn(async () => { childFetchSawComparisonHandler = comparisonRejectionHandled; await child; }),
+      getTask: vi.fn(async (): Promise<{ id: string; workspace_id: string; state: "WAITING_PLAN_APPROVAL" }> => { childFetchSawComparisonHandler = comparisonRejectionHandled; return await child; }),
     };
     render(<App api={api} />);
     await createTrustedTask(user);
