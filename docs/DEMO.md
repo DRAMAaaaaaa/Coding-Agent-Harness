@@ -9,7 +9,7 @@ npm.cmd --prefix web run build
 .venv\Scripts\python.exe scripts\serve_demo.py --ready-file .tmp\ready.json --max-seconds 600
 ```
 
-从 `.tmp\ready.json` 读取 ready JSON 中的 localhost URL。输入示例项目路径和需求“把 VALUE 修改为 2 并通过测试”。若改用自动验收，执行 `make test-e2e`；它会启动临时 Git fixture 和本地服务。
+从 `.tmp\ready.json` 读取 ready JSON 中的 localhost URL。请从 `.tmp\ready.json` 复制 `fixture` 字段值到“项目路径”，再输入需求“把 VALUE 修改为 2 并通过测试”。若改用自动验收，执行 `make test-e2e`；它会启动临时 Git fixture 和本地服务。
 
 ## 六阶段工作台主路径（约 3 分钟）
 

@@ -576,6 +576,7 @@ def test_delivery_docs_keep_evidence_tracked_and_document_replay_steps() -> None
     setup_steps = (
         ".tmp\\ready.json",
         "ready JSON",
+        "从 `.tmp\\ready.json` 复制 `fixture` 字段值到“项目路径”",
         "建立信任",
     )
     correction_steps = (
