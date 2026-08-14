@@ -101,6 +101,13 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
     await page.getByRole("button", { name: "回放与纠正" }).click();
     await expect(page.getByLabel("纠正分支比较")).toBeVisible();
     await expect(page.getByText(/子任务：/)).toBeVisible();
+    await page.setViewportSize({ width: 720, height: 900 });
+    const comparisonGrid = page.getByLabel("纠正分支比较");
+    expect(await comparisonGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns)).not.toMatch(/\s/);
+    const providerSettings = page.getByRole("button", { name: "高级设置" });
+    await expect(providerSettings).toBeEnabled();
+    await providerSettings.focus();
+    await expect(providerSettings).toBeFocused();
     await page.getByRole("button", { name: "交付与经验" }).click();
     await expect(page.getByText("测试已通过", { exact: true })).toBeVisible();
     await expect(page.getByText(/-VALUE = 1/).last()).toBeVisible();

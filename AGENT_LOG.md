@@ -1308,3 +1308,10 @@
 ### 2026-08-14 — 共学回放工作台 Task 2 最终复审关闭
 
 - **最终复审：** 独立审查覆盖 `8c6d420..6ab0745`，结论 Critical / Important / Minor=`0/0/0`，Ready for Task 3=Yes。审查员独立运行 App 聚焦测试 `30/30` 与 `git diff --check` 均通过。本 Task 至此关闭，未修改代码或进入 Task 3。
+
+### 2026-08-14 — 共学回放工作台 Task 3 浏览器与窄屏验收
+
+- **范围与技能：** 在隔离 `codex/co-learning-workbench-docs` worktree 实施联合计划 Task 3，仅修改 Playwright 主路径与响应式 CSS；使用 `test-driven-development`，未修改后端、API、依赖或归档文档，未联网或接触凭据。
+- **RED：** 先完成 Vite build，再把 720×900 真实浏览器契约加入已经跑通的桌面主路径。在纠正分支比较可见后，旧 `.comparison-grid` 的 computed `grid-template-columns` 为两列（`538.203px 538.219px`），准确违反单列断言；首个放置在下一任务后的比较查询因该任务没有分支而失败，已立即移动到实际存在的纠正比较节点，未把该定位错误或超时计作产品 RED。
+- **GREEN 与可访问性：** 以 `@media (max-width: 759px)` 将阶段导航、证据网格、纠正比较和内联表单改为单列，并取消阶段导航 sticky；高级设置继续以角色和名称定位，等待其从任务运行状态恢复可用后聚焦并通过断言，没有新增 `data-testid` 或隐藏测试文本。
+- **新鲜验证：** Web Vitest `66 passed`、ESLint、TypeScript typecheck、Vite build 与 `git diff --check` 均退出 0；build 后 Playwright 真实主路径 `1 passed (11.5s)`，覆盖失败提问、纠正、交付、项目经验以及 720px 比较与键盘聚焦。尚待独立规约符合性审查与代码质量审查后才可关闭本 Task。

@@ -41,4 +41,10 @@ pre { overflow-x: auto; white-space: pre-wrap; background: var(--code); color: v
 .provider-dialog { width: min(100%, 37rem); max-height: calc(100vh - 2rem); overflow: auto; background: var(--surface); border-radius: .75rem; padding: 1.15rem; box-shadow: 0 16px 40px #10182866; }
 .provider-dialog header { display: flex; justify-content: space-between; gap: 1rem; align-items: start; }
 .provider-dialog h2 { margin-bottom: 0; }
+@media (max-width: 759px) {
+  .stage-nav { position: static; display: grid; grid-template-columns: minmax(0, 1fr); }
+  .back-to-current { margin-left: 0; }
+  .evidence-grid, .comparison-grid { grid-template-columns: minmax(0, 1fr); }
+  .inline-form { flex-direction: column; align-items: stretch; }
+}
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
