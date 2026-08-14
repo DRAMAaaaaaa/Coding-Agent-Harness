@@ -84,7 +84,9 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
     await page.getByRole("button", { name: "生成计划" }).click();
     await expect(page.getByText("先验证失败，再修改并重新验证，最后展示差异。", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "批准计划" }).click();
-    await expect(page.getByRole("listitem").filter({ hasText: "VERIFICATION_FAILED" })).toBeVisible();
+    await expect(page.getByText("等待用户处理", { exact: false })).toBeVisible();
+    await page.getByRole("button", { name: "回放与纠正" }).click();
+    await expect(page.getByRole("heading", { name: "回放与纠正" })).toBeVisible();
     await page.getByLabel("失败原因提问").fill("为什么失败？");
     await page.getByRole("button", { name: "提问" }).click();
     await expect(page.getByText("VALUE 仍为 1，因此验证失败。", { exact: true })).toBeVisible();
@@ -96,11 +98,12 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
     const correctionBranch = await response.json() as { id: string };
     await expect(page.getByLabel("纠正分支比较")).toBeVisible();
     await expect(page.getByText(/子任务：WAITING_PLAN_APPROVAL/)).toBeVisible();
+    await page.getByRole("button", { name: "计划审批" }).click();
     await page.getByRole("button", { name: "批准计划" }).click();
+    await page.getByRole("button", { name: "交付与经验" }).click();
     await expect(page.getByText("测试已通过", { exact: true })).toBeVisible();
     await expect(page.getByText(/-VALUE = 1/).last()).toBeVisible();
     await expect(page.getByText(/\+VALUE = 2/).last()).toBeVisible();
-    await expect(page.getByRole("listitem").filter({ hasText: "VERIFICATION_SUCCEEDED" })).toBeVisible();
     await page.getByRole("button", { name: "批准最终审查" }).click();
     await expect(page.getByText(/已完成/)).toBeVisible();
     const finalComparison = await page.request.get(`${ready.url}/api/correction-branches/${correctionBranch.id}/comparison`);
@@ -110,14 +113,16 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
     expect(comparison.child_diff).toContain("+VALUE = 2");
     await page.getByLabel("项目经验").fill("先运行聚焦测试再修改");
     await page.getByRole("button", { name: "批准经验" }).click();
+    await page.getByRole("button", { name: "需求描述" }).click();
     await expect(page.getByLabel("下一任务项目经验")).toContainText("先运行聚焦测试再修改");
     await page.getByLabel("编码需求").fill("应用已批准的项目经验");
     const nextTaskResponse = page.waitForResponse((next) => next.url().endsWith("/api/tasks") && next.request().method() === "POST");
     await page.getByRole("button", { name: "生成计划" }).click();
     const nextTask = await (await nextTaskResponse).json() as { id: string };
+    await page.getByRole("button", { name: "需求描述" }).click();
     await expect(page.getByText(/经验 ID：/)).toBeVisible();
+    await page.getByRole("button", { name: "计划审批" }).click();
     await expect(page.getByText("已应用项目经验，先运行验证。", { exact: true })).toBeVisible();
-    await expect(page.getByRole("listitem").filter({ hasText: "PROJECT_LEARNING_APPLIED" })).toBeVisible();
     const firstActionPromise = page.evaluate(async (taskId) => await new Promise<{ tool: string }>((resolve, reject) => {
       const source = new EventSource(`/api/tasks/${taskId}/events?after=0`);
       source.addEventListener("task-event", (message) => { const event = JSON.parse((message as MessageEvent<string>).data) as { event_type: string; payload: { action?: { tool?: string } } }; if (event.event_type === "ACTION_PARSED") { source.close(); resolve({ tool: event.payload.action?.tool ?? "" }); } });

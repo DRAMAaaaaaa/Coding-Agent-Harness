@@ -1283,3 +1283,11 @@
 - **第二次复审返工：** 新复审为 Critical / Important / Minor=`0/1/0`，确认较晚但无效的 `PLAN_PROPOSED` 与 `FINAL_SUMMARY_PROPOSED` 仍会保留旧有效证据。代码提交 `5a3ead7` 将两类候选都改为先清除同类旧证据、再仅按 `completeDiagnostic()` 的完整结果重设；无效摘要同时令回放可用。计划候选的两种 RED（`OUTPUT_LIMIT`、全空白）为 `2 failed, 21 passed`、GREEN 为 `23 passed`；无效摘要 RED 为 `1 failed, 23 passed`、GREEN 为 `24 passed`。四类计划、验证、diff、摘要候选均有最新候选替换测试或同源代码审计；新鲜聚焦 Vitest 为 `1 passed, 24 passed`，ESLint、TypeScript 与 `git diff --check` 均退出 0，等待再次独立规约符合性与代码质量复审。
 - **第三次复审返工：** 新复审为 Critical / Important / Minor=`0/1/0`，确认无效候选只应阻断 DELIVERY，不能伪装为实际 `VERIFICATION_FAILED` 来解锁 REPLAY。先把三个在 `EXECUTING` 状态下的无效 verification / git diff / summary 用例期望改为 `EXECUTION`，RED 为 `3 failed, 21 passed`；代码提交 `a81d0b6` 删除三个 invalid flags 及其赋值/重置，只保留实际 `VERIFICATION_FAILED` 设置 `hasVerificationFailure`，四类最新候选的淘汰和 DELIVERY 阻断保持不变。GREEN 为 `24 passed`；新鲜聚焦 Vitest 为 `1 passed, 24 passed`，ESLint、TypeScript 与 `git diff --check` 均退出 0，等待再次独立规约符合性与代码质量复审。
 - **最终独立复审：** 独立审查覆盖 Task 1 完整范围 `fc02856..904e95c`，结论为 Critical / Important / Minor=`0/0/0`、Ready for Task 2=Yes。审查员独立运行聚焦 Vitest，结果为 `1 file / 24 tests` 通过；Task 1 至此关闭，未修改代码或扩大范围。
+
+### 2026-08-14 — 共学回放工作台 Task 2：组件化工作台与教学视觉
+
+- **范围与技能：** 在隔离 worktree `codex/co-learning-workbench-docs` 中按 `subagent-driven-development` 和 `test-driven-development` 实施。保持 `App` 的 `HarnessApi` 注入接口，未修改后端、事件字段、部署协议或依赖；未联网、未安装依赖、未记录 API Key。
+- **TDD：** 先在 `web/src/App.test.tsx` 增加六阶段自动推进/回看、Provider 抽屉 Key 清空与焦点恢复、技术详情折叠三项 UI 契约；RED 为 `22 tests | 3 failed`，失败均为缺少新 UI 契约，没有夹具、导入或超时伪失败。GREEN 后旧安全测试改为通过可见阶段导航进入相应页面，没有删除安全断言。
+- **实现：** `App` 缩减为工作台壳；新增 `HarnessWorkbench`、阶段导航、状态栏、Provider 抽屉、技术详情、证据卡、意图卡和分支比较组件，以及六个阶段视图。阶段解锁、最新证据和自动推进仅消费 Task 1 的 `workflow.ts`。Provider 默认 Mock，Key 仅位于抽屉局部 state，并在关闭、配置成功/失败和项目/任务切换时清空；抽屉提供 Escape、焦点恢复与 Tab 循环。
+- **E2E 调试与修复：** 首次新 E2E 在回放页提前等待失败提问而超时。Playwright trace 证明页面仍处于计划运行的 busy 状态且仅有计划卡，根因是测试未等待 `WAITING_USER` 条件；改为先等待可见任务状态再进入回放。随后发现异步 `getIntentCards` 旧响应可覆盖新响应，加入 effect 生命周期保护；E2E 保持条件等待，不增加任意 sleep。分支比较与下一任务项目经验断言均改为通过六阶段可见导航验证。
+- **新鲜验证：** ESLint、TypeScript、Vite build 均退出 0；`npm.cmd --prefix web run test -- --run src/workbench/workflow.test.ts src/App.test.tsx src/api.test.ts` 为 `3 files / 55 tests` 通过；按 build→E2E 顺序运行 `npm.cmd --prefix web run e2e -- harness.spec.ts` 为 `1 passed (11.8s)`。Task 2 实现完成，等待独立规约和代码质量审查；无新增延期项。

@@ -53,7 +53,59 @@ async function createTrustedTask(user: ReturnType<typeof userEvent.setup>): Prom
   await user.click(screen.getByRole("button", { name: "生成计划" }));
 }
 
+async function goToStage(user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> {
+  await user.click(await screen.findByRole("button", { name }));
+}
+
 describe("App", () => {
+  it("按信任、任务和执行证据自动推进，并允许回看", async () => {
+    const user = userEvent.setup();
+    render(<App api={scriptedApi({ events: [taskEvents[0]] })} />);
+
+    expect(screen.getByRole("heading", { name: "项目接入" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "需求描述" })).toBeDisabled();
+    await user.type(screen.getByLabelText("项目路径"), "C:\\demo\\repo");
+    await user.click(screen.getByRole("button", { name: "接入项目" }));
+    await user.click(await screen.findByRole("button", { name: "建立信任" }));
+    expect(await screen.findByRole("heading", { name: "需求描述" })).toBeVisible();
+    await user.type(screen.getByLabelText("编码需求"), "修复 add 函数");
+    await user.click(screen.getByRole("button", { name: "生成计划" }));
+    expect(await screen.findByRole("heading", { name: "计划审批" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "批准计划" }));
+    expect(await screen.findByRole("heading", { name: "执行与验证" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "项目接入" }));
+    expect(screen.getByRole("button", { name: "返回当前阶段" })).toBeVisible();
+  });
+
+  it("高级设置默认 Mock，关闭时清空 Key 并恢复焦点", async () => {
+    const user = userEvent.setup();
+    render(<App api={{ ...scriptedApi(), listProviders: vi.fn(async () => []), createProvider: vi.fn(), setSessionCredential: vi.fn() }} />);
+
+    const opener = screen.getByRole("button", { name: "高级设置" });
+    await user.click(opener);
+    expect(screen.getByRole("dialog", { name: "Provider 高级设置" })).toBeVisible();
+    await user.type(screen.getByLabelText("API Key"), "test-session-key");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Provider 高级设置" })).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+    await user.click(opener);
+    expect(screen.getByLabelText("API Key")).toHaveValue("");
+    expect(screen.getByText(/没有连接测试和主动清除/)).toBeVisible();
+  });
+
+  it("技术详情默认折叠，展开后显示原始事件", async () => {
+    const user = userEvent.setup();
+    render(<App api={scriptedApi()} />);
+    await createTrustedTask(user);
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "交付与经验");
+    await user.click(await screen.findByRole("button", { name: "执行与验证" }));
+    const details = screen.getByText("技术详情").closest("details");
+    expect(details).not.toHaveAttribute("open");
+    await user.click(screen.getByText("技术详情"));
+    expect(screen.getAllByRole("listitem").find((item) => item.textContent?.includes("VERIFICATION_SUCCEEDED"))).toBeVisible();
+  });
+
   it("只在最终交付卡中由用户批准经验，并在下一任务入口展示已批准卡", async () => {
     const user = userEvent.setup();
     const approvedCard = { id: "learning-1", workspace_id: workspace.id, text: "先运行聚焦测试", source_task_id: taskId, source_event_sequence: 5, approved_at: "2026-08-07T00:00:00Z" };
@@ -68,6 +120,7 @@ describe("App", () => {
     render(<App api={api} />);
     await createTrustedTask(user);
     await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "交付与经验");
     await user.click(await screen.findByRole("button", { name: "批准最终审查" }));
     const learningInput = await screen.findByLabelText("项目经验");
     expect(learningInput).toHaveValue("add 已修复");
@@ -75,6 +128,7 @@ describe("App", () => {
     await user.type(learningInput, approvedCard.text);
     await user.click(screen.getByRole("button", { name: "批准经验" }));
     expect(approveProjectLearning).toHaveBeenCalledWith(taskId, 5, approvedCard.text);
+    await goToStage(user, "需求描述");
     expect(await screen.findByText(`经验 ID：${approvedCard.id}`)).toBeVisible();
     expect(screen.getByLabelText("下一任务项目经验")).toHaveTextContent(approvedCard.text);
   });
@@ -83,12 +137,14 @@ describe("App", () => {
     const user = userEvent.setup();
     const createCorrectionBranch = vi.fn(async () => ({ id: "branch-1", workspace_id: workspace.id, parent_task_id: taskId, source_event_sequence: 1, child_task_id: "child-1", status: "READY" as const, created_at: "2026-08-07T00:00:00Z" }));
     const getCorrectionComparison = vi.fn(async () => ({ branch_id: "branch-1", parent_state: "WAITING_USER", child_state: "WAITING_FINAL_REVIEW", parent_verification: "parent failed", child_verification: "child passed", parent_diff: "- old", child_diff: "+ new" }));
-    const api = { ...scriptedApi({ events: [event(1, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")] }), getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "verification_failure", evidence_sequences: [1], action: "VERIFICATION_FAILED", expected_result: "通过", actual_result: "失败", status: "recorded", source_event_sequence: 1, learning_card_id: null }]), createCorrectionBranch, getCorrectionComparison };
+    const api = { ...scriptedApi({ events: [taskEvents[0], event(2, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")] }), getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "verification_failure", evidence_sequences: [2], action: "VERIFICATION_FAILED", expected_result: "通过", actual_result: "失败", status: "recorded", source_event_sequence: 2, learning_card_id: null }]), createCorrectionBranch, getCorrectionComparison };
     render(<App api={api} />);
     await createTrustedTask(user);
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "回放与纠正");
     await user.type(await screen.findByLabelText("纠正说明"), "补充边界");
     await user.click(screen.getByRole("button", { name: "从此纠正" }));
-    expect(createCorrectionBranch).toHaveBeenCalledWith(taskId, 1, "补充边界");
+    expect(createCorrectionBranch).toHaveBeenCalledWith(taskId, 2, "补充边界");
     expect(await screen.findByText(/child passed/)).toBeVisible();
     expect(screen.getByText("+ new")).toBeVisible();
   });
@@ -96,9 +152,11 @@ describe("App", () => {
   it("仅为失败卡展示只读提问并显示回答", async () => {
     const user = userEvent.setup();
     const askQuestion = vi.fn(async () => ({ content: "Stub explanation" }));
-    const api = { ...scriptedApi({ events: [event(1, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")] }), getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "verification_failure", evidence_sequences: [1], action: "VERIFICATION_FAILED", expected_result: "验证通过", actual_result: "失败", status: "recorded", source_event_sequence: 1, learning_card_id: null }]), askQuestion };
+    const api = { ...scriptedApi({ events: [taskEvents[0], event(2, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")] }), getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "verification_failure", evidence_sequences: [2], action: "VERIFICATION_FAILED", expected_result: "验证通过", actual_result: "失败", status: "recorded", source_event_sequence: 2, learning_card_id: null }]), askQuestion };
     render(<App api={api} />);
     await createTrustedTask(user);
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "回放与纠正");
     await user.type(await screen.findByLabelText("失败原因提问"), "为什么失败？");
     await user.click(screen.getByRole("button", { name: "提问" }));
     expect(askQuestion).toHaveBeenCalledWith(taskId, "failure-card", "为什么失败？");
@@ -111,6 +169,7 @@ describe("App", () => {
     const setSessionCredential = vi.fn(async () => ({ id: "provider-1", kind: "deepseek" as const, model: "deepseek-chat", version: 1, configured: true }));
     render(<App api={{ ...scriptedApi(), listProviders: vi.fn(async () => []), createProvider, setSessionCredential }} />);
 
+    await user.click(screen.getByRole("button", { name: "高级设置" }));
     const key = screen.getByLabelText("API Key");
     expect(key).toHaveAttribute("type", "password");
     await user.type(key, "test-session-key");
@@ -118,22 +177,26 @@ describe("App", () => {
 
     expect(await screen.findByRole("option", { name: "deepseek: deepseek-chat" })).toBeVisible();
     expect(setSessionCredential).toHaveBeenCalledWith("provider-1", "test-session-key");
-    expect(key).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "高级设置" }));
+    expect(screen.getByLabelText("API Key")).toHaveValue("");
   });
 
   it("会话 Provider 密钥在配置失败和切换项目后均清空", async () => {
     const user = userEvent.setup();
     const api = { ...scriptedApi(), listProviders: vi.fn(async () => []), createProvider: vi.fn(async () => { throw new Error("offline"); }), setSessionCredential: vi.fn() };
     render(<App api={api} />);
+    await user.click(screen.getByRole("button", { name: "高级设置" }));
     const key = screen.getByLabelText("API Key");
     await user.type(key, "test-session-key");
     await user.click(screen.getByRole("button", { name: "配置会话 Provider" }));
     expect(await screen.findByRole("status")).toBeVisible();
     expect(key).toHaveValue("");
     await user.type(key, "another-test-key");
+    await user.keyboard("{Escape}");
     await user.type(screen.getByLabelText("项目路径"), "C:\\demo\\repo");
     await user.click(screen.getByRole("button", { name: "接入项目" }));
-    expect(key).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "高级设置" }));
+    expect(screen.getByLabelText("API Key")).toHaveValue("");
   });
 
   it("任务创建失败也清空会话 Provider 密钥", async () => {
@@ -142,11 +205,14 @@ describe("App", () => {
     render(<App api={api} />);
     await user.type(screen.getByLabelText("项目路径"), "C:\\demo\\repo");
     await user.click(screen.getByRole("button", { name: "接入项目" }));
+    await user.click(screen.getByRole("button", { name: "高级设置" }));
     await user.type(screen.getByLabelText("API Key"), "test-session-key");
     await user.selectOptions(screen.getByLabelText("已配置 Profile"), "provider-1");
+    await user.keyboard("{Escape}");
     await user.type(screen.getByLabelText("编码需求"), "修复失败");
     await user.click(screen.getByRole("button", { name: "生成计划" }));
     expect(await screen.findByRole("status")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "高级设置" }));
     expect(screen.getByLabelText("API Key")).toHaveValue("");
   });
   it("展示真实计划、验证和 diff，并完成最终批准", async () => {
@@ -155,9 +221,10 @@ describe("App", () => {
     render(<App api={api} />);
     await createTrustedTask(user);
     expect(await screen.findByText("修复 add 的真实计划")).toBeVisible();
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "交付与经验");
     expect(screen.getByText("1 passed")).toBeVisible();
     expect(screen.getByText("diff --git a/src/add.py")).toBeVisible();
-    await user.click(await screen.findByRole("button", { name: "批准计划" }));
     await user.click(await screen.findByRole("button", { name: "批准最终审查" }));
     expect(api.approveFinal).toHaveBeenCalledWith(taskId);
   });
@@ -166,11 +233,12 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App api={scriptedApi({ events: latestTaskEvents })} />);
     await createTrustedTask(user);
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "交付与经验");
     expect(await screen.findByText("第二轮通过")).toBeVisible();
     expect(screen.getByText(/diff --git a\/src\/add\.py\s+\+new/)).toBeVisible();
     expect(screen.queryByText("旧轮次通过")).not.toBeInTheDocument();
     expect(screen.queryByText(/diff --git a\/src\/add\.py\s+-old/)).not.toBeInTheDocument();
-    await user.click(await screen.findByRole("button", { name: "批准计划" }));
     expect(await screen.findByRole("button", { name: "批准最终审查" })).toBeVisible();
   });
 
@@ -222,6 +290,7 @@ describe("App", () => {
     expect(await screen.findByText(/事件数据无效/)).toBeVisible();
     expect(screen.queryByRole("button", { name: "批准计划" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "批准最终审查" })).not.toBeInTheDocument();
+    await goToStage(user, "需求描述");
     expect(screen.getByRole("button", { name: "生成计划" })).toBeDisabled();
   });
 
@@ -230,6 +299,7 @@ describe("App", () => {
     render(<App api={scriptedApi()} />);
     await createTrustedTask(user);
     expect(await screen.findByText("修复 add 的真实计划")).toBeVisible();
+    await goToStage(user, "项目接入");
     await user.clear(screen.getByLabelText("项目路径"));
     await user.type(screen.getByLabelText("项目路径"), "C:\\second\\repo");
     await user.click(screen.getByRole("button", { name: "接入项目" }));
@@ -242,13 +312,14 @@ describe("App", () => {
     const connectProject = vi.fn(async (path: string): Promise<Workspace> => { void path; return workspace; }).mockResolvedValueOnce(workspace).mockRejectedValueOnce(new Error("connect failed"));
     render(<App api={scriptedApi({ connectProject })} />);
     await createTrustedTask(user);
+    await goToStage(user, "项目接入");
     await user.clear(screen.getByLabelText("项目路径"));
     await user.type(screen.getByLabelText("项目路径"), "C:\\second\\repo");
     await user.click(screen.getByRole("button", { name: "接入项目" }));
     expect(await screen.findByText("无法完成此操作。请检查服务状态后重试。")).toBeVisible();
     expect(screen.queryByText(/当前项目已建立信任/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "批准计划" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "生成计划" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "需求描述" })).toBeDisabled();
   });
 
   it("任务变更和状态收敛都失败时，清空旧任务并禁用变更控件", async () => {
@@ -260,6 +331,7 @@ describe("App", () => {
     expect(await screen.findByText("无法完成此操作。请检查服务状态后重试。")).toBeVisible();
     expect(screen.queryByRole("button", { name: "批准计划" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "批准最终审查" })).not.toBeInTheDocument();
+    await goToStage(user, "需求描述");
     expect(screen.getByRole("button", { name: "生成计划" })).toBeDisabled();
   });
 });
