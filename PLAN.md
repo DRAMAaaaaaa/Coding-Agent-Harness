@@ -1861,6 +1861,8 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 
 - **Task 4 状态：** 进行中（隔离 worktree `codex/co-learning-workbench-docs`）。已依据归档前 Git 跟踪 Markdown 清单写入精确 `ARCHIVE_MOVES` 契约；RED 按预期因缺少归档索引失败。随后仅对清单中的文档逐项 `git mv`，并新增归档索引与当前路径链接契约；聚焦 GREEN 为 `3 passed`。尚待完整 distribution、秘密扫描、差异检查和独立规约/质量审查，未提前关闭。
 
+- **Task 4 规约复审返工：** 首轮独立规约审查为 Critical / Important / Minor=`0/1/0`：历史归档文件名中的 `sk-` 片段被 `scripts/secret_scan.py` 误报，导致先前“秘密扫描通过”的过程记录不成立；检查确认基线与归档提交均有同一误报，未发现真实秘密。先写历史路径与真实 Git grep 边界 RED，再以 Python 固定宽度前界和 Git POSIX ERE 前缀分组收紧匹配，不放宽 token 长度或 allowlist。修复提交 `768eb95`；聚焦秘密扫描测试 `8 passed`、实际扫描退出 0、归档契约 `3 passed` 和差异检查通过，仍待独立复审关闭。
+
 - **Task 3 最终 Minor：** 协作退出单测的 5ms 计时器已替换为确定性微任务，不改变产品行为；产品与浏览器断言不使用任意 sleep。
 
 ### 2026-08-14 — 共学回放工作台 Task 2 复审返工（0/2/0）

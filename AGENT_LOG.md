@@ -1334,3 +1334,9 @@
 - **归档前证据与 RED：** 已保存 Git 跟踪 Markdown 清单到受忽略的 Task 报告目录。`test_historical_docs_are_archived_without_losing_evidence` 按预期因 `docs/archive/README.md` 不存在失败，证明归档契约可捕获旧布局。
 - **移动与保护：** 仅执行 `ARCHIVE_MOVES` 中列出的逐项 `git mv`：历史 specs、plans、两份台账与七份已跟踪报告。未使用 `.superpowers` 通配移动，未触碰未跟踪/受忽略报告、`.tmp/`、虚拟环境备份或任何秘密文件。
 - **GREEN（聚焦）：** 新增 `docs/archive/README.md`，并把当前根过程文档导航更新到 archive。归档存在性、Markdown 链接解析和旧路径排除契约均为 `3 passed`；完整 distribution 与审查尚待执行，Task 仍保持进行中。
+
+### 2026-08-14 — 共学回放工作台 Task 4 规约复审返工（0/1/0）
+
+- **复审核实：** 独立规约审查发现 `scripts/secret_scan.py` 把历史文件名中嵌入的 `sk-` 片段当作 token；实际运行确实输出两份归档计划和交付测试文件。该问题在基线与归档提交均存在，未发现真实凭据；因此此前 Task 4 报告中“秘密扫描通过”的声明已更正，不作为完成证据。
+- **TDD：** 先加入仅含 `task-3-implementer-report.md`、`task-10-report.md` 历史路径的候选文件，以及限定两份归档计划和交付测试的真实 `git grep` 边界测试；旧实现按预期均失败。保留既有未知独立 token 必须失败的回归，不放宽 token 长度或 allowlist。
+- **修复与证据：** Python 扫描模式新增固定宽度字母数字下划线前界，Git POSIX ERE 使用等价的 `(^|[^A-Za-z0-9_])` 前缀分组，避免 Git 不支持 lookbehind；摘要仍只针对秘密本身。提交 `768eb95` 后，秘密扫描测试 `8 passed`、实际 `python scripts/secret_scan.py` 退出 0、归档契约 `3 passed`、`git diff --check` 均通过。Task 4 仍待独立规约与质量复审。
