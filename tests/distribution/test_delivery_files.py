@@ -227,6 +227,24 @@ def test_public_ip_overlay_keeps_mock_local_bind_and_passes_public_targets() -> 
         "HARNESS_PUBLIC_HOST": "${HARNESS_PUBLIC_HOST:?必须设置公网 IPv4}",
         "HARNESS_PUBLIC_ORIGIN": "${HARNESS_PUBLIC_ORIGIN:?必须设置 HTTP Origin}",
     }
+    assert overlay_service["restart"] == "unless-stopped"
+    assert overlay_service["command"] == [
+        "python",
+        "scripts/serve_demo.py",
+        "--ready-file",
+        "/state/ready.json",
+        "--runtime-root",
+        "/state",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--project-source",
+        "/workspace/project",
+        "--max-seconds",
+        "0",
+        "--keep-alive",
+    ]
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "scripts/serve_demo.py" in dockerfile
 
@@ -247,6 +265,24 @@ def test_public_ip_compose_render_preserves_local_mock_delivery_contract() -> No
         "HARNESS_PUBLIC_HOST": "47.76.86.198",
         "HARNESS_PUBLIC_ORIGIN": "http://47.76.86.198",
     }
+    assert service["restart"] == "unless-stopped"
+    assert service["command"] == [
+        "python",
+        "scripts/serve_demo.py",
+        "--ready-file",
+        "/state/ready.json",
+        "--runtime-root",
+        "/state",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--project-source",
+        "/workspace/project",
+        "--max-seconds",
+        "0",
+        "--keep-alive",
+    ]
     assert any(
         volume["target"] == "/workspace/project" and volume["read_only"]
         for volume in service["volumes"]
@@ -302,14 +338,21 @@ def test_public_ip_docs_describe_explicit_env_down_and_http_risk() -> None:
     deployment = (ROOT / "docs/DEPLOYMENT.md").read_text(encoding="utf-8")
     assert (
         "HARNESS_PUBLIC_HOST=47.76.86.198 HARNESS_PUBLIC_ORIGIN=http://47.76.86.198 "
+        "docker compose -f compose.yaml -f deploy/compose.public-ip.yaml up --build -d"
+    ) in deployment
+    assert "sudo systemctl enable --now nginx" in deployment
+    assert "`--max-seconds 0 --keep-alive`" in deployment
+    assert "`restart: unless-stopped`" in deployment
+    assert (
+        "HARNESS_PUBLIC_HOST=47.76.86.198 HARNESS_PUBLIC_ORIGIN=http://47.76.86.198 "
         "docker compose -f compose.yaml -f deploy/compose.public-ip.yaml down"
     ) in deployment
     for path in ("README.md", "docs/DEPLOYMENT.md"):
         document = (ROOT / path).read_text(encoding="utf-8")
         assert "HTTP 页面、请求及临时会话头均为明文" in document
         assert "无身份认证，任何可访问者都能交互" in document
-        assert "仅允许用户在场进行短时 Mock 演示" in document
-        assert "长期生产" in document
+        assert "无真实数据、无真实 Key 的 Mock 演示" in document
+        assert "生产" in document
 
 
 def test_demo_server_accepts_explicit_container_bind(

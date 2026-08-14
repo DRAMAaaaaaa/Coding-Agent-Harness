@@ -414,15 +414,19 @@ async def _serve(
         if shutdown_on_stdin_close:
             waiters.append(asyncio.create_task(stdin_closed.wait()))
         try:
+            timeout = None if max_seconds == 0 else max_seconds
             if waiters:
                 done, _ = await asyncio.wait(
                     waiters,
-                    timeout=max_seconds,
+                    timeout=timeout,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 result = 0 if done else 1
+            elif timeout is None:
+                await server_task
+                result = 1
             else:
-                await asyncio.sleep(max_seconds)
+                await asyncio.sleep(timeout)
                 result = 1
         finally:
             for waiter in waiters:
@@ -473,7 +477,7 @@ def _arguments() -> argparse.Namespace:
 
 def main() -> int:
     arguments = _arguments()
-    if arguments.max_seconds <= 0 or not 0 <= arguments.port <= 65_535:
+    if arguments.max_seconds < 0 or not 0 <= arguments.port <= 65_535:
         return 2
     if arguments.runtime_root is not None:
         runtime_parent = arguments.runtime_root.resolve(strict=False)

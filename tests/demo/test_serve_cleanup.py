@@ -98,6 +98,35 @@ def test_main_passes_explicit_stdin_shutdown_flag(
     assert captured["shutdown_on_stdin_close"] is True
 
 
+def test_main_accepts_zero_max_seconds_for_long_running_demo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_serve(*args: object, **_options: object) -> int:
+        captured["max_seconds"] = args[2]
+        return 0
+
+    monkeypatch.setattr(serve_demo, "_serve", fake_serve)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "serve_demo.py",
+            "--ready-file",
+            str(tmp_path / "ready.json"),
+            "--runtime-root",
+            str(tmp_path / "runtime"),
+            "--max-seconds",
+            "0",
+        ],
+    )
+
+    assert serve_demo.main() == 0
+    assert captured["max_seconds"] == 0
+
+
 class _Server:
     should_exit = False
 
@@ -208,6 +237,37 @@ async def test_serve_keep_alive_omits_the_single_task_completion_callback(
     with pytest.raises(RuntimeError, match="stop after construction"):
         await serve_demo._serve(tmp_path / "runtime", tmp_path / "ready.json", 10, keep_alive=True)
     assert captured["on_completed"] is None
+
+
+async def test_zero_max_seconds_keeps_keep_alive_server_running_until_cancelled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    ready_file = tmp_path / "ready.json"
+    listener, database, router = _stub_serve_dependencies(monkeypatch, tmp_path)
+    serve_task = asyncio.create_task(
+        serve_demo._serve(runtime_root, ready_file, 0, keep_alive=True)
+    )
+
+    try:
+        for _ in range(100):
+            if ready_file.exists():
+                break
+            await asyncio.sleep(0)
+        assert ready_file.exists()
+
+        await asyncio.sleep(0)
+        assert not serve_task.done()
+    finally:
+        serve_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await serve_task
+
+    assert listener.closed
+    assert database.closed
+    assert router.cleaned
+    assert not (runtime_root / "state").exists()
 
 
 async def test_keep_alive_stops_and_cleans_when_stdin_closes(

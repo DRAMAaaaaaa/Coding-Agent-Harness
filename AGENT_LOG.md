@@ -1369,3 +1369,10 @@
 - **最终复审：** 独立第三轮复审覆盖 `1ebd804..7edac7e`，Critical / Important / Minor=`0/0/0`，Ready close=Yes。审查员独立复验交付文档契约 `1 passed` 与 `git diff --check`，并确认 `7edac7e` 的 tracked 工作树干净。
 - **完整门禁证据：** 本轮有效的完整 `mingw32-make test` 为 Python `849 passed, 15 skipped`；Ruff、mypy、ESLint、TypeScript typecheck 与 Vite build 通过；Vitest `66 passed`；Playwright `4 passed, 1 skipped`。I4 的隔离 build 环境已通过外部权限精确复验，未以修改构建策略掩盖此前环境问题。
 - **关闭边界：** Task 5 至此完成。Docker daemon、Nginx、ECS 浏览器和真实外网 Provider 未动态验收，保持未验收表述；没有 push、merge、产品代码或测试修改。
+
+### 2026-08-14 — 公网 Mock 常驻热修
+
+- **用户授权与流程边界：** 用户选择常驻方案 2，并要求“以最快速度和用量解决问题”“不需要冷启动执行和 TDD，直接在本对话中执行”。本次在隔离 worktree `codex/always-on-public-demo` 中按运维热修执行；未派发冷启动智能体，未执行完整红绿循环，并在此记录偏离。
+- **变更事实：** 修改 `scripts/serve_demo.py`，允许 `--max-seconds 0` 表示无墙钟超时；修改 `deploy/compose.public-ip.yaml`，公网覆盖以 `--max-seconds 0 --keep-alive` 启动并设置 `restart: unless-stopped`；更新 `README.md`、`docs/DEPLOYMENT.md` 和交付契约，说明 `up --build -d`、`systemctl enable --now nginx`、8000 仍只绑定 localhost，以及 HTTP 明文/无认证风险。
+- **验证事实：** 复用既有 `foundation` worktree Python 3.11.9 虚拟环境；`pytest tests/demo/test_serve_cleanup.py tests/distribution/test_delivery_files.py -q` 为 `46 passed`；Ruff、mypy、`scripts/secret_scan.py`、`git diff --check` 均退出 0；`docker compose -f compose.yaml -f deploy/compose.public-ip.yaml config --format json` 已输出 `restart: unless-stopped`、公网 command、Mock env 和 `127.0.0.1:8000:8000`。
+- **未验收项：** 未在本机登录 ECS 执行实际部署、Nginx reload 或公网浏览器访问；公网可访问性仍需在服务器上执行更新后的命令后确认。

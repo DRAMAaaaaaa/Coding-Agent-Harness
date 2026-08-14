@@ -1,5 +1,22 @@
 services:
   harness:
+    command:
+      - python
+      - scripts/serve_demo.py
+      - --ready-file
+      - /state/ready.json
+      - --runtime-root
+      - /state
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --project-source
+      - /workspace/project
+      - --max-seconds
+      - "0"
+      - --keep-alive
+    restart: unless-stopped
     environment:
       HARNESS_LLM_PROVIDER: mock
       HARNESS_PUBLIC_HOST: ${HARNESS_PUBLIC_HOST:?必须设置公网 IPv4}

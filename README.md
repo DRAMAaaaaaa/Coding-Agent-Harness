@@ -68,7 +68,7 @@ docker run --rm -p 127.0.0.1:8000:8000 -v "${PWD}/examples/python_demo:/workspac
 
 项目源必须只读挂载到 `/workspace/project`，状态单独存入 `/state` 卷。Compose 默认只发布 localhost。Docker daemon、Nginx 和 ECS 浏览器主路径仍须按 [部署说明](docs/DEPLOYMENT.md) 在实机验收，不能仅凭静态配置宣称通过。
 
-短时公网 IP Mock 演示只能在用户在场时使用：确认无需保留默认站点后，执行 `sudo rm -f /etc/nginx/sites-enabled/default`，再执行 `sudo ln -sfn /etc/nginx/sites-available/coding-agent-harness /etc/nginx/sites-enabled/coding-agent-harness`、`nginx -t` 和 reload；安全组仅临时开放 TCP 80，结束后撤销。该入口是 HTTP：HTTP 页面、请求及临时会话头均为明文；无身份认证，任何可访问者都能交互。仅允许用户在场进行短时 Mock 演示，完成后立即关闭入口；长期生产必须使用 HTTPS、身份认证、会话与网络隔离等完整安全设计。
+公网 IP Mock 演示可按 [部署说明](docs/DEPLOYMENT.md) 以 `--max-seconds 0 --keep-alive` 和 `restart: unless-stopped` 常驻在 ECS 上：确认无需保留默认站点后，执行 `sudo rm -f /etc/nginx/sites-enabled/default`，再执行 `sudo ln -sfn /etc/nginx/sites-available/coding-agent-harness /etc/nginx/sites-enabled/coding-agent-harness`、`nginx -t`、`systemctl enable --now nginx` 和 reload；安全组只开放 TCP 80，不开放 8000。该入口是 HTTP：HTTP 页面、请求及临时会话头均为明文；无身份认证，任何可访问者都能交互。常驻公网只适合无真实数据、无真实 Key 的 Mock 演示；生产或长期对外使用必须使用 HTTPS、身份认证、会话与网络隔离等完整安全设计。
 
 ## 目录结构
 
@@ -87,9 +87,9 @@ docs/archive/              已归档的历史计划、规格、台账与报告
 
 ## 已知限制
 
-- 尚未提供用户认证或 HTTPS；公网入口只能是用户在场、短时、无真实数据的 Mock 演示。
+- 尚未提供用户认证或 HTTPS；公网入口只能用于无真实数据、无真实 Key 的 Mock 演示，不适合作为生产服务。
 - WebUI 尚未提供连接测试和主动清除；真实 Provider 网络调用及其凭据生命周期不应据此推断已验收。
-- 真实外网 Provider 任务尚未验收；短时公网 Docker/Nginx/ECS 操作也不等于生产部署。
+- 真实外网 Provider 任务尚未验收；公网 Docker/Nginx/ECS 操作也不等于生产部署。
 - 同一 UID 的恶意原生进程、长期多用户服务、任意网络/依赖工具、自动 merge/push 不在当前保证内。
 
 ## 第三方组件与许可证
@@ -112,7 +112,7 @@ docs/archive/              已归档的历史计划、规格、台账与报告
 
 - 当前产品能力：[docs/FEATURES.md](docs/FEATURES.md)
 - 五分钟答辩与机制演示：[docs/DEMO.md](docs/DEMO.md)
-- 本地/Docker/短时公网的验收边界：[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- 本地/Docker/公网 Mock 的验收边界：[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 - 安全与隐私边界：[docs/SECURITY.md](docs/SECURITY.md)
 - 学生本人填写的反思提纲：[REFLECTION.md](REFLECTION.md)
 - 历史规格、计划、台账与报告：[docs/archive/README.md](docs/archive/README.md)

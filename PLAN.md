@@ -1895,3 +1895,11 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 - **范围与结论：** 受审实现/返工范围为 `1ebd804..7edac7e`。第三轮独立复审 Critical / Important / Minor=`0/0/0`，Ready close=Yes；此前 `0/4/0` 与 `0/1/1` 仅为已处理的返工历史。
 - **新鲜证据：** 审查员独立运行最终交付文档定向契约为 `1 passed`，`git diff --check` 退出 0，HEAD `7edac7e` tracked 工作树干净。完整 `mingw32-make test` 的有效证据为 Python `849 passed, 15 skipped`、Ruff/mypy/ESLint/typecheck 通过、Vitest `66 passed`、Vite build 通过、Playwright `4 passed, 1 skipped`。
 - **关闭边界：** Task 5 已完成；Docker daemon、Nginx、ECS 浏览器与真实外网 Provider 未动态验收，仍按部署/安全文档标记为未验收，不因本次关闭而虚报。后续可按分支收尾流程处理，但本 Task 不 push、不 merge。
+
+### 2026-08-14 — 公网 Mock 常驻热修
+
+- **用户授权：** 用户选择方案 2，并明确要求“以最快速度和用量解决问题”“不需要冷启动执行和 TDD，直接在本对话中执行”。本次按运维热修处理，没有派发冷启动智能体，也没有执行完整红绿循环；该偏离仅适用于此常驻部署修复。
+- **目标：** 解决 ECS 公网演示因容器 24 小时超时或主机重启后不自动恢复而无法访问的问题；只覆盖 Mock 演示，不引入真实 Provider、Key、HTTPS 或认证。
+- **实现：** 公网 Compose 覆盖增加 `--max-seconds 0 --keep-alive`、`restart: unless-stopped`；`serve_demo.py` 允许 `--max-seconds 0` 表示无墙钟超时；部署文档改为 `up --build -d`、`systemctl enable --now nginx`，并说明常驻公网的明文和无认证风险。
+- **验证：** 聚焦 `pytest tests/demo/test_serve_cleanup.py tests/distribution/test_delivery_files.py -q` 为 `46 passed`；Ruff、mypy、`scripts/secret_scan.py`、`git diff --check` 均退出 0；`docker compose -f compose.yaml -f deploy/compose.public-ip.yaml config --format json` 已确认 command/restart/local bind/env 正确。
+- **边界：** 本地未直接登录 ECS 执行 `docker compose up -d`、Nginx reload 或公网浏览器访问；公网成功状态仍需用户在 ECS 上按更新后的部署命令实机确认。
