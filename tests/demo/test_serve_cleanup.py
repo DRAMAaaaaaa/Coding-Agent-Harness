@@ -127,6 +127,57 @@ def test_main_accepts_zero_max_seconds_for_long_running_demo(
     assert captured["max_seconds"] == 0
 
 
+def test_main_uses_stable_runtime_root_for_long_running_keep_alive_demo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    runtime_root = tmp_path / "runtime"
+
+    async def fake_serve(*args: object, **options: object) -> int:
+        captured["runtime_root"] = args[0]
+        captured["max_seconds"] = args[2]
+        captured.update(options)
+        return 0
+
+    monkeypatch.setattr(serve_demo, "_serve", fake_serve)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "serve_demo.py",
+            "--ready-file",
+            str(tmp_path / "ready.json"),
+            "--runtime-root",
+            str(runtime_root),
+            "--max-seconds",
+            "0",
+            "--keep-alive",
+        ],
+    )
+
+    assert serve_demo.main() == 0
+    assert captured["runtime_root"] == runtime_root
+    assert captured["max_seconds"] == 0
+    assert captured["keep_alive"] is True
+
+
+def test_stable_runtime_root_replaces_previous_fixture_and_state(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "runtime"
+    old_fixture = runtime_root / "fixture"
+    old_state = runtime_root / "state"
+    old_fixture.mkdir(parents=True)
+    old_state.mkdir()
+    (old_fixture / "old.py").write_text("old", encoding="utf-8")
+    (old_state / "harness.db").write_text("old", encoding="utf-8")
+
+    serve_demo._prepare_stable_runtime_root(runtime_root)
+
+    assert runtime_root.is_dir()
+    assert not old_fixture.exists()
+    assert not old_state.exists()
+
+
 class _Server:
     should_exit = False
 

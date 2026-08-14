@@ -43,6 +43,14 @@ sudo systemctl reload nginx
 
 公网覆盖文件使用 `--max-seconds 0 --keep-alive`，并设置 `restart: unless-stopped`：容器不会因 24 小时超时自动退出，ECS 或 Docker 重启后也会自动恢复，除非你显式执行 `docker compose ... down` 或 `docker compose ... stop`。
 
+公网演示时，直接把下面这个确定路径交给用户输入到 WebUI 的“项目路径”：
+
+```text
+/state/fixture
+```
+
+该路径是容器内可写的示例项目副本，不需要用户读取 `/state/ready.json`，也不会随 `session-*` 变化。
+
 ECS/目标主机安全组只开放 TCP 80，不要开放 8000。逐项用后端 localhost、固定 Host Nginx、本机外网 GET 与浏览器工作台完成实机验证后，才可记录为通过；当前 Docker daemon、Nginx 与 ECS 浏览器路径均未验收。入口没有用户认证或 HTTPS：HTTP 页面、请求及临时会话头均为明文；无身份认证，任何可访问者都能交互。常驻公网只适合无真实数据、无真实 Key 的 Mock 演示；生产或长期对外使用必须补 HTTPS、身份认证、会话与网络隔离等完整安全设计。
 
 ## 演示后撤销
@@ -56,4 +64,4 @@ sudo systemctl stop nginx
 
 ## 状态与剩余验收
 
-`/state` 只应使用专用卷或目录；每次启动创建唯一 `session-*`，`/state/ready.json` 指向最新会话，不会自动删除待审计现场。确认不再需要时由用户删除旧会话或重建专用卷。公网部署尚未验收；生产化还需要 HTTPS、认证、会话/Origin 防护、独立 OS 身份、备份、速率限制、网络策略与真实部署 E2E。
+`/state` 只应使用专用卷或目录；本地短时演示仍会创建唯一 `session-*`，公网常驻演示固定重建 `/state/fixture` 与 `/state/state`，`/state/ready.json` 指向当前服务。确认不再需要时由用户删除旧会话或重建专用卷。公网部署尚未验收；生产化还需要 HTTPS、认证、会话/Origin 防护、独立 OS 身份、备份、速率限制、网络策略与真实部署 E2E。

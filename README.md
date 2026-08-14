@@ -70,6 +70,8 @@ docker run --rm -p 127.0.0.1:8000:8000 -v "${PWD}/examples/python_demo:/workspac
 
 公网 IP Mock 演示可按 [部署说明](docs/DEPLOYMENT.md) 以 `--max-seconds 0 --keep-alive` 和 `restart: unless-stopped` 常驻在 ECS 上：确认无需保留默认站点后，执行 `sudo rm -f /etc/nginx/sites-enabled/default`，再执行 `sudo ln -sfn /etc/nginx/sites-available/coding-agent-harness /etc/nginx/sites-enabled/coding-agent-harness`、`nginx -t`、`systemctl enable --now nginx` 和 reload；安全组只开放 TCP 80，不开放 8000。该入口是 HTTP：HTTP 页面、请求及临时会话头均为明文；无身份认证，任何可访问者都能交互。常驻公网只适合无真实数据、无真实 Key 的 Mock 演示；生产或长期对外使用必须使用 HTTPS、身份认证、会话与网络隔离等完整安全设计。
 
+公网答辩时直接告诉用户在“项目路径”输入 `/state/fixture`；这是容器内固定的可写示例项目副本，不需要用户读取 ready JSON。
+
 ## 目录结构
 
 ```text

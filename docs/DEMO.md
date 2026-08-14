@@ -11,6 +11,14 @@ npm.cmd --prefix web run build
 
 从 `.tmp\ready.json` 读取 ready JSON 中的 localhost URL。请从 `.tmp\ready.json` 复制 `fixture` 字段值到“项目路径”，再输入需求“把 VALUE 修改为 2 并通过测试”。若改用自动验收，执行 `make test-e2e`；它会启动临时 Git fixture 和本地服务。
 
+公网 Mock 演示不需要让用户读取 ready JSON。演示者直接给出确定项目路径：
+
+```text
+/state/fixture
+```
+
+用户自己把 `/state/fixture` 输入到 WebUI 的“项目路径”，再继续六阶段演示。
+
 ## 六阶段工作台主路径（约 3 分钟）
 
 1. **项目接入**：填写“项目路径”，点击“接入项目”，审阅摘要后点击“建立信任”，确认只接入本地示例。

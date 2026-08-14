@@ -343,6 +343,9 @@ def test_public_ip_docs_describe_explicit_env_down_and_http_risk() -> None:
     assert "sudo systemctl enable --now nginx" in deployment
     assert "`--max-seconds 0 --keep-alive`" in deployment
     assert "`restart: unless-stopped`" in deployment
+    assert "直接把下面这个确定路径交给用户输入到 WebUI 的“项目路径”" in deployment
+    assert "/state/fixture" in deployment
+    assert "不需要用户读取 `/state/ready.json`" in deployment
     assert (
         "HARNESS_PUBLIC_HOST=47.76.86.198 HARNESS_PUBLIC_ORIGIN=http://47.76.86.198 "
         "docker compose -f compose.yaml -f deploy/compose.public-ip.yaml down"
@@ -632,6 +635,14 @@ def test_delivery_docs_keep_evidence_tracked_and_document_replay_steps() -> None
     for steps in (setup_steps, correction_steps):
         positions = [demo.index(step) for step in steps]
         assert positions == sorted(positions)
+    public_demo_steps = (
+        "公网 Mock 演示不需要让用户读取 ready JSON",
+        "演示者直接给出确定项目路径",
+        "/state/fixture",
+        "用户自己把 `/state/fixture` 输入到 WebUI 的“项目路径”",
+    )
+    positions = [demo.index(step) for step in public_demo_steps]
+    assert positions == sorted(positions)
 
 
 def test_delivery_docs_and_env_use_safe_placeholders() -> None:

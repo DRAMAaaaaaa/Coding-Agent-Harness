@@ -165,6 +165,18 @@ def _write_ready(path: Path, payload: dict[str, str]) -> None:
     temporary.replace(path)
 
 
+def _prepare_stable_runtime_root(runtime_root: Path) -> Path:
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    for child_name in ("fixture", "state"):
+        child = runtime_root / child_name
+        if child.exists():
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+    return runtime_root
+
+
 def _start_stdin_eof_watcher(
     loop: asyncio.AbstractEventLoop,
     stdin_closed: asyncio.Event,
@@ -482,7 +494,11 @@ def main() -> int:
     if arguments.runtime_root is not None:
         runtime_parent = arguments.runtime_root.resolve(strict=False)
         runtime_parent.mkdir(parents=True, exist_ok=True)
-        runtime_root = Path(mkdtemp(prefix="session-", dir=runtime_parent))
+        runtime_root = (
+            _prepare_stable_runtime_root(runtime_parent)
+            if arguments.max_seconds == 0 and arguments.keep_alive
+            else Path(mkdtemp(prefix="session-", dir=runtime_parent))
+        )
         return asyncio.run(
             _serve(
                 runtime_root,

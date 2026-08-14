@@ -1903,3 +1903,4 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 - **实现：** 公网 Compose 覆盖增加 `--max-seconds 0 --keep-alive`、`restart: unless-stopped`；`serve_demo.py` 允许 `--max-seconds 0` 表示无墙钟超时；部署文档改为 `up --build -d`、`systemctl enable --now nginx`，并说明常驻公网的明文和无认证风险。
 - **验证：** 聚焦 `pytest tests/demo/test_serve_cleanup.py tests/distribution/test_delivery_files.py -q` 为 `46 passed`；Ruff、mypy、`scripts/secret_scan.py`、`git diff --check` 均退出 0；`docker compose -f compose.yaml -f deploy/compose.public-ip.yaml config --format json` 已确认 command/restart/local bind/env 正确。
 - **边界：** 本地未直接登录 ECS 执行 `docker compose up -d`、Nginx reload 或公网浏览器访问；公网成功状态仍需用户在 ECS 上按更新后的部署命令实机确认。
+- **固定项目路径追加要求：** 用户要求“必须给用户一个确定的路径，由用户自己输入”。后续热修将公网常驻模式的 runtime root 固定为 `/state`，启动时重建 `/state/fixture` 与 `/state/state`，因此 WebUI 项目路径固定为 `/state/fixture`；本地短时演示仍保留 `session-*` 与 ready JSON 流程。
