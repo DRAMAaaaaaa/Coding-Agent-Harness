@@ -53,4 +53,10 @@
 
 ## 当前阶段
 
-Brainstorming、书面 `SPEC.md`、`PLAN.md` 和陌生智能体冷启动检查均已完成；Task 1—4 已实现、复审并合并到 `p1`。当前下一项是 Task 5（项目识别、仓库地图与每任务独立 worktree），必须继续按本文件的 Superpowers、TDD、隔离 worktree、双重评审和新鲜验证规则实施。
+Brainstorming、书面 `SPEC.md`、`PLAN.md` 和陌生智能体冷启动检查均已完成。2026-08-14 联合计划的工作台 Task 1—4 已关闭；当前执行 Task 5（最终工作台交付文档与学生反思提纲），仍须按 Superpowers、TDD、隔离 worktree、双重审查和新鲜验证规则实施。早期 MVP “Task 5（项目识别、仓库地图与 worktree）”是已关闭的历史路线条目，不是本轮任务。
+
+## 当前与历史文档边界
+
+- 根目录 `README.md`、`SPEC.md`、`PLAN.md`、`SPEC_PROCESS.md`、`AGENT_LOG.md`、本文件和 `docs/` 中的交付说明描述当前产品与当前过程。
+- 历史规格、计划、台账、报告只通过 `docs/archive/README.md` 及其 `specs/`、`plans/`、`ledgers/`、`reports/` 路径查阅；不得将 archive ledger 写回根目录旧路径。
+- 过程报告、临时证据、`.tmp/`、虚拟环境备份和 ignored 文件不因本轮文档工作被移动或删除。

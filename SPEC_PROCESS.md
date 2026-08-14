@@ -364,3 +364,10 @@ v3 已证明修订后的陌生执行者能够从零取得正确 RED 和 GREEN。
 - **隔离与范围：** 从计划提交 `67de2e0` 创建 `codex/co-learning-workbench-docs` worktree。陌生审计员不继承主对话，只允许读取 `SPEC.md`、联合计划，以及 Task 1 明确列出的 `web/src/types.ts`；禁止读取 Git 历史、其他过程文档或修改文件。
 - **结论：** `READY（Task 1）`。审计员确认 `workflow.ts` 的目标文件、公开类型/函数签名、状态和事件规则、RED/GREEN 命令与验收条件均明确；现有 `Task`、`TaskEvent`、`IntentCard`、`Workspace` 类型足以安全冷启动。
 - **修订：** 无实现接口阻塞，不修改 Task 1 计划。基线 Vitest `28 passed`，ESLint、TypeScript、Vite build 退出 0；首次命令仅暴露根 Node 缓存为空，随后只复用已有 `foundation` worktree 的完整依赖 Junction，没有联网安装。
+
+## 2026-08-14 共学工作台 Task 5 文档对齐记录
+
+- **前端逐节选择：** 当前说明以最终六阶段标题“项目接入、需求描述、计划审批、执行与验证、回放与纠正、交付与经验”为唯一用户路径；意图卡、失败提问、纠正分支和项目经验只描述已有 UI/测试证据，不把技术详情当作新后端能力。
+- **文档移动边界：** 当前根文档和 `docs/` 只导航活跃产品与交付；历史规格、计划、台账、报告均由 `docs/archive/README.md` 统一索引。本轮不再次移动归档、`.tmp/`、虚拟环境备份或 ignored 历史。
+- **Provider 勘误：** 虽存在 Provider 相关实现，当前 WebUI 没有连接测试和主动清除；真实外网 Provider 任务、Docker daemon、Nginx 与 ECS 浏览器路径均未验收。文档只允许离线 `ScriptedMockProvider` 作为课程主路径。
+- **反思边界：** 用户要求直接完成文档不构成代写学生反思的授权。`REFLECTION.md` 只给出问题、证据路径、建议字数和 AI 辅助声明，不写第一人称答案或虚构个人判断。

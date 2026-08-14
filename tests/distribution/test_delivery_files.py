@@ -469,33 +469,72 @@ def test_gitlab_has_exact_unit_test_job() -> None:
     assert "make test-unit" in script
 
 
-def test_readme_documents_real_mvp_commands_and_limits() -> None:
+def test_readme_documents_current_co_learning_product_and_limits() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     for heading in (
         "项目简介",
-        "核心机制",
+        "产品特色",
+        "已完成功能",
         "安装",
-        "源码运行",
-        "WebUI",
-        "Mock 演示",
-        "一键验证",
-        "Docker 与 Compose",
+        "运行",
+        "演示",
+        "分发",
         "目录结构",
         "安全边界",
-        "Provider 与凭据状态",
         "已知限制",
-        "下一步",
+        "第三方组件与许可证",
+        "课程交付导航",
     ):
         assert f"## {heading}" in readme
+    for phrase in (
+        "共学回放式 Coding Agent Harness",
+        "项目接入",
+        "需求描述",
+        "计划审批",
+        "执行与验证",
+        "回放与纠正",
+        "交付与经验",
+        "意图卡",
+        "纠正分支",
+        "项目经验",
+        "ScriptedMockProvider",
+        "尚未提供用户认证或 HTTPS",
+        "WebUI 尚未提供连接测试和主动清除",
+        "真实外网 Provider 任务尚未验收",
+    ):
+        assert phrase in readme
     for command in ("make test", "make test-unit", "make test-e2e", "make demo"):
         assert command in readme
-    assert "真实 DeepSeek/Qwen 调用尚未实现" in readme
-    assert "公网部署尚未验收" in readme
     docker_runs = [line for line in readme.splitlines() if line.startswith("docker run ")]
-    assert any(
-        ":/workspace/project:ro" in line and ":/state" in line
-        for line in docker_runs
-    )
+    assert any(":/workspace/project:ro" in line and ":/state" in line for line in docker_runs)
+
+
+def test_features_are_evidence_backed_and_reflection_is_student_authored() -> None:
+    features = (ROOT / "docs/FEATURES.md").read_text(encoding="utf-8")
+    for phrase in (
+        "需求 → 计划审批 → 隔离修改 → 确定性验证 → 回放与纠正 → 经验批准 → 交付",
+        "src/coding_agent_harness/agent/orchestrator.py",
+        "src/coding_agent_harness/feedback/engine.py",
+        "src/coding_agent_harness/learning/intent.py",
+        "src/coding_agent_harness/replay/branches.py",
+        "web/src/workbench/workflow.ts",
+        "scripts/mechanism_demo.py",
+    ):
+        assert phrase in features
+    reflection = (ROOT / "REFLECTION.md").read_text(encoding="utf-8")
+    assert "1500–2500 字" in reflection
+    assert "必须由学生本人撰写" in reflection
+    for heading in (
+        "Superpowers 技能",
+        "TDD",
+        "subagent-driven",
+        "SPEC / PLAN",
+        "Prompt / Context",
+        "凭据与分发",
+        "方法论批判",
+        "如果重做",
+    ):
+        assert f"## {heading}" in reflection
 
 
 def test_delivery_docs_and_env_use_safe_placeholders() -> None:
