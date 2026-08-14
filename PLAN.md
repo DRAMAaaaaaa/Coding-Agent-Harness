@@ -1889,3 +1889,9 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 - **审查输入：** 第二轮独立复审为 Critical / Important / Minor=`0/1/1`，仍不是通过结论。Important 要求 DEMO 说明从 ready JSON 的 `fixture` 复制到“项目路径”，并在建立信任前完成；Minor 要求 ignored 报告把首次失败降格为历史快照、以最终成功为当前结论。
 - **RED / GREEN：** 收紧 DEMO 语义顺序契约后，RED 为 `1 failed`（精确 fixture 指令缺失）；最小文字修复后 GREEN 为 `1 passed`。技术修复提交 `2d7e5e6`；未重跑全量 `make test`。
 - **待回填：** 过程提交与下一轮独立复审结论；不 push、不 merge，也不提前宣称审查通过。
+
+### 2026-08-14 — 共学回放工作台 Task 5 最终复审关闭
+
+- **范围与结论：** 受审实现/返工范围为 `1ebd804..7edac7e`。第三轮独立复审 Critical / Important / Minor=`0/0/0`，Ready close=Yes；此前 `0/4/0` 与 `0/1/1` 仅为已处理的返工历史。
+- **新鲜证据：** 审查员独立运行最终交付文档定向契约为 `1 passed`，`git diff --check` 退出 0，HEAD `7edac7e` tracked 工作树干净。完整 `mingw32-make test` 的有效证据为 Python `849 passed, 15 skipped`、Ruff/mypy/ESLint/typecheck 通过、Vitest `66 passed`、Vite build 通过、Playwright `4 passed, 1 skipped`。
+- **关闭边界：** Task 5 已完成；Docker daemon、Nginx、ECS 浏览器与真实外网 Provider 未动态验收，仍按部署/安全文档标记为未验收，不因本次关闭而虚报。后续可按分支收尾流程处理，但本 Task 不 push、不 merge。

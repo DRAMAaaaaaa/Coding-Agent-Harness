@@ -1363,3 +1363,9 @@
 - **TDD：** 先将 fixture 精确指令加入既有 DEMO 语义顺序契约，RED 为 `1 failed`、原因是目标文字不存在；最小补充 DEMO 后 GREEN 为 `1 passed`，顺序同时证明 fixture 位于“建立信任”之前。
 - **技术提交：** `2d7e5e6`（`fix: 明确演示项目 fixture 路径`）仅改 DEMO 与交付契约测试。忽略的报告改为“首次门禁历史快照”，把失败描述为已由外部权限成功复验的历史，不影响 tracked 交付。
 - **待回填：** 过程提交和下一轮独立审查结论；按指令未重跑全量 `make test`，不 push、不 merge。
+
+### 2026-08-14 — 共学回放工作台 Task 5 最终复审关闭
+
+- **最终复审：** 独立第三轮复审覆盖 `1ebd804..7edac7e`，Critical / Important / Minor=`0/0/0`，Ready close=Yes。审查员独立复验交付文档契约 `1 passed` 与 `git diff --check`，并确认 `7edac7e` 的 tracked 工作树干净。
+- **完整门禁证据：** 本轮有效的完整 `mingw32-make test` 为 Python `849 passed, 15 skipped`；Ruff、mypy、ESLint、TypeScript typecheck 与 Vite build 通过；Vitest `66 passed`；Playwright `4 passed, 1 skipped`。I4 的隔离 build 环境已通过外部权限精确复验，未以修改构建策略掩盖此前环境问题。
+- **关闭边界：** Task 5 至此完成。Docker daemon、Nginx、ECS 浏览器和真实外网 Provider 未动态验收，保持未验收表述；没有 push、merge、产品代码或测试修改。
