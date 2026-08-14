@@ -1356,3 +1356,10 @@
 - **GREEN 与技术提交：** 补齐正确 `workspace` 路径、OpenAI-compatible 运行时/本地 Provider 契约、tracked 反思证据与最终 UI 演示顺序后，定向交付契约为 `1 passed`。技术修复提交 `c320299`（`fix: 修正文档证据与演示路径`）。
 - **完整门禁：** 允许隔离依赖下载后，`mingw32-make test` 完成：Ruff、mypy 通过，Python `849 passed, 15 skipped`，ESLint/typecheck 通过，Vitest `5 files / 66 passed`，Vite build 通过，Playwright `4 passed, 1 skipped`。没有重试或修改 build 策略掩盖 I4。
 - **待回填：** 过程提交和后续独立审查结论按实际命令输出记录；不推送、不合并。
+
+### 2026-08-14 — 共学回放工作台 Task 5 第二轮复审返工（0/1/1）
+
+- **审查核对：** Important 成立：DEMO 虽提及 ready JSON，但没有指示把 `fixture` 字段值复制到“项目路径”，也未锁定其在“建立信任”之前。Minor 成立：ignored 报告顶部把首次隔离 build 失败保留为过期的最新阻塞，而后文已有成功结果。
+- **TDD：** 先将 fixture 精确指令加入既有 DEMO 语义顺序契约，RED 为 `1 failed`、原因是目标文字不存在；最小补充 DEMO 后 GREEN 为 `1 passed`，顺序同时证明 fixture 位于“建立信任”之前。
+- **技术提交：** `2d7e5e6`（`fix: 明确演示项目 fixture 路径`）仅改 DEMO 与交付契约测试。忽略的报告改为“首次门禁历史快照”，把失败描述为已由外部权限成功复验的历史，不影响 tracked 交付。
+- **待回填：** 过程提交和下一轮独立审查结论；按指令未重跑全量 `make test`，不 push、不 merge。

@@ -1883,3 +1883,9 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 - **RED / GREEN：** 新增交付文档证据/顺序契约，首轮为 `1 failed`（缺 Provider 运行时路径）；补齐证据与 tracked 反思路径后，顺序断言再暴露 DEMO 没有精确“回看‘纠正分支比较’”步骤；收紧为语义分段顺序后 GREEN 为 `1 passed`。技术修复提交 `c320299`。
 - **I4 与完整门禁：** 允许隔离依赖下载后，精确 wheel/sdist 测试为 `1 passed`；随后 `mingw32-make test` 为 Python `849 passed, 15 skipped`、Web lint/typecheck 通过、Vitest `66 passed`、Vite build 通过、Playwright `4 passed, 1 skipped`。未改变 pyproject 或 build 策略。
 - **待回填：** 过程提交和后续独立审查结论；Docker daemon、Nginx、ECS 浏览器与真实外网 Provider 均不提前标记验收。
+
+### 2026-08-14 — 共学回放工作台 Task 5 第二轮复审返工（0/1/1）
+
+- **审查输入：** 第二轮独立复审为 Critical / Important / Minor=`0/1/1`，仍不是通过结论。Important 要求 DEMO 说明从 ready JSON 的 `fixture` 复制到“项目路径”，并在建立信任前完成；Minor 要求 ignored 报告把首次失败降格为历史快照、以最终成功为当前结论。
+- **RED / GREEN：** 收紧 DEMO 语义顺序契约后，RED 为 `1 failed`（精确 fixture 指令缺失）；最小文字修复后 GREEN 为 `1 passed`。技术修复提交 `2d7e5e6`；未重跑全量 `make test`。
+- **待回填：** 过程提交与下一轮独立复审结论；不 push、不 merge，也不提前宣称审查通过。
