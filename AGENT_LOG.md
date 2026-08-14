@@ -1346,3 +1346,13 @@
 - **最终审查：** 受审完整范围为 `640c042..424edbc`；返工后的独立规约符合性与质量审查均为 Critical / Important / Minor=`0/0/0`，Ready for Task 5=Yes。
 - **新鲜验证：** 秘密扫描聚焦测试 `8 passed` 与归档契约 `3 passed`，共 11 项通过；实际 `python scripts/secret_scan.py` 无输出、退出 0，`git diff --check` 退出 0。完整 distribution 已如实记录为 `22 passed, 1 failed`：唯一失败是隔离构建环境在网络受限时无法从 PyPI 安装 `setuptools==83.0.0`，不归因于 Task 4，也不写为全量通过。
 - **关闭边界：** Task 4 的归档映射、秘密扫描边界和过程记录至提交 `424edbc` 均已受审关闭；未开始 Task 5，未修改产品功能或外部环境。
+
+### 2026-08-14 — 共学回放工作台 Task 5 独立审查返工（0/4/0）
+
+- **审查输入：** 技术基线 `1945fad`；独立审查为 Critical / Important / Minor=`0/4/0`，当前仅返工，绝不将该审查记录为通过。
+- **逐项核对：** I1 确认 `PLAN.md`/`AGENT_LOG.md` 没有当前 Task 5 条目，且 `REFLECTION.md` 指向 ignored report；I2 确认 FEATURES 写了不存在的 `workspaces`/`tests/workspaces` 且不足以定位真实 Provider 本地运行时；I3 确认 DEMO 省略 ready JSON、建立信任、按钮“从此纠正”、child 再次计划审批/批准和比较回看；I4 的受限环境隔离 build 曾在安装 `setuptools==83.0.0` 时因非 UTF-8 解码失败。
+- **RED：** 新增交付契约，首次运行因缺少 `src/coding_agent_harness/providers/openai_compatible.py` 的文档证据失败；其余缺口由同一契约与逐项源码/路径核对覆盖。
+- **I4 外部复验：** 允许隔离依赖下载后，精确 `test_wheel_and_sdist_include_migration_004_exactly_once` 为 `1 passed`，证明先前失败来自受限环境依赖获取/编码路径；未改 pyproject、build 策略或测试绕过。
+- **GREEN 与技术提交：** 补齐正确 `workspace` 路径、OpenAI-compatible 运行时/本地 Provider 契约、tracked 反思证据与最终 UI 演示顺序后，定向交付契约为 `1 passed`。技术修复提交 `c320299`（`fix: 修正文档证据与演示路径`）。
+- **完整门禁：** 允许隔离依赖下载后，`mingw32-make test` 完成：Ruff、mypy 通过，Python `849 passed, 15 skipped`，ESLint/typecheck 通过，Vitest `5 files / 66 passed`，Vite build 通过，Playwright `4 passed, 1 skipped`。没有重试或修改 build 策略掩盖 I4。
+- **待回填：** 过程提交和后续独立审查结论按实际命令输出记录；不推送、不合并。

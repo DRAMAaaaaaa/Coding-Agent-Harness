@@ -1875,3 +1875,11 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 ### 2026-08-14 — 共学回放工作台 Task 2 最终复审关闭
 
 - 最终受审范围为 `8c6d420..6ab0745`；独立复审结论 Critical / Important / Minor=`0/0/0`，Ready for Task 3=Yes。审查员独立运行 App 聚焦测试 `30/30` 与 `git diff --check` 均为通过。
+
+### 2026-08-14 — 共学回放工作台 Task 5：交付文档与学生反思提纲
+
+- **技术基线：** `1945fad` 更新最终工作台的 README、功能/演示/部署/安全说明、学生本人反思提纲和交付契约；其历史 Task 1—4 关闭记录保持原样。
+- **审查返工：** 独立审查为 Critical / Important / Minor=`0/4/0`，不表示审查已经通过。I1 要求过程台账与反思只指向 tracked 证据；I2 要求功能文档每项本地证据真实存在，并区分 Provider 运行时与外网验收；I3 要求演示锁定 ready JSON、信任、纠正 child 再审批和比较回看；I4 要求复核隔离 build 环境。
+- **RED / GREEN：** 新增交付文档证据/顺序契约，首轮为 `1 failed`（缺 Provider 运行时路径）；补齐证据与 tracked 反思路径后，顺序断言再暴露 DEMO 没有精确“回看‘纠正分支比较’”步骤；收紧为语义分段顺序后 GREEN 为 `1 passed`。技术修复提交 `c320299`。
+- **I4 与完整门禁：** 允许隔离依赖下载后，精确 wheel/sdist 测试为 `1 passed`；随后 `mingw32-make test` 为 Python `849 passed, 15 skipped`、Web lint/typecheck 通过、Vitest `66 passed`、Vite build 通过、Playwright `4 passed, 1 skipped`。未改变 pyproject 或 build 策略。
+- **待回填：** 过程提交和后续独立审查结论；Docker daemon、Nginx、ECS 浏览器与真实外网 Provider 均不提前标记验收。
