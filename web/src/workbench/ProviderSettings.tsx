@@ -1,4 +1,4 @@
-import { FormEvent, useLayoutEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { HarnessApi, ProviderProfile } from "../types";
 
 interface ProviderSettingsProps {
@@ -11,7 +11,7 @@ interface ProviderSettingsProps {
   onSelect(id: string): void;
 }
 
-export function ProviderSettings({ api, providers, selectedId, disabled, onProvidersChange, onSelect }: ProviderSettingsProps) {
+export function ProviderSettings({ api, providers, selectedId, disabled, resetVersion, onProvidersChange, onSelect }: ProviderSettingsProps) {
   const [open, setOpen] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [kind, setKind] = useState<ProviderProfile["kind"]>("deepseek");
@@ -20,6 +20,9 @@ export function ProviderSettings({ api, providers, selectedId, disabled, onProvi
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const close = (): void => { setApiKey(""); openerRef.current?.focus(); setOpen(false); };
+  // resetVersion 是父级明确发出的会话边界，必须同步销毁尚未提交的凭据状态。
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setApiKey(""); }, [resetVersion]);
   useLayoutEffect(() => {
     if (!open) return;
     const focusables = (): HTMLElement[] => [...(dialogRef.current?.querySelectorAll<HTMLElement>("button, input, select") ?? [])].filter((item) => !item.hasAttribute("disabled"));

@@ -156,6 +156,69 @@ describe("App", () => {
     expect(screen.getByText("+ new")).toBeVisible();
   });
 
+  it("创建纠正分支失败后保留用户的纠正说明", async () => {
+    const user = userEvent.setup();
+    const api = {
+      ...scriptedApi({ events: [taskEvents[0], event(2, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")] }),
+      getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "失败", evidence_sequences: [2], action: "验证", expected_result: "通过", actual_result: "失败", status: "recorded", source_event_sequence: 2, learning_card_id: null }]),
+      createCorrectionBranch: vi.fn(async () => { throw new Error("offline"); }),
+      getCorrectionComparison: vi.fn(),
+    };
+    render(<App api={api} />);
+    await createTrustedTask(user);
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "回放与纠正");
+    const correction = await screen.findByLabelText("纠正说明");
+    await user.type(correction, "保留我的思路");
+    await user.click(screen.getByRole("button", { name: "从此纠正" }));
+    expect(await screen.findByRole("status")).toBeVisible();
+    expect(screen.getByLabelText("纠正说明")).toHaveValue("保留我的思路");
+  });
+
+  it("分支已创建但比较请求失败后不重复显示纠正入口", async () => {
+    const user = userEvent.setup();
+    const api = {
+      ...scriptedApi({ events: [taskEvents[0], event(2, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")] }),
+      getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "失败", evidence_sequences: [2], action: "验证", expected_result: "通过", actual_result: "失败", status: "recorded", source_event_sequence: 2, learning_card_id: null }]),
+      createCorrectionBranch: vi.fn(async () => ({ id: "branch-1", workspace_id: workspace.id, parent_task_id: taskId, source_event_sequence: 2, child_task_id: null, status: "READY" as const, created_at: "2026-08-14T00:00:00Z" })),
+      getCorrectionComparison: vi.fn(async () => { throw new Error("comparison offline"); }),
+    };
+    render(<App api={api} />);
+    await createTrustedTask(user);
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "回放与纠正");
+    await user.type(await screen.findByLabelText("纠正说明"), "创建之后不重复");
+    await user.click(screen.getByRole("button", { name: "从此纠正" }));
+    await Promise.resolve();
+    expect(screen.queryByLabelText("纠正说明")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "从此纠正" })).not.toBeInTheDocument();
+  });
+
+  it("新任务不预填旧任务的提问和纠正说明", async () => {
+    const user = userEvent.setup();
+    const secondTask = { id: "00000000-0000-0000-0000-000000000002", workspace_id: workspace.id, state: "WAITING_PLAN_APPROVAL" as const };
+    const api = {
+      ...scriptedApi({ events: [taskEvents[0], event(2, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")] }),
+      createTask: vi.fn().mockResolvedValueOnce({ id: taskId, workspace_id: workspace.id, state: "WAITING_PLAN_APPROVAL" as const }).mockResolvedValueOnce(secondTask),
+      getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "失败", evidence_sequences: [2], action: "验证", expected_result: "通过", actual_result: "失败", status: "recorded", source_event_sequence: 2, learning_card_id: null }]),
+    };
+    render(<App api={api} />);
+    await createTrustedTask(user);
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "回放与纠正");
+    await user.type(await screen.findByLabelText("失败原因提问"), "旧任务的问题");
+    await user.type(await screen.findByLabelText("纠正说明"), "旧任务的纠正");
+    await goToStage(user, "需求描述");
+    const requirement = screen.getByLabelText("编码需求");
+    await user.clear(requirement);
+    await user.type(requirement, "新任务");
+    await user.click(screen.getByRole("button", { name: "生成计划" }));
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "回放与纠正");
+    expect(await screen.findByLabelText("失败原因提问")).toHaveValue("");
+    expect(screen.getByLabelText("纠正说明")).toHaveValue("");
+  });
+
   it("纠正分支切换子任务时清空父证据，子计划事件到达前不可批准", async () => {
     const user = userEvent.setup();
     let resolveComparison: ((value: never) => void) | undefined;
