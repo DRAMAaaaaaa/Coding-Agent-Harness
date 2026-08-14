@@ -1,11 +1,3 @@
-## 2026-08-14 — Task 2 审查后契约补救
-
-- 按 `receiving-code-review`、`test-driven-development`、`systematic-debugging` 补齐送审前证据；未改写 `6cb189e`/`fb4f1db`，未联网、未安装依赖、未记录凭据。
-- `resetVersion` 缺少 effect 时实际 RED：rerender 后 API Key 仍为测试占位值。实现 `useEffect([resetVersion])` 后 GREEN；局部 lint 豁免有明确理由：父级发出的同步会话边界必须销毁未提交凭据，不改为不确定定时清理。
-- 新增独立回归：分支 reject 保留纠正说明；comparison reject 后无重复入口；新任务不预填旧 question/correction；Intent 意图—行动—预期—实际—证据/状态对齐。
-- 事后 mutation 补救已真实执行：删除 Provider 初始 focus、首次 `setBranchCreated(true)`、Intent 字段渲染、question/correction 清理时，各最小测试按预期 FAIL；恢复后 GREEN。它们不是原始 TDD RED。
-- 新鲜验证：Vitest `5 files / 64 tests`、ESLint、TypeScript、Vite build 通过；新 build 后 Playwright `harness.spec.ts`=`1 passed (11.7s)`。待文档变更后执行 diff 检查和提交，再送复审。
-
 # 智能体工作日志
 
 本日志按时间顺序记录 AI4SE 项目的过程证据。日志中严禁出现凭据或虚构行为。
@@ -1306,3 +1298,9 @@
 - **关键修复：** 纠正分支成功切换 child task 前清除父任务事件、卡片、问答、纠正文本、比较、序号与不确定状态；child 未收到自己的 `PLAN_PROPOSED` 时没有批准入口。比较请求改为不阻塞 child 切换，成功标记在比较请求失败时仍保留，防止重复创建。
 - **其余修复：** 项目经验请求增加 workspace 生命周期保护；项目/新任务/child 切换统一清除问答与纠正状态。Provider 抽屉使用 layout effect 放置初始焦点，Tab/Shift+Tab 在焦点越界时回到首尾。意图卡展示行动、预期、实际、证据序号和状态。SSE 重连回归确认已解锁阶段仍可回看且 mutation 禁用。
 - **新鲜验证：** App/Provider 聚焦 Vitest 为 `2 files / 26 tests` 通过；完整 Task 2 Web 集为 `4 files / 59 tests` 通过，ESLint、TypeScript、Vite build 均退出 0；build 后 Playwright `harness.spec.ts` 为 `1 passed (11.9s)`，`git diff --check` 退出 0。返工待再次独立规约与质量审查。
+
+### 2026-08-14 — 共学回放工作台 Task 2 审查后契约补救与复审返工
+
+- **时间线修正：** 删除开头错置的 Task 2 段落，保留历史不改写并在既有 Task 2 审查返工后追加事实。`fb4f1db` 后的契约测试提交为 `ac24ec4`，过程记录为 `c4baff0`，comparison 异步隔离修复为 `092e6d7`，关联夹具类型修正为 `3b8f81a`；当前复审 C/I/M=`0/2/0`，不宣称已通过。
+- **既有契约补救：** resetVersion 实际 RED 是 rerender 后 Key 仍保留，GREEN 后使用带理由的局部 ESLint 豁免保留同步会话边界清理；Provider focus、branch marker、Intent 字段与上下文清理的 mutation 是事后补救，不是原始 RED。
+- **复审 0/2/0 修复：** 比较 Promise 立即附加 resolve/reject 转换，不等待 child `getTask`；`clearTaskContext()` 递增 generation，只允许当前上下文在比较结果到达时写回。RED 分别为 child 获取前无 rejection handler 与新项目显示旧比较；定向 GREEN 为 2/2。本轮修复后待最终复审和新鲜完整门禁。
