@@ -496,7 +496,7 @@ git commit -m "test: 验收共学工作台浏览器主路径"
 - Consumes: Git tracked Markdown inventory at Task start。
 - Produces: stable `docs/archive/{specs,plans,ledgers,reports}` and no tracked files at obsolete locations; Task 5 reads the combined plan from `docs/archive/plans/2026-08-14-co-learning-workbench-and-docs.md`。
 
-- [ ] **Step 1: 写精确移动 RED 契约**
+- [x] **Step 1: 写精确移动 RED 契约**
 
 在 `tests/distribution/test_delivery_files.py` 定义以下完整映射；不得在实施时增删条目：
 
@@ -551,7 +551,7 @@ def test_historical_docs_are_archived_without_losing_evidence() -> None:
 
 Expected: FAIL，归档索引/目标不存在且旧源仍存在。
 
-- [ ] **Step 2: 使用显式 Git move 建立归档**
+- [x] **Step 2: 使用显式 Git move 建立归档**
 
 ```powershell
 New-Item -ItemType Directory -Force docs\archive\ledgers, docs\archive\reports\2026-08-07-co-learning-replay-mvp, docs\archive\reports\2026-08-07-real-providers-and-credentials
@@ -570,7 +570,7 @@ git mv .superpowers\sdd\task-10-report.md docs\archive\reports\task-10-report.md
 
 不得通配移动 `.superpowers`，不得触碰未跟踪/受忽略报告。`git ls-files MVP_ISSUES.md DEFERRED_WORK.md docs/superpowers .superpowers/sdd` 必须无输出。
 
-- [ ] **Step 3: 建立索引并修复导航路径**
+- [x] **Step 3: 建立索引并修复导航路径**
 
 `docs/archive/README.md` 说明 specs/plans/ledgers/reports 用途、旧计划可能被取代、中间报告不代表最终状态、从未跟踪临时报告不伪造。精确替换活动导航：
 
@@ -584,7 +584,7 @@ DEFERRED_WORK.md -> docs/archive/ledgers/DEFERRED_WORK.md
 
 归档文档中描述“当时源路径”或本次迁移映射的历史文字不改成自指向；从未跟踪报告引用保留并由索引解释。
 
-- [ ] **Step 4: 增加链接契约并取得 GREEN**
+- [x] **Step 4: 增加链接契约并取得 GREEN**
 
 在测试顶部增加 `import re`，再加入：
 

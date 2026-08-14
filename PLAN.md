@@ -3,8 +3,8 @@
 ## 2026-08-10：恢复 Provider WebUI 真实连接验收
 
 - **状态：** 规格已批准，实施计划已编写，尚未创建实现 worktree。
-- **批准规格：** `docs/superpowers/specs/2026-08-10-provider-webui-probe-design.md`，提交 `ea08737`。
-- **详细计划：** `docs/superpowers/plans/2026-08-10-provider-webui-probe.md`。
+- **批准规格：** `docs/archive/specs/2026-08-10-provider-webui-probe-design.md`，提交 `ea08737`。
+- **详细计划：** `docs/archive/plans/2026-08-10-provider-webui-probe.md`。
 - **范围：** WebUI 会话 Key、DeepSeek/Qwen Probe、主动清除、DeepSeek 一次真实验收；真实 Coding Agent 继续由 Mock 驱动，Qwen 因无凭据只完成离线契约。
 - **执行单元：** Task 1 Provider 核心与 API；Task 2 WebUI 与离线浏览器验收；Task 3 真实 DeepSeek 验收、文档和 PR。
 - **下一门禁：** 用户选择 Subagent-Driven 或 Inline Execution 后，使用 `using-git-worktrees` 从包含批准规格 `ea08737` 和本计划提交的 `p1` 当前 HEAD 创建 `codex/provider-webui-probe`。
@@ -33,7 +33,7 @@
 - 每个 Task 固定执行顺序：失败测试 → 确认失败原因 → 最小实现 → 通过目标测试 → 重构 → 完整相关测试 → 规约符合性审查 → 代码质量审查 → 中文提交。
 - 后续实现采用“可验收纵向切片”优先级：在不改变依赖和冻结接口的前提下，先连通 WebUI 输入需求、计划审批、Agent 修改、确定性反馈、最终审查和代码/文档交付，再补不阻塞首版的增强能力。
 - 课程硬性要求、安全护栏、离线 Mock 核心测试、三机制演示、反馈闭环、停止逻辑、WebUI 主路径、E2E、一键测试、Docker 和双 CI 不得延期。
-- 非阻塞增强只有在不影响安全、主路径或验收且存在明确替代时才可延期；决定必须写入 `DEFERRED_WORK.md`，并同步披露于当前 Task 的 `PLAN.md` 状态、`AGENT_LOG.md` 和提交说明。
+- 非阻塞增强只有在不影响安全、主路径或验收且存在明确替代时才可延期；决定必须写入 `docs/archive/ledgers/DEFERRED_WORK.md`，并同步披露于当前 Task 的 `PLAN.md` 状态、`AGENT_LOG.md` 和提交说明。
 - 所有 Python 命令必须使用项目 `.venv` 中的 Python 3.11，不得依赖 PATH 中含义不明的 `python`；Windows 对应 `& .\.venv\Scripts\python.exe`，POSIX 对应 `.venv/bin/python`。后文简写 `python` 时均指该已验证解释器。
 - Windows PowerShell 中所有 npm 命令必须显式调用 `npm.cmd`，不得依赖可能被 ExecutionPolicy 拦截的 `npm.ps1`；POSIX 使用 `npm`。后文简写 npm 时必须按此平台规则展开，`scripts/test.ps1` 也必须通过 `Get-Command npm.cmd` 调用。
 
@@ -160,7 +160,7 @@ class TaskOrchestrator:
 
 ## Task 依赖、并行与状态
 
-> 当前交付顺序由 `docs/superpowers/plans/2026-07-16-minimal-viable-harness.md`
+> 当前交付顺序由 `docs/archive/plans/2026-07-16-minimal-viable-harness.md`
 > 的 MVP-1—MVP-4 取代原 Task 5—14 横向顺序；原条目保留为完整产品路线。
 
 **MVP Task 1 状态：** 已关闭。独立规约符合性与文档质量审查均为 CLEAN，证据见 `.superpowers/sdd/task-1-review.md`；未改变 `MVP-ISSUE-002`—`006` 的实现门禁。
@@ -189,7 +189,7 @@ class TaskOrchestrator:
 
 ### 可用产品优先交付基线
 
-批准设计见 `docs/superpowers/specs/2026-07-16-usable-product-priority-design.md`。完整产品的最短用户路径固定为：
+批准设计见 `docs/archive/specs/2026-07-16-usable-product-priority-design.md`。完整产品的最短用户路径固定为：
 
 ```text
 WebUI 接入项目并输入需求
@@ -202,7 +202,7 @@ WebUI 接入项目并输入需求
 → Mock 演示、E2E、一键测试、Docker 与 CI 重复验收
 ```
 
-Task 5—14 的发布范围和允许延期边界如下。表中的“延期候选”只有经过当前 Task 双重评审确认后才能进入 `DEFERRED_WORK.md`；未开始的计划内容不自动视为延期。
+Task 5—14 的发布范围和允许延期边界如下。表中的“延期候选”只有经过当前 Task 双重评审确认后才能进入 `docs/archive/ledgers/DEFERRED_WORK.md`；未开始的计划内容不自动视为延期。
 
 | Task | 发布必需范围 | 允许评估的延期候选 |
 |---|---|---|
@@ -221,7 +221,7 @@ Task 5—14 的发布范围和允许延期边界如下。表中的“延期候�
 
 1. 对照本表和该 Task 原始验收项列出未交付内容。
 2. 不满足延期条件的内容继续作为阻塞项，不得宣布 Task 完成。
-3. 合法延期写入 `DEFERRED_WORK.md`，包含影响、替代、触发条件和证据。
+3. 合法延期写入 `docs/archive/ledgers/DEFERRED_WORK.md`，包含影响、替代、触发条件和证据。
 4. 规约审查确认没有把安全或验收要求伪装为延期项；质量审查确认临时替代不会形成隐式失效路径。
 5. `PLAN.md` 状态和 `AGENT_LOG.md` 明确写“无延期”或列出延期编号。
 
@@ -1796,13 +1796,13 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 
 ## 共学回放式 Harness 增量路线（2026-08-07）
 
-**批准设计：** `docs/superpowers/specs/2026-08-07-co-learning-replay-harness-design.md`（精简修订提交 `2b811c0`）。
+**批准设计：** `docs/archive/specs/2026-08-07-co-learning-replay-harness-design.md`（精简修订提交 `2b811c0`）。
 
 **执行策略：** 全部 CL 阶段压缩为一条五 Task 纵向计划。每 Task 使用隔离 worktree、红—绿—重构、一次合并的规约/质量审查、聚焦验证和中文提交；只有最终 Task 运行新增路线的全量验收。
 
 | 阶段 | 状态 | 可独立验收的交付 | 精确计划 |
 |---|---|---|---|
-| CL-1 真实 Provider | Task 1—2 已关闭 | 会话 Key、DeepSeek/Qwen、现有 Agent 主路径 | `docs/superpowers/plans/2026-08-07-co-learning-replay-mvp.md` Task 1—2 |
+| CL-1 真实 Provider | Task 1—2 已关闭 | 会话 Key、DeepSeek/Qwen、现有 Agent 主路径 | `docs/archive/plans/2026-08-07-co-learning-replay-mvp.md` Task 1—2 |
 | CL-2 意图卡 | Task 3 已关闭 | 四类卡片与失败节点只读提问 | 同上 Task 3 |
 | CL-3 纠正分支 | Task 4 已关闭 | 单个失败节点、唯一分支、简化比较 | 同上 Task 4 |
 | CL-4 项目经验 | Task 5 已关闭 | 单条批准经验、下一任务引用、旗舰 E2E | 同上 Task 5 |
@@ -1817,7 +1817,7 @@ git commit -m "交付：完成容器、持续集成和项目文档（交付子�
 | 4 单级纠正分支 | 已完成（`bc46400..646eed0`；最终复审 Approved，C/I=`0/0`） | 父写租约冻结、唯一子分支、简化比较 |
 | 5 单条经验与最终验收 | 已完成并本地快进合并到 `p1`（技术受审范围 `e6ab842..e71d6b0`；Task 关闭 Head `3ab7530`；最终复审 Spec Yes、Approved，C/I/M=`0/0/0`） | 用户批准、下一任务引用、唯一旗舰 E2E |
 
-旧计划 `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md` 已废止。Keyring/加密 Vault 代码保留但不再扩展；Provider 管理、真实 smoke、通用/加密检查点、多级分支、复杂学习卡和最终 UI 设计必须在 Task 5 登记延期。若用户未提供真实凭据，只能记录真实联网“未执行”。
+旧计划 `docs/archive/plans/2026-08-07-real-providers-and-credentials.md` 已废止。Keyring/加密 Vault 代码保留但不再扩展；Provider 管理、真实 smoke、通用/加密检查点、多级分支、复杂学习卡和最终 UI 设计必须在 Task 5 登记延期。若用户未提供真实凭据，只能记录真实联网“未执行”。
 
 ### 新扩展冷启动门禁
 
@@ -1827,8 +1827,8 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 
 - **状态：** 已完成并本地快进合并到 `p1`；Task 关闭 Head `81c79dc`，技术受审 Head `f424190`，最终规约与质量审查 C/I/M=`0/0/0`。
 - **根因：** Ubuntu 24.04 完整测试误执行三个硬编码 `powershell.exe` 的 Windows 专用测试。
-- **批准设计：** `docs/superpowers/specs/2026-08-10-ci-powershell-tests-design.md`（提交 `988a2ae`）。
-- **精确计划：** `docs/superpowers/plans/2026-08-10-ci-powershell-tests.md`，单 Task，保持 Ubuntu 完整门禁并新增 Windows 聚焦作业。
+- **批准设计：** `docs/archive/specs/2026-08-10-ci-powershell-tests-design.md`（提交 `988a2ae`）。
+- **精确计划：** `docs/archive/plans/2026-08-10-ci-powershell-tests.md`，单 Task，保持 Ubuntu 完整门禁并新增 Windows 聚焦作业。
 - **完成门禁：** RED→GREEN、完整一键测试、机制演示、秘密扫描、YAML 解析、规约审查与质量审查。
 - **TDD 与验证：** RED 为缺少 `windows-powershell` 作业导致交付契约 `KeyError`；GREEN 聚焦 `6 passed`。`mingw32-make test` 为 Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`，Ruff、mypy、Web lint/typecheck/build 全部通过；机制演示三项 PASS，秘密扫描、`pip check`、YAML 解析和 `git diff --check` 退出 0。
 - **审查：** 规约审查 Spec compliant Yes；质量首审问题已通过 `f424190` 定向返工，最终质量复审 Ready to merge Yes，Critical / Important / Minor=`0/0/0`。
@@ -1837,27 +1837,29 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 
 - **状态：** 代码静态实现、规约/质量审查和最终返工已完成；功能分支已快进合并到 `p1`，`p1` 与 `main` 均已非强制推送到远程。集成技术 Head 为 `991b50c`；提交时间线：计划基线 `420b7bf`，冷启动修订 `836ce93`，实现 `b19a4d3`，过程记录 `aecdbe8`，首轮返工 `51b5dff`，最终安全/CI 返工 `c99730a`，收尾过程对齐 `86bf967`，收尾编号补充 `413336d`，最终时间线记录 `991b50c`。合并后新鲜门禁为 Python `840 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`，三机制 PASS；Docker daemon/Nginx 容器/ECS 动态验收仍待外部执行，未标记通过。
 - **目标：** 通过阿里云香港 ECS 的 `http://47.76.86.198` 短时展示只读示例项目与确定性 Mock Harness；容器 8000 继续只绑定宿主 localhost。
-- **批准设计：** `docs/superpowers/specs/2026-08-14-public-ip-mock-demo-design.md`（提交 `f4cb194`）。
-- **精确计划：** `docs/superpowers/plans/2026-08-14-public-ip-mock-demo.md`，单 Task 纵向切片。
+- **批准设计：** `docs/archive/specs/2026-08-14-public-ip-mock-demo-design.md`（提交 `f4cb194`）。
+- **精确计划：** `docs/archive/plans/2026-08-14-public-ip-mock-demo.md`，单 Task 纵向切片。
 - **硬边界：** 不使用真实 Provider/Key，不公开 8000，不挂载隐私项目，不宣称生产部署；演示结束后撤销公网 80。
 
 ## 2026-08-14 共学回放式 Harness 文档整理
 
 - **状态：** 原设计与精确计划已完成，但实施在创建 worktree 前由用户暂停；等待与已批准的前端工作台优化合并为新的联合计划，尚未移动或重写交付文档。
 - **目标：** 把文档整理为当前产品说明、课程必交根文档和可追溯历史归档，并只介绍当前 `main` 有代码/测试证据的共学能力。
-- **批准设计：** `docs/superpowers/specs/2026-08-14-documentation-refresh-design.md`（初始设计提交 `1f0b525`；计划前 Provider 证据勘误随本计划提交）。
-- **精确计划：** `docs/superpowers/plans/2026-08-14-documentation-refresh.md`；Task 1 归档与路径完整性，Task 2 当前介绍、演示、安全、部署、许可证与学生反思提纲，严格串行。
+- **批准设计：** `docs/archive/specs/2026-08-14-documentation-refresh-design.md`（初始设计提交 `1f0b525`；计划前 Provider 证据勘误随本计划提交）。
+- **精确计划：** `docs/archive/plans/2026-08-14-documentation-refresh.md`；Task 1 归档与路径完整性，Task 2 当前介绍、演示、安全、部署、许可证与学生反思提纲，严格串行。
 - **真实性边界：** 当前真实 Provider 运行时已接线，但 WebUI Probe/主动清除和真实外网任务验收未合入或未执行；`REFLECTION.md` 只生成学生本人填写提纲。
 
 ## 2026-08-14 共学回放式工作台前端优化
 
 - **状态：** Brainstorming 设计与书面规格已批准，联合实施计划已完成；用户已授权计划提交后直接按 Subagent-Driven 执行，无需再次审批。
 - **目标：** 把纵向堆叠的 WebUI 重构为六阶段专业教学工作台，以清晰操作流程承载意图回放、失败提问、纠正比较和项目经验。
-- **批准设计：** `docs/superpowers/specs/2026-08-14-co-learning-workbench-ui-design.md`。
+- **批准设计：** `docs/archive/specs/2026-08-14-co-learning-workbench-ui-design.md`。
 - **实施边界：** 复用现有 API，不新增后端能力；Mock 是默认路径，DeepSeek/Qwen 放在高级设置；桌面答辩优先并保持窄屏可操作。
 - **联合顺序：** 前端契约 → 组件/视觉 → 浏览器 E2E → 历史归档 → 最终界面对应的介绍文档 → 完整门禁与分支收尾。
-- **联合计划：** `docs/superpowers/plans/2026-08-14-co-learning-workbench-and-docs.md`；五个严格串行 Task，替代尚未执行的独立文档整理计划作为后续执行入口。
+- **联合计划：** `docs/archive/plans/2026-08-14-co-learning-workbench-and-docs.md`；五个严格串行 Task，替代尚未执行的独立文档整理计划作为后续执行入口。
 - **执行状态：** 隔离 worktree 与前端基线已通过；陌生冷启动审计 Task 1=READY，无计划修订。Task 1 已完成，完整技术与过程提交范围为 `fc02856..904e95c`（技术提交 `e4afdf4`、`8b5a26b`、`5a3ead7`、`a81d0b6` 及对应过程记录）；最终独立复审 Critical / Important / Minor=`0/0/0`，聚焦 Vitest `1 file / 24 tests` 通过，Ready for Task 2=Yes。Task 2 已完成，完整受审范围为 `8c6d420..6ab0745`；最终独立复审 C/I/M=`0/0/0`，Ready for Task 3=Yes。Task 3 已完成，完整受审范围为 `02ac2a7..e40c5ae`；最终独立复审 Critical / Important / Minor=`0/0/0`，Ready for Task 4=Yes。关键门禁为 Python 聚焦 `19 passed`、进程控制 `3 passed, 1 skipped`、Vitest `66 passed`、ESLint、TypeScript、Vite build 均通过，build 后真实主路径连续两次通过；审查员独立复验进程控制 `3 passed, 1 skipped`。
+
+- **Task 4 状态：** 进行中（隔离 worktree `codex/co-learning-workbench-docs`）。已依据归档前 Git 跟踪 Markdown 清单写入精确 `ARCHIVE_MOVES` 契约；RED 按预期因缺少归档索引失败。随后仅对清单中的文档逐项 `git mv`，并新增归档索引与当前路径链接契约；聚焦 GREEN 为 `3 passed`。尚待完整 distribution、秘密扫描、差异检查和独立规约/质量审查，未提前关闭。
 
 - **Task 3 最终 Minor：** 协作退出单测的 5ms 计时器已替换为确定性微任务，不改变产品行为；产品与浏览器断言不使用任意 sleep。
 

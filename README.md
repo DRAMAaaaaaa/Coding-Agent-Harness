@@ -118,4 +118,4 @@ Harness 只信任已批准的项目根、验证命令与配置指纹；普通工
 
 ## 下一步
 
-优先实现并安全评审 DeepSeek/Qwen 运行时接线和凭据生命周期；之后再考虑长期记忆、受审批的网络/依赖工具、多 Agent 调度、发布镜像与真实公网部署。延期范围以 `DEFERRED_WORK.md` 为准。
+优先实现并安全评审 DeepSeek/Qwen 运行时接线和凭据生命周期；之后再考虑长期记忆、受审批的网络/依赖工具、多 Agent 调度、发布镜像与真实公网部署。延期范围以 `docs/archive/ledgers/DEFERRED_WORK.md` 为准。

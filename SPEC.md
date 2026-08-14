@@ -365,7 +365,7 @@ make demo
 3. **CL-3：** 从一个验证失败节点创建一次纠正分支，保留原轨迹，并比较最终状态、验证摘要和 diff。
 4. **CL-4：** 用户批准一条简短项目经验；下一任务加载同一项目最近一条已批准经验并显示引用。
 
-完整精简设计见 `docs/superpowers/specs/2026-08-07-co-learning-replay-harness-design.md`。
+完整精简设计见 `docs/archive/specs/2026-08-07-co-learning-replay-harness-design.md`。
 
 ### 16.3 强制边界
 

@@ -20,7 +20,7 @@ MVP 只使用 Scripted Mock，不需要真实 Key。`.env.example` 只能保存�
 
 ## 同一 UID 边界
 
-首版不能抵御同一 UID 下恶意原生进程主动替换、移动或篡改私有状态目录。当前缓解措施是让 `state_root` 不进入 LLM/普通工具、进行路径身份和 Git 注册后验验证，并在不一致时 fail closed。需要抵御该威胁时，应使用独立 OS 身份、ACL 或 broker；详见 `DEFERRED_WORK.md` 的 `DW-05-001`。
+首版不能抵御同一 UID 下恶意原生进程主动替换、移动或篡改私有状态目录。当前缓解措施是让 `state_root` 不进入 LLM/普通工具、进行路径身份和 Git 注册后验验证，并在不一致时 fail closed。需要抵御该威胁时，应使用独立 OS 身份、ACL 或 broker；详见 `docs/archive/ledgers/DEFERRED_WORK.md` 的 `DW-05-001`。
 
 ## 容器边界
 

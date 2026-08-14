@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,65 @@ from scripts import serve_demo
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+ARCHIVE_MOVES = {
+    "MVP_ISSUES.md": "docs/archive/ledgers/MVP_ISSUES.md",
+    "DEFERRED_WORK.md": "docs/archive/ledgers/DEFERRED_WORK.md",
+    "docs/superpowers/specs/2026-07-14-coding-agent-harness-design.md": "docs/archive/specs/2026-07-14-coding-agent-harness-design.md",
+    "docs/superpowers/specs/2026-07-16-minimal-viable-harness-design.md": "docs/archive/specs/2026-07-16-minimal-viable-harness-design.md",
+    "docs/superpowers/specs/2026-07-16-usable-product-priority-design.md": "docs/archive/specs/2026-07-16-usable-product-priority-design.md",
+    "docs/superpowers/specs/2026-08-07-co-learning-replay-harness-design.md": "docs/archive/specs/2026-08-07-co-learning-replay-harness-design.md",
+    "docs/superpowers/specs/2026-08-10-ci-powershell-tests-design.md": "docs/archive/specs/2026-08-10-ci-powershell-tests-design.md",
+    "docs/superpowers/specs/2026-08-10-provider-webui-probe-design.md": "docs/archive/specs/2026-08-10-provider-webui-probe-design.md",
+    "docs/superpowers/specs/2026-08-14-co-learning-workbench-ui-design.md": "docs/archive/specs/2026-08-14-co-learning-workbench-ui-design.md",
+    "docs/superpowers/specs/2026-08-14-documentation-refresh-design.md": "docs/archive/specs/2026-08-14-documentation-refresh-design.md",
+    "docs/superpowers/specs/2026-08-14-public-ip-mock-demo-design.md": "docs/archive/specs/2026-08-14-public-ip-mock-demo-design.md",
+    "docs/superpowers/plans/2026-07-16-minimal-viable-harness.md": "docs/archive/plans/2026-07-16-minimal-viable-harness.md",
+    "docs/superpowers/plans/2026-08-07-co-learning-replay-mvp.md": "docs/archive/plans/2026-08-07-co-learning-replay-mvp.md",
+    "docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md": "docs/archive/plans/2026-08-07-real-providers-and-credentials.md",
+    "docs/superpowers/plans/2026-08-10-ci-powershell-tests.md": "docs/archive/plans/2026-08-10-ci-powershell-tests.md",
+    "docs/superpowers/plans/2026-08-10-provider-webui-probe.md": "docs/archive/plans/2026-08-10-provider-webui-probe.md",
+    "docs/superpowers/plans/2026-08-14-co-learning-workbench-and-docs.md": "docs/archive/plans/2026-08-14-co-learning-workbench-and-docs.md",
+    "docs/superpowers/plans/2026-08-14-documentation-refresh.md": "docs/archive/plans/2026-08-14-documentation-refresh.md",
+    "docs/superpowers/plans/2026-08-14-public-ip-mock-demo.md": "docs/archive/plans/2026-08-14-public-ip-mock-demo.md",
+    ".superpowers/sdd/2026-08-07-co-learning-replay-mvp/task-2-report.md": "docs/archive/reports/2026-08-07-co-learning-replay-mvp/task-2-report.md",
+    ".superpowers/sdd/2026-08-07-co-learning-replay-mvp/task-3-report.md": "docs/archive/reports/2026-08-07-co-learning-replay-mvp/task-3-report.md",
+    ".superpowers/sdd/2026-08-07-co-learning-replay-mvp/task-5-report.md": "docs/archive/reports/2026-08-07-co-learning-replay-mvp/task-5-report.md",
+    ".superpowers/sdd/2026-08-07-real-providers-and-credentials/task-3-implementer-report.md": "docs/archive/reports/2026-08-07-real-providers-and-credentials/task-3-implementer-report.md",
+    ".superpowers/sdd/task-6-report.md": "docs/archive/reports/task-6-report.md",
+    ".superpowers/sdd/task-7-report.md": "docs/archive/reports/task-7-report.md",
+    ".superpowers/sdd/task-10-report.md": "docs/archive/reports/task-10-report.md",
+}
+
+
+def test_historical_docs_are_archived_without_losing_evidence() -> None:
+    assert (ROOT / "docs/archive/README.md").is_file()
+    for source, target in ARCHIVE_MOVES.items():
+        assert not (ROOT / source).is_file(), source
+        archived = ROOT / target
+        assert archived.is_file(), target
+        assert archived.stat().st_size > 0, target
+
+
+def test_current_markdown_links_resolve_after_archiving() -> None:
+    current = (
+        "README.md", "SPEC.md", "PLAN.md", "SPEC_PROCESS.md", "AGENT_LOG.md", "AGENTS.md",
+        "docs/DEMO.md", "docs/DEPLOYMENT.md", "docs/SECURITY.md", "docs/archive/README.md",
+    )
+    link = re.compile(r"\[[^]]+\]\((?!https?://|mailto:)([^)#]+)(?:#[^)]+)?\)")
+    for relative in current:
+        document = ROOT / relative
+        for target in link.findall(document.read_text(encoding="utf-8")):
+            assert (document.parent / target).resolve().exists(), f"{relative} -> {target}"
+
+
+def test_current_process_docs_point_to_archive_instead_of_old_locations() -> None:
+    current = ("README.md", "SPEC.md", "PLAN.md", "SPEC_PROCESS.md", "AGENT_LOG.md", "AGENTS.md")
+    content = "\n".join((ROOT / path).read_text(encoding="utf-8") for path in current)
+    assert "docs/superpowers/" not in content
+    assert "`MVP_ISSUES.md`" not in content
+    assert "`DEFERRED_WORK.md`" not in content
 
 
 def _yaml(path: str) -> dict[str, object]:

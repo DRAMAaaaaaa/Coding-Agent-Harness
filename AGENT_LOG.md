@@ -36,7 +36,7 @@
 - **任务：** 完成 Superpowers Brainstorming 阶段并编写获得批准的产品规约。
 - **Superpowers 技能：** `brainstorming`。
 - **提示与上下文：** 用户定义了一个面向程序员、能够直接修改项目并交付可运行代码与文档的编码智能体。对话明确了范围、Provider、审批、记忆边界、反馈预算、WebUI、部署、测试、CI、Docker 和架构。
-- **智能体产出与证据：** 在提交 `72c8b23` 中添加 `SPEC.md`、`SPEC_PROCESS.md` 和 `docs/superpowers/specs/2026-07-14-coding-agent-harness-design.md`。提交前，`git diff --cached --check`、占位符扫描和凭据模式扫描均通过。没有生成实现代码或伪造冷启动检查结果。
+- **智能体产出与证据：** 在提交 `72c8b23` 中添加 `SPEC.md`、`SPEC_PROCESS.md` 和 `docs/archive/specs/2026-07-14-coding-agent-harness-design.md`。提交前，`git diff --cached --check`、占位符扫描和凭据模式扫描均通过。没有生成实现代码或伪造冷启动检查结果。
 - **人工干预：** 用户批准每个设计章节和完整设计；把默认计划规则修正为“除非明确跳过，否则先生成计划”；拒绝视觉伴侣；选择事件驱动的可恢复状态机。
 - **经验总结：** 显式版本化审批与有界进展检测，可以把模糊的“智能体自主性”转化为确定、可测试的 Harness 行为。在 `PLAN.md` 生成前，冷启动门禁必须保持未完成状态。
 
@@ -419,15 +419,15 @@
 
 - **用户决策：** 后续优先形成真正可使用、可演示、可验收的完整产品；未完成的非阻塞部分保留为之后修复的明确记录。用户批准“可验收纵向切片”方案，并确认课程硬性要求、安全护栏、离线 Mock、确定性反馈闭环、WebUI、E2E、CI 和 Docker 均不得延期。
 - **Superpowers 技能：** 使用 `brainstorming` 探索三种排序方式，选定纵向闭环优先；本轮只形成书面设计，未开始 Task 5 或修改实现代码。
-- **设计产物：** 新增 `docs/superpowers/specs/2026-07-16-usable-product-priority-design.md`，冻结最短产品闭环、不可延期门禁、可延期判定、`DEFERRED_WORK.md` 台账字段及完成规则。
+- **设计产物：** 新增 `docs/archive/specs/2026-07-16-usable-product-priority-design.md`，冻结最短产品闭环、不可延期门禁、可延期判定、`docs/archive/ledgers/DEFERRED_WORK.md` 台账字段及完成规则。
 - **后续门禁：** 等待用户复核书面设计；批准后使用 `writing-plans` 更新 `PLAN.md`，再进入后续实现。未联网、安装依赖、推送或接触凭据。
 
 ### 2026-07-16 — PLAN-PRODUCT-PRIORITY
 
-- **用户批准：** 用户复核并批准 `docs/superpowers/specs/2026-07-16-usable-product-priority-design.md`，允许把纵向闭环优先级落实到后续计划。
+- **用户批准：** 用户复核并批准 `docs/archive/specs/2026-07-16-usable-product-priority-design.md`，允许把纵向闭环优先级落实到后续计划。
 - **Superpowers 技能：** 使用 `writing-plans` 更新现有主计划；本次只修改计划、延期台账和过程记录，没有开始 Task 5 实现。
 - **计划变化：** 修正 Task 4 为已完成；为 Task 5—14 冻结发布必需范围、可评估的延期候选、最短完整用户路径和逐 Task 延期审计门禁。
-- **延期台账：** 新增 `DEFERRED_WORK.md`，定义唯一编号、状态、优先级、登记条件、影响/替代/恢复/证据字段。当前没有已批准延期项，未开始的 Task 不计为延期。
+- **延期台账：** 新增 `docs/archive/ledgers/DEFERRED_WORK.md`，定义唯一编号、状态、优先级、登记条件、影响/替代/恢复/证据字段。当前没有已批准延期项，未开始的 Task 不计为延期。
 - **范围与安全：** 没有降低课程硬性验收、安全、Mock、反馈闭环、WebUI、E2E、Docker 或 CI 要求；未联网、安装依赖、推送或接触凭据。
 
 ### 2026-07-16 07:18 +08:00 — IMPL-005-START
@@ -444,7 +444,7 @@
 - **TDD RED—GREEN：** detector 初始 RED 为 `ModuleNotFoundError: coding_agent_harness.workspace`，首轮 GREEN 为 `10 passed, 1 skipped`；撤回未被初始断言证明的 fixture 分支后，Python build/Node scripts RED 为 `2 failed`，恢复最小通用逻辑后转绿。scanner 初始 RED 为缺失 `workspace.scanner`；首轮 GREEN `6 passed, 1 skipped`；真实仓库子目录可被 Git 向上解析造成路径基准混用的纠正 RED 为 `2 failed`，直属非链接 `.git` 根标记校验后转绿。worktree 初始 RED 为缺失 `workspace.worktrees`，首轮 GREEN `8 passed`；runner 在 `git worktree add` 启动时抛 `OSError` 的纠正 RED 为 `1 failed`，归并失败清理后转绿为 `9 passed`。
 - **测试基础设施纠偏：** 全量 pytest 第一遍把独立 `tests/fixtures/python_project/tests/test_sample.py` 当 Harness 测试收集并因 fixture `src` 不在顶层导入路径报错；根因是静态项目 fixture 未排除。`tests/conftest.py` 精确忽略 `fixtures` 后全量恢复，未修改 fixture 的独立项目结构。
 - **新鲜验证：** `python -m pytest tests/workspace -q --durations=10` 为 `29 passed, 2 skipped`，10,000 文件合成扫描耗时 `0.40s`；`ruff check src tests` 全通过；`mypy src` 检查 22 个源文件无问题；全量 pytest 为 `359 passed, 3 skipped`；`git diff --check` 通过。两个 Task 5 skip 均为本机 Windows 无符号链接权限，第三个为既有同类 skip。
-- **自审与延期：** Python/Node、严格自定义命令信任标志、10,000/10,001 边界、README/AGENTS/配置大小限制、Git argv、空格路径、脏主工作区保护、同 Workspace 单写、分支/目标/基准冲突、失败清理和脏任务安全释放均有覆盖。Task 5 发布必需范围无延期，`DEFERRED_WORK.md` 保持无记录；其他语言仍是未开始增强候选，不登记延期。
+- **自审与延期：** Python/Node、严格自定义命令信任标志、10,000/10,001 边界、README/AGENTS/配置大小限制、Git argv、空格路径、脏主工作区保护、同 Workspace 单写、分支/目标/基准冲突、失败清理和脏任务安全释放均有覆盖。Task 5 发布必需范围无延期，`docs/archive/ledgers/DEFERRED_WORK.md` 保持无记录；其他语言仍是未开始增强候选，不登记延期。
 - **范围与安全：** 未修改 001/002、未新增 003 或仓储、未实现 Task 6；未联网、安装依赖、推送、合并、操作主 worktree 或接触凭据。当前实现者验证通过但仍待独立规约符合性和代码质量审查，不宣称 Task 5 终审完成。
 
 ### 2026-07-16 08:42 +08:00 — IMPL-005-R1
@@ -462,7 +462,7 @@
 - **架构结论与用户授权：** R1 规约复审仍 FAIL。独立分析确认在 Python 3.11、Windows/Linux 和外部 Git CLI 组合下，无法仅靠同一进程的路径检查跨平台绝对阻止同 UID 恶意原生进程在检查后交换父目录。用户批准首版采用“宿主私有 `state_root` + 后验验证 + 不确定即保留现场人工接管”的 fail-safe 边界，并把独立 OS 身份/ACL/broker 加固登记为 `DW-05-001`。
 - **TDD RED：** 首轮因缺少 `WorktreeUncertainError` 得到收集错误；仅添加错误类型后，5 个状态机目标全部失败：add 非零仍抛普通创建错误并清理现场、未启动 OSError 仍调用 `branch -d`、add 返回 0 不检查注册、remove 假成功与残留注册仍删除 marker。另一个 release 路径身份交换用例稳定 RED 为泄漏 `WorktreeStateError`。
 - **GREEN 状态机（经 R3 收窄）：** Git add 返回非零后不主动删除仍存在的 target/branch 等现场、不回滚 Git 已完成的副作用并保留 marker，抛固定 `WorktreeUncertainError`；后续 create 被 `.active` 阻塞。只有 runner 抛专用“进程确定未启动”异常才只删除本次 marker，不递归 target、不处理 branch，并允许下一任务继续；普通 `OSError` 不再带有未启动语义。add 返回 0 后验证目标仍在私有状态根、目标自身 Git 根、worktree 注册的 path/HEAD/branch；remove 返回 0 后验证目标消失且注册移除。任何身份、注册或结果不一致均保留 marker、进入人工处理；生产代码完全移除 `shutil.rmtree` 与自动 branch 删除。
-- **文档与延期：** `SPEC.md` 9.2/14 明确 state_root 不进入 LLM/普通工具，首版信任同一 OS 账户不主动篡改；正常用户并发仅指项目/worktree 编辑，不宣称抵御同 UID 恶意进程。`PLAN.md` 冻结 Task 6/13 必须验证普通工具访问 state_root 固定 `DENY/PATH_ESCAPE`。`DEFERRED_WORK.md` 新增 P1 `DW-05-001`，记录用户影响、临时替代和恢复门禁。
+- **文档与延期：** `SPEC.md` 9.2/14 明确 state_root 不进入 LLM/普通工具，首版信任同一 OS 账户不主动篡改；正常用户并发仅指项目/worktree 编辑，不宣称抵御同 UID 恶意进程。`PLAN.md` 冻结 Task 6/13 必须验证普通工具访问 state_root 固定 `DENY/PATH_ESCAPE`。`docs/archive/ledgers/DEFERRED_WORK.md` 新增 P1 `DW-05-001`，记录用户影响、临时替代和恢复门禁。
 - **新鲜验证：** `Python 3.11.9`；workspace `39 passed, 3 skipped in 9.93s`；10,000 文件小于 5 秒硬断言通过且未进入 0.43 秒以上的前十慢项；Ruff 全通过；mypy 检查 23 个源文件无问题；全量 pytest `369 passed, 4 skipped in 12.09s`；`git diff --check` 通过。三个 Task 5 skip 均为本机 symlink 权限，junction 与路径交换测试有效运行；第四个为既有 Task 4 同类 skip。
 - **范围与残余风险：** 未新增依赖、迁移或 Task 6 代码，未联网、推送、合并或接触凭据。残余风险被准确限定为同 UID 原生进程可制造拒绝服务/人工恢复状态，当前没有提供独立身份隔离保证；R2 实现与验证完成，等待独立规约复审。
 
@@ -477,7 +477,7 @@
 
 ### 2026-07-16 — DOC-005-R4
 
-- **最终规约审查：** Task 5 实现结论为 PASS；唯一 Minor 是 `DEFERRED_WORK.md` 把 worktree 与 Harness 私有状态目录的包含关系写反。
+- **最终规约审查：** Task 5 实现结论为 PASS；唯一 Minor 是 `docs/archive/ledgers/DEFERRED_WORK.md` 把 worktree 与 Harness 私有状态目录的包含关系写反。
 - **文档纠正：** 仅将该句纠正为“worktree 放在 Harness 私有状态目录中、项目目录外”，与 `SPEC.md:250` 和 `PLAN.md` Task 5 一致；未改写既有历史，待独立复审。
 
 ### 2026-07-16 — IMPL-005-R5-QUALITY
@@ -511,38 +511,38 @@
 
 - **独立最终复核：** 最终规约审查为 PASS，最终代码质量审查为 APPROVED；生产代码与测试的 Critical、Important、Minor 均为 0。复核确认核心 `cf2a84a` 在普通启动后/cleanup `Exception` 与宿主级 `BaseException` 之间保持正确分类，参数化 `KeyboardInterrupt/SystemExit` 覆盖清理后原样传播。
 - **复核证据：** `tests/workspace/test_processes.py` 为 `12 passed`，`git diff --check` 退出 0。唯一 ignored 文档 Minor 是 `.superpowers/sdd/task-5-report.md` 顶部仍笼统声称所有启动后/cleanup 异常均为不确定状态，且历史导航只写 R1—R6；现已改为普通 `Exception` 映射不确定、宿主级 `BaseException` 清理后原样传播，并更新为 R1—R7。
-- **完成与范围：** `PLAN.md` Task 5 步骤 6 已勾选；`.superpowers/sdd/progress.md` 同步为 complete、review clean。没有修改生产代码、测试或 `DEFERRED_WORK.md`，没有运行全量测试、联网、merge 或 push；批准的 `DW-05-001` 保持不变。
+- **完成与范围：** `PLAN.md` Task 5 步骤 6 已勾选；`.superpowers/sdd/progress.md` 同步为 complete、review clean。没有修改生产代码、测试或 `docs/archive/ledgers/DEFERRED_WORK.md`，没有运行全量测试、联网、merge 或 push；批准的 `DW-05-001` 保持不变。
 
 ### 2026-07-16 — REVIEW-005-WHOLE-BRANCH
 
 - **结论撤回：** 新的整分支冷审查对 `6b2f21e..61d4560` 给出 Spec compliant=No、Quality approved=No、Ready to merge=No；此前阶段性 PASS/APPROVED 不能作为合并依据。
-- **阻塞问题：** 发现 Windows 扩展路径别名可绕过 state/Git 根重叠检查，以及 Git 的 fsmonitor、hooks、签名程序和 checkout filter 可在扫描、worktree add/remove 中隐式执行外部代码；另有配置信任指纹缺失和 fixture 不可运行等问题。完整台账写入 `MVP_ISSUES.md`。
+- **阻塞问题：** 发现 Windows 扩展路径别名可绕过 state/Git 根重叠检查，以及 Git 的 fsmonitor、hooks、签名程序和 checkout filter 可在扫描、worktree add/remove 中隐式执行外部代码；另有配置信任指纹缺失和 fixture 不可运行等问题。完整台账写入 `docs/archive/ledgers/MVP_ISSUES.md`。
 - **根因调查：** 三个只读调查智能体分别复现路径身份、Git 隐式执行和信任/fixture 问题。确认 `core.fsmonitor=false` 在旧 Git 中可能执行名为 `false` 的程序，安全值必须为空；`git log` 必须显式 `--no-show-signature`；worktree materialize 前必须审计并拒绝首版不支持的外部 filter。
 - **用户决策：** 用户要求重新规划并只保留必要功能，批准“现有实现上的纵向 MVP”方案。首版以 Scripted Mock 跑通完整 Harness，保留 Python/Node 和 DeepSeek/Qwen 接口，不要求真实模型联网验收。
 
 ### 2026-07-16 — DESIGN-MVP-001
 
 - **技能：** 使用 `brainstorming` 重新确认目标、范围、替代方案、架构、安全边界和验收标准；设计获得用户逐段批准。
-- **书面设计：** 新增 `docs/superpowers/specs/2026-07-16-minimal-viable-harness-design.md`，把后续交付压缩为 MVP-0—MVP-4 五个纵向实施单元。
+- **书面设计：** 新增 `docs/archive/specs/2026-07-16-minimal-viable-harness-design.md`，把后续交付压缩为 MVP-0—MVP-4 五个纵向实施单元。
 - **过程状态：** Task 5 恢复为安全返工中；本次只修改设计、问题台账和过程文档，不修改生产代码，不 merge/push，不声称安全问题已修复。
 
 ### 2026-07-16 — PLAN-MVP-001
 
 - **技能：** 用户确认书面 MVP 设计后，使用 `writing-plans` 生成精简实施计划。
 - **计划结构：** 新计划把交付分为 MVP-0—MVP-4，并拆成 10 个可独立 TDD、评审和提交的 Task；MVP-1 先关闭 Task 5 全部安全阻塞项，随后实现工具/反馈/Agent、API/WebUI 和交付门禁。
-- **范围控制：** 计划不包含长期记忆、真实模型联网、依赖安装、工具网络、Git 远程操作或外部 filter 执行；所有非首版能力要求在 Task 1 登记到 `DEFERRED_WORK.md`。
+- **范围控制：** 计划不包含长期记忆、真实模型联网、依赖安装、工具网络、Git 远程操作或外部 filter 执行；所有非首版能力要求在 Task 1 登记到 `docs/archive/ledgers/DEFERRED_WORK.md`。
 - **实现状态：** 本次只写计划，不修改生产代码、不运行实现测试、不 merge/push。
 
 ### 2026-07-16 — DOC-MVP-001
 
 - **任务与技能：** 执行 MVP-0 Task 1，使用 `executing-plans`、`using-git-worktrees` 和 `verification-before-completion`；完整读取仓库 `AGENTS.md`、任务简报、批准的最小可用产品设计与实施计划，并确认在隔离分支 `codex/workspaces` 中工作。
-- **执行顺序：** 根 `PLAN.md` 明确由精简计划的 MVP-1—MVP-4 取代原 Task 5—14 横向顺序，原条目只保留为完整产品路线；`MVP_ISSUES.md` 将状态一致性问题标为“已修，待复审”，不提前关闭。
-- **延期登记：** `DEFERRED_WORK.md` 新增 `DW-MVP-001`—`DW-MVP-006`，分别登记长期记忆、多任务/多 Agent、真实 DeepSeek/Qwen 联网验收、依赖安装/工具网络/Git 远端操作、外部 checkout filter 正式执行和高级 UI；每项均记录用户影响、MVP 替代和恢复条件。既有 `DW-05-001` 保持不变。
-- **验证与范围：** 本任务只修改 `DEFERRED_WORK.md`、`PLAN.md`、`AGENT_LOG.md` 和 `MVP_ISSUES.md`，不修改生产代码或测试，不联网、不安装依赖、不 merge/push、不接触凭据。按任务简报执行占位符扫描与 `git diff --check`，证据记录在忽略的 `.superpowers/sdd/task-1-report.md`；追踪变更以 `docs: 冻结最小可用产品执行顺序` 提交，随后等待独立规约符合性审查和代码质量审查。
+- **执行顺序：** 根 `PLAN.md` 明确由精简计划的 MVP-1—MVP-4 取代原 Task 5—14 横向顺序，原条目只保留为完整产品路线；`docs/archive/ledgers/MVP_ISSUES.md` 将状态一致性问题标为“已修，待复审”，不提前关闭。
+- **延期登记：** `docs/archive/ledgers/DEFERRED_WORK.md` 新增 `DW-MVP-001`—`DW-MVP-006`，分别登记长期记忆、多任务/多 Agent、真实 DeepSeek/Qwen 联网验收、依赖安装/工具网络/Git 远端操作、外部 checkout filter 正式执行和高级 UI；每项均记录用户影响、MVP 替代和恢复条件。既有 `DW-05-001` 保持不变。
+- **验证与范围：** 本任务只修改 `docs/archive/ledgers/DEFERRED_WORK.md`、`PLAN.md`、`AGENT_LOG.md` 和 `docs/archive/ledgers/MVP_ISSUES.md`，不修改生产代码或测试，不联网、不安装依赖、不 merge/push、不接触凭据。按任务简报执行占位符扫描与 `git diff --check`，证据记录在忽略的 `.superpowers/sdd/task-1-report.md`；追踪变更以 `docs: 冻结最小可用产品执行顺序` 提交，随后等待独立规约符合性审查和代码质量审查。
 
 ### 2026-07-16 — IMPL-MVP-002
 
-- **任务与技能：** 执行 MVP Task 2“统一路径身份并在文件访问前拒绝逃逸”；完整读取 `AGENTS.md`、任务简报、`MVP_ISSUES.md`、`superpowers:test-driven-development`、`superpowers:verification-before-completion` 及测试反模式说明。固定使用 `E:\Coding Agent Harness\.venv\Scripts\python.exe`，在既有隔离 worktree `codex/workspaces` 上从基线 `b72215c` 开始。
+- **任务与技能：** 执行 MVP Task 2“统一路径身份并在文件访问前拒绝逃逸”；完整读取 `AGENTS.md`、任务简报、`docs/archive/ledgers/MVP_ISSUES.md`、`superpowers:test-driven-development`、`superpowers:verification-before-completion` 及测试反模式说明。固定使用 `E:\Coding Agent Harness\.venv\Scripts\python.exe`，在既有隔离 worktree `codex/workspaces` 上从基线 `b72215c` 开始。
 - **TDD RED：** 首轮因缺少共享模块得到 1 个收集错误，只添加旧语义等价接口骨架后重新取得有效行为 RED：`15 failed, 40 passed, 3 skipped`。失败覆盖未知 `\\.\`/GLOBALROOT/Volume/畸形扩展命名空间未拒绝、硬链接身份未用 `samefile` 补证、解析权限错误原样泄漏、5 类 Windows drive-relative/绝对 drive/UNC/反斜杠逃逸在拒绝前触发 `exists`，以及 `\\?\` drive 别名与 Git 根重叠却执行 `mkdir`。
 - **最小 GREEN 与重构：** 新增共享 `governance.path_identity`，统一 `collapse_windows_extended_path/path_key/same_path/is_within/paths_overlap`；PathGuard、Database、WorktreeManager 和 Scanner 全部迁移。WorktreeManager 在首次 `mkdir` 前执行双向物理重叠检查；scanner 先按宿主语义拒绝 Windows 逃逸，再以缓存的父目录身份完成 containment，最后才允许 `exists/stat`；POSIX 保留反斜杠文件名语义。既有对象以 `samefile` 补证，权限、网络或重解析错误固定 fail closed。
 - **严格于简报伪代码之处：** `\\?\C:\...` 与 `\\?\UNC\server\share\...` 中出现 `.`/`..` 不被折叠为普通路径，因为扩展命名空间不保证与 Win32 常规规范化语义等价；畸形 UNC、NT `\??\`、`\\.\`、GLOBALROOT 和 Volume GUID 均固定拒绝。该收紧遵循已批准的“只折叠可证明别名、未知设备命名空间 fail closed”不变量。
@@ -570,7 +570,7 @@
 
 ### 2026-07-16 — IMPL-MVP-004-VERIFICATION-TRUST
 
-- **任务、技能与基线：** 执行 MVP Task 4“绑定全部验证配置并修复离线 fixture”；完整读取 `AGENTS.md`、Task 4 简报、`MVP_ISSUES.md`、detector/models/fixture/tests，以及 `using-superpowers`、`test-driven-development`、`verification-before-completion` 和测试反模式说明。固定使用 `E:\Coding Agent Harness\.venv\Scripts\python.exe` 与 Node `v24.15.0`，Windows npm 启动器为 `E:\nodejs\npm.cmd`；基线为 `e50f343`，工作分支为隔离 worktree `codex/workspaces`。
+- **任务、技能与基线：** 执行 MVP Task 4“绑定全部验证配置并修复离线 fixture”；完整读取 `AGENTS.md`、Task 4 简报、`docs/archive/ledgers/MVP_ISSUES.md`、detector/models/fixture/tests，以及 `using-superpowers`、`test-driven-development`、`verification-before-completion` 和测试反模式说明。固定使用 `E:\Coding Agent Harness\.venv\Scripts\python.exe` 与 Node `v24.15.0`，Windows npm 启动器为 `E:\nodejs\npm.cmd`；基线为 `e50f343`，工作分支为隔离 worktree `codex/workspaces`。
 - **旧行为探针与 TDD RED：** 将 Python/Node fixture 复制到系统临时目录，忽略 cache/node_modules，清除 `PYTHONPATH/NODE_PATH` 并限制 PATH；旧 Python test 因 `ModuleNotFoundError: sample` 返回 2，旧 Node test/lint/typecheck/build 因缺少 vitest/eslint/tsc 均返回 1。随后 detector focused 得到 `14 failed, 13 passed, 1 skipped`，证明 package/pyproject 推导命令无 trust、raw 变化不失效、旧 harness 摘要不是 v1 manifest、无命令状态错误、模型不拒绝不一致组合，以及 Windows 返回不可由 `shell=False` 启动的 `npm`。
 - **最小 GREEN：** 每个存在的 `.harness.yml`、`package.json`、`pyproject.toml` 只做一次有界读取，raw bytes 分别 SHA256，缺失源显式为 `null`；绑定规范化 commands、env allowlist、timeout，以 canonical JSON 和 `coding-agent-harness\0verification-trust\0v1\0` 领域分隔生成 64 位摘要。只要存在任一命令即要求 trust；无命令才允许 false/None，模型后置校验拒绝其他组合。Windows 推导 `npm.cmd`，其他平台推导 `npm`。focused 转为 `27 passed, 1 skipped`。
 - **离线 fixture 与性能门禁：** Python 改为 `src/sample/__init__.py` 并配置 pytest `pythonpath=["src"]`；Node 声明 ESM，仅使用 `node:test`、`node:assert/strict` 和 `node --check`。独立副本中 Node 四命令均返回 0，且没有 `NODE_PATH` 或 `node_modules`。10,000 文件 CI 测试只断言功能并记录耗时，不再硬断言 wall clock；本机独立基准 call 为 `0.88s`，满足小于 5 秒目标。
@@ -586,7 +586,7 @@
 
 ### 2026-07-16 — DOC-MVP-004-R1-SPEC-MINOR
 
-- **复审 Minor 修复：** 使用 `receiving-code-review` 与 `verification-before-completion` 核对返工后规约复审、`PLAN.md` 和 `MVP_ISSUES.md`；仅纠正 Task 5 报告“当前问题”段残留的旧阶段结论，明确当前仍等待整分支规约复审，并把先前规约 PASS 与质量审查/返工保留为历史证据。未修改生产代码、测试或 `MVP-ISSUE-003/004/006`。
+- **复审 Minor 修复：** 使用 `receiving-code-review` 与 `verification-before-completion` 核对返工后规约复审、`PLAN.md` 和 `docs/archive/ledgers/MVP_ISSUES.md`；仅纠正 Task 5 报告“当前问题”段残留的旧阶段结论，明确当前仍等待整分支规约复审，并把先前规约 PASS 与质量审查/返工保留为历史证据。未修改生产代码、测试或 `MVP-ISSUE-003/004/006`。
 
 ### 2026-07-22 — IMPL-MVP-1-FINAL-QUALITY-FIX
 
@@ -594,25 +594,25 @@
 - **根因与版本探针：** 初始探针确认 Git 2.31.1 的 `config --local --no-includes -z --list` 输出为 `key\nvalue\0`，能看到 include/includeIf 声明但不展开外部配置；但质量复审进一步证明该命令仍先做 repository discovery，会受 primary/linked `commondir` 与 `extensions.worktreeConfig`/`config.worktree` 影响，因此不能作为审计根。固定 Git 随后在无仓库的 `%TEMP%` cwd 中对显式 common config 执行 `config --file <path> --no-includes --get` 与 `-z --list`，两者均退出 0，支撑无 repository discovery 的最终架构。其余根因仍是不受信 containment 与受信配置身份补证混用、`is_symlink()` 不识别 junction，以及最终 `same_path` 位于异常映射外。
 - **TDD RED：** 首轮四组独立最小复现共 `17 failed`，覆盖跨 anchor 零探测、四类 repository-local 配置、两层 junction/trusted linked gitfile 与最终 identity 异常。质量复审追加 drive-relative `Z:payload`、rooted-relative `\payload` 的 PathGuard/path identity/Policy/registration 回归，旧实现得到 `6 failed, 246 deselected`；primary `commondir` 重定向、`config.worktree` reparse 与 trusted linked `commondir` 改写得到 `3 failed, 21 deselected`。切换 exact-file audit 后的 `21 failed` 均定位为 synthetic runner 对 `-C` 的旧假设，修正 fixture 后未保留为产品 RED。
 - **最小 GREEN：** Windows 路径关系对含 drive/root 但非 absolute 的输入在任何 identity probe 前 fail closed，PathGuard 在普通相对路径拼接前调用该门禁；显式受信 Worktree 配置继续使用 `trusted_paths_overlap`。SafeGit 对 primary 拒绝任何 `commondir`，对 linked 每命令 no-follow 有界复验 `commondir` 身份与严格 `../..` 内容，拒绝 `extensions.worktreeConfig` 和任何 `config.worktree`；随后在安全 cwd 对已验证 common config 执行 `config --file <approved-config> --no-includes -z --list`，audit request 无 `-C` 且先于每条 protected request。scanner toplevel、trusted linked context、safety assets 和最终 `WorktreeUncertainError` 映射保持原修复。
-- **新鲜证据与状态：** 独立规约审查为 CLEAN。最终 focused 为 `292 passed, 6 skipped`；governance/storage/workspace 为 `466 passed, 13 skipped`；全量 pytest 为 `536 passed, 13 skipped`；Ruff `All checks passed!`；mypy 为 26 个源文件无问题；pip check 无损坏依赖。独立质量审查确认全部生产阻塞已修复，只要求本条及 `PLAN.md`、`MVP_ISSUES.md` 同步已替换的安全机制，现等待同一审查者复核；`MVP-ISSUE-003/004/006` 保持待复审，`DW-05-001` 未改变，Task 5 状态仍为“质量返工中”。
+- **新鲜证据与状态：** 独立规约审查为 CLEAN。最终 focused 为 `292 passed, 6 skipped`；governance/storage/workspace 为 `466 passed, 13 skipped`；全量 pytest 为 `536 passed, 13 skipped`；Ruff `All checks passed!`；mypy 为 26 个源文件无问题；pip check 无损坏依赖。独立质量审查确认全部生产阻塞已修复，只要求本条及 `PLAN.md`、`docs/archive/ledgers/MVP_ISSUES.md` 同步已替换的安全机制，现等待同一审查者复核；`MVP-ISSUE-003/004/006` 保持待复审，`DW-05-001` 未改变，Task 5 状态仍为“质量返工中”。
 
 ### 2026-07-22 — IMPL-MVP-1-FINAL-SCANNER-NOFOLLOW
 
 - **任务、技能与边界：** 最终整分支规约门禁发现 scanner tracked path no-follow Important 后，完整阅读 `AGENTS.md`、`.superpowers/sdd/mvp1-final-spec-gate.md`、scanner 实现/测试和最新质量返工报告，并使用 `systematic-debugging`、`test-driven-development`、`verification-before-completion`。基线父提交为 `9d92e05`；`5c2b60b` 是 amend 前历史哈希，当前稳定技术提交 `af11fea` 已包含 `MVP-ISSUE-010`—`014` 的技术修复。本轮只修复 `MVP-ISSUE-014` 与对应过程状态，不实现 MVP-2、不联网、不安装依赖、不 merge/push。
 - **根因与 TDD RED：** 根因是 `_validate_tracked_path()` 在 no-follow 分类前调用 `candidate.exists()`，会 follow tracked symlink/reparse 的外部或 UNC 目标。消费者级 Windows reparse 注入契约在旧实现得到 `1 failed, 1 skipped`，精确失败于 `scanner.py:220` 的 `exists`，记录为 `[('exists', linked-to-unc.txt)]`；真实 symlink 用例因当前账户无创建 symlink 权限跳过。该平台限制不阻塞 Windows reparse 注入契约。
 - **最小 GREEN 与回归：** candidate 在任何 `exists`、follow-target `stat` 或 `resolve` 前先 `lstat`；缺失路径保持返回，symlink/reparse 固定映射为 `RepositoryScanError`，普通对象才继续 containment。GREEN 目标为 `1 passed, 1 skipped` 且记录的 follow-target `exists/stat/resolve` 调用为空；scanner 全文件为 `20 passed, 3 skipped`。真实临时父仓加入受控子仓 gitlink 后 scanner 返回 `('.gitmodules', 'README.md', 'nested')`，普通文件、缺失 tracked 路径与 gitlink 语义保持。
-- **当前状态与台账：** `PLAN.md`、本日志、`MVP_ISSUES.md` 与 Task 5 报告均将 `5c2b60b` 标为 amend 前历史哈希，并记录当前稳定技术提交 `af11fea` 已包含 `MVP-ISSUE-010`—`014` 的技术修复；历史审查数量明确为快照。`MVP-ISSUE-003/004/006/008`—`014` 均未提前关闭。scanner focused 为 `20 passed, 3 skipped`，governance/storage/workspace 为 `467 passed, 14 skipped`，全量 pytest 为 `537 passed, 14 skipped`；Ruff、mypy、pip check 与差异检查通过。技术修复已提交，当前等待最终整分支规约/质量门禁。
+- **当前状态与台账：** `PLAN.md`、本日志、`docs/archive/ledgers/MVP_ISSUES.md` 与 Task 5 报告均将 `5c2b60b` 标为 amend 前历史哈希，并记录当前稳定技术提交 `af11fea` 已包含 `MVP-ISSUE-010`—`014` 的技术修复；历史审查数量明确为快照。`MVP-ISSUE-003/004/006/008`—`014` 均未提前关闭。scanner focused 为 `20 passed, 3 skipped`，governance/storage/workspace 为 `467 passed, 14 skipped`，全量 pytest 为 `537 passed, 14 skipped`；Ruff、mypy、pip check 与差异检查通过。技术修复已提交，当前等待最终整分支规约/质量门禁。
 
 ### 2026-07-23 — DOC-MVP-1-FINAL-GATE-SYNC
 
-- **文档同步：** 完整复核 `AGENTS.md` 与 `.superpowers/sdd/mvp1-final-spec-rereview.md` 后，仅同步 `PLAN.md`、`MVP_ISSUES.md`、本日志及忽略的 Task 5 过程报告。`5c2b60b` 明确标为 amend 前历史哈希；当前稳定技术提交 `af11fea` 已包含 `MVP-ISSUE-010`—`014` 的技术修复；当前状态统一为“技术修复已提交，等待最终整分支规约/质量门禁”。
+- **文档同步：** 完整复核 `AGENTS.md` 与 `.superpowers/sdd/mvp1-final-spec-rereview.md` 后，仅同步 `PLAN.md`、`docs/archive/ledgers/MVP_ISSUES.md`、本日志及忽略的 Task 5 过程报告。`5c2b60b` 明确标为 amend 前历史哈希；当前稳定技术提交 `af11fea` 已包含 `MVP-ISSUE-010`—`014` 的技术修复；当前状态统一为“技术修复已提交，等待最终整分支规约/质量门禁”。
 - **门禁与范围：** `MVP-ISSUE-003/004/006/008`—`014` 全部保持待复审，未提前关闭。未修改生产代码、测试或设计，未联网、安装依赖、merge、push 或接触凭据；关键词一致性检查与 `git diff --check` 均通过。忽略的 `.superpowers/sdd/mvp1-final-docs-report.md` 仅作过程证据，不进入提交。
 
 ### 2026-07-23 — IMPL-MVP-1-SCANNER-PARENT-NOFOLLOW
 
 - **任务、技能与范围：** 最终质量门禁发现父目录 reparse 的唯一 Important 后，完整阅读 `AGENTS.md`、`.superpowers/sdd/mvp1-final-quality-gate.md`、scanner 实现/测试和最新质量返工报告，并使用 `systematic-debugging`、`test-driven-development`、`verification-before-completion`。本轮只处理 `MVP-ISSUE-015`，不扩大到其他模块、MVP-2、网络、依赖安装、merge 或 push。
 - **根因、TDD 与最小修复：** 真实本地 `mklink /J` 父 junction 的消费者级 RED 为 `1 failed, 23 deselected`：旧实现先对 `dir/file.txt` 执行 leaf `lstat`，再以会 follow 的父目录解析得到“路径越界”。GREEN 从已解析 root 按 `PurePosixPath.parts` 无缓存逐级执行 no-follow `lstat`；每个既有非叶组件只允许普通、非 symlink/reparse 目录，父缺失维持既有返回，且只在安全父下检查 leaf。没有引入布尔 containment 缓存；同 UID 主动竞争继续由 `DW-05-001` 覆盖。
-- **当前证据与状态：** scanner 全文件为 `27 passed, 3 skipped in 10.77s`，覆盖多级父、真实 junction、Windows reparse 属性、父非目录、父/leaf 缺失、普通嵌套文件、真实 gitlink、POSIX 反斜杠和 10,000/10,001。`MVP-ISSUE-015` 技术修复已提交为 `c376216`；`PLAN.md`、本日志、`MVP_ISSUES.md` 及 Task 5 报告当前统一等待最终规约与质量双门禁，`MVP-ISSUE-003/004/006/008`—`015` 均未提前关闭。
+- **当前证据与状态：** scanner 全文件为 `27 passed, 3 skipped in 10.77s`，覆盖多级父、真实 junction、Windows reparse 属性、父非目录、父/leaf 缺失、普通嵌套文件、真实 gitlink、POSIX 反斜杠和 10,000/10,001。`MVP-ISSUE-015` 技术修复已提交为 `c376216`；`PLAN.md`、本日志、`docs/archive/ledgers/MVP_ISSUES.md` 及 Task 5 报告当前统一等待最终规约与质量双门禁，`MVP-ISSUE-003/004/006/008`—`015` 均未提前关闭。
 - **新鲜验证：** governance/storage/workspace 为 `474 passed, 14 skipped in 94.07s`；全量 pytest 为 `544 passed, 14 skipped in 96.23s`；Ruff、mypy（26 个源文件）和 `pip check` 均通过。差异检查已通过；状态保持等待最终规约与质量双门禁，不据此提前关闭任何问题。
 
 ### 2026-07-23 — DOC-MVP-1-CLOSURE
@@ -975,16 +975,16 @@
 
 ### 2026-08-07 — BRAINSTORM-CO-LEARNING-REPLAY
 
-- **范围与技能：** 使用 Superpowers `brainstorming`，核对当前实现、`SPEC.md`、`PLAN.md`、`DEFERRED_WORK.md` 和最近提交；本轮只进行尚未完成能力的产品设计，没有修改 Harness 实现、安装依赖、联网调用 Provider、接触凭据或 push。
+- **范围与技能：** 使用 Superpowers `brainstorming`，核对当前实现、`SPEC.md`、`PLAN.md`、`docs/archive/ledgers/DEFERRED_WORK.md` 和最近提交；本轮只进行尚未完成能力的产品设计，没有修改 Harness 实现、安装依赖、联网调用 Provider、接触凭据或 push。
 - **用户批准的定位：** 产品第一特色确定为“证据驱动的共学回放式 Coding Harness”，主要帮助程序员理解真实项目中的工程决策。原轨迹不可改写；纠正从语义检查点创建新轨迹；回放以结构化意图卡为单位；提问、纠正和补充需求严格分离；学习卡每次由用户确认后才进入长期记忆；默认使用引导执行，同时保留自动执行。
 - **范围收敛：** 用户选择“共学纵向闭环优先”，并批准本轮只包含真实 DeepSeek/Qwen 与凭据、意图卡与引导执行、检查点与分支回放、项目学习卡四阶段。高风险工具、多 Agent、最终 UI 和正式部署另立后续规格。本轮估算约 50 万—90 万 Token、35—60 小时。
-- **设计产出：** 完整增量架构、数据流、数据模型、安全恢复、确定性检索、测试不变量、旗舰验收场景和完成标准已写入 `docs/superpowers/specs/2026-08-07-co-learning-replay-harness-design.md`；占位符、内部一致性、范围和歧义自审已完成，等待用户最终复核后进入 `writing-plans`。
+- **设计产出：** 完整增量架构、数据流、数据模型、安全恢复、确定性检索、测试不变量、旗舰验收场景和完成标准已写入 `docs/archive/specs/2026-08-07-co-learning-replay-harness-design.md`；占位符、内部一致性、范围和歧义自审已完成，等待用户最终复核后进入 `writing-plans`。
 
 ### 2026-08-07 — PLAN-CL1-REAL-PROVIDERS
 
 - **范围与技能：** 用户最终批准共学回放设计并要求开始实施；使用 Superpowers `writing-plans`，先把四阶段拆为顺序子项目，再为 CL-1“真实 Provider 与凭据”编写精确文件、接口、RED/GREEN、验证、双重评审和逐 Task 提交计划。未修改实现代码、安装依赖、联网或接触凭据。
 - **增量边界：** CL-1 复用现有 `LLMProvider`、`AgentOrchestrator`、`EventStore`、治理、ToolRegistry 和 worktree；6 个 Task 依次交付配置持久化、凭据保险库、受限 Registry、Provider API、真实运行时和最小 WebUI/验收。CL-2—CL-4 在前一阶段接口稳定后分别生成精确计划，避免提前固化错误接口。
-- **规格同步：** `SPEC.md` 新增第 16 节，写入已批准特色、四阶段范围、安全边界和旗舰验收；`PLAN.md` 新增阶段路线、CL1-1—CL1-6 状态表和陌生智能体冷启动门禁。详细计划位于 `docs/superpowers/plans/2026-08-07-real-providers-and-credentials.md`，下一步是计划自审、提交和冷启动检查。
+- **规格同步：** `SPEC.md` 新增第 16 节，写入已批准特色、四阶段范围、安全边界和旗舰验收；`PLAN.md` 新增阶段路线、CL1-1—CL1-6 状态表和陌生智能体冷启动门禁。详细计划位于 `docs/archive/plans/2026-08-07-real-providers-and-credentials.md`，下一步是计划自审、提交和冷启动检查。
 
 ### 2026-08-07 — CL1-1 修复轮次 2
 
@@ -1046,7 +1046,7 @@
 
 - **用户决策：** 用户要求缩小所有 CL Task，而非仅缩减 CL-1，并批准方案 A：CL-1—CL-4 各保留一个能展示产品特色的最小能力。
 - **技能与设计：** 使用 `brainstorming` 依次批准最小范围、复用现有事件/Agent 的架构、WebUI/API 错误边界和五 Task 验收设计；精简规格提交为 `2b811c0`。
-- **计划结果：** 使用 `writing-plans` 把旧六 Task Provider 计划和未展开的 CL-2—4 合并为 `docs/superpowers/plans/2026-08-07-co-learning-replay-mvp.md` 的五个纵向 Task。旧 Provider 计划明确标记废止。
+- **计划结果：** 使用 `writing-plans` 把旧六 Task Provider 计划和未展开的 CL-2—4 合并为 `docs/archive/plans/2026-08-07-co-learning-replay-mvp.md` 的五个纵向 Task。旧 Provider 计划明确标记废止。
 - **关键约束发现：** 现有 `WorktreeManager` 每 Workspace 只有一个活动写租约；纠正分支不能直接并行创建。新计划以“冻结父 worktree 为只读、保留现场、释放写租约、再创建唯一子分支”解决，不放宽单写者边界。
 - **成本策略：** 不再冷启动；实现者只读单 Task brief，任务审查合并规约/质量，Minor 登记不返工，聚焦测试逐 Task 运行，全量仅在最终 Task 运行。
 
@@ -1131,7 +1131,7 @@
 - **最终范围与复审：** 受审范围为 `e6ab842..e71d6b0`。经过终审顺序、冻结幂等、崩溃恢复、Demo cleanup 与旗舰 E2E 的定向返工，最终合并规约/质量复审为 Spec Yes、Assessment Approved，Critical / Important / Minor=`0/0/0`，Ready to merge Yes。
 - **交付结果：** 已连通验证失败意图卡、零工具提问、单级纠正分支、子任务验证与比较、最终批准、用户批准项目经验、同 Workspace 下一任务注入；旗舰真实 REST/SSE E2E 证明下一任务第一条 `ACTION_PARSED` 为 `run_verification`。终审先冻结再完成持久化，事件/状态分步失败可单次重试恢复；单进程共享锁保护跨实例 worktree marker 生命周期，冻结父任务不会被 Demo cleanup 释放。
 - **主控新鲜证据：** 同一次 `mingw32-make test` 退出 0：Python `825 passed, 15 skipped`、Vitest `28 passed`、Playwright `3 passed, 1 skipped`；Ruff、mypy（68 个源文件）、Web ESLint/typecheck 与 Vite build 全部通过。`mingw32-make demo` 三项 PASS，秘密扫描、`pip check`、`git diff --check` 与工作树状态检查通过。
-- **范围与限制：** 未联网调用 DeepSeek/Qwen、未使用真实 Key、未安装新依赖、未 push。Provider 管理/持久凭据 UI、真实 smoke、通用或加密检查点、多级分支、复杂学习卡与最终视觉设计继续按 `DEFERRED_WORK.md` 延期，不影响本轮安全、主路径或验收。
+- **范围与限制：** 未联网调用 DeepSeek/Qwen、未使用真实 Key、未安装新依赖、未 push。Provider 管理/持久凭据 UI、真实 smoke、通用或加密检查点、多级分支、复杂学习卡与最终视觉设计继续按 `docs/archive/ledgers/DEFERRED_WORK.md` 延期，不影响本轮安全、主路径或验收。
 
 ### 2026-08-08 — MERGE-CO-LEARNING-MVP
 
@@ -1182,7 +1182,7 @@
 
 - **技能与范围：** 使用 `using-superpowers` 与 `brainstorming`。只读取 Provider、凭据、API、WebUI、延期台账和旧计划；未编写实现代码、未调用真实 Provider、未读取或记录 API Key。
 - **用户决定：** 用户当前只有 DeepSeek Key；本次在 WebUI 同时保留 DeepSeek/Qwen，但只对 `deepseek-chat` 执行一次固定最小真实 Probe，Qwen 完成离线契约后继续如实标记未联网验收。用户选择会话型 WebUI 密码输入，不使用终端 smoke 或持久凭据；前端提交后立即清空，后端会话内存暂存并支持主动清除。
-- **设计结论：** 复用现有 Profile、`CredentialBroker`、`ProviderRegistry.probe()` 和 OpenAI-compatible 适配器，新增 Probe/清除 API 与最小 WebUI 状态。真实 Provider 不驱动 Agent 主循环，不进入 CI 或 Mock 三机制；错误只暴露稳定脱敏类别。三部分设计均获用户确认，书面规格为 `docs/superpowers/specs/2026-08-10-provider-webui-probe-design.md`。
+- **设计结论：** 复用现有 Profile、`CredentialBroker`、`ProviderRegistry.probe()` 和 OpenAI-compatible 适配器，新增 Probe/清除 API 与最小 WebUI 状态。真实 Provider 不驱动 Agent 主循环，不进入 CI 或 Mock 三机制；错误只暴露稳定脱敏类别。三部分设计均获用户确认，书面规格为 `docs/archive/specs/2026-08-10-provider-webui-probe-design.md`。
 
 ### 2026-08-10 — Provider WebUI 真实连接实施计划
 
@@ -1195,13 +1195,13 @@
 - **技能与诊断：** 使用 `brainstorming` 与 `systematic-debugging`，核对 Docker、Compose、演示入口和 Host/Origin 会话护栏。外部短超时探测确认 ECS 的 SSH 端口可达而 80/443/8000 不可达；用户随后提供的 `ss` 与 `curl` 证据证明 Uvicorn 正常监听 `127.0.0.1:8000`，`HEAD /` 返回 405 属于路由方法限制而非服务故障。
 - **用户决定：** ECS 位于中国香港；用户不购买域名，选择通过公网 IP 的 HTTP 方案，并明确只演示 `ScriptedMockProvider`，不使用真实 Provider 或 API Key。
 - **设计结论：** 采用 Nginx `:80 -> 127.0.0.1:8000`，容器端口继续只绑定 localhost；增加显式可信公网 Host/Origin 配置和专用 Compose 覆盖，同时固定只读示例项目与 Mock。HTTP 方案仅用于短时答辩，演示结束后撤销 80 端口。
-- **边界：** 本阶段只编写书面设计，未修改实现、未登录或操作 ECS、未接触密码/私钥/Key、未开放任何端口。设计文件为 `docs/superpowers/specs/2026-08-14-public-ip-mock-demo-design.md`。
+- **边界：** 本阶段只编写书面设计，未修改实现、未登录或操作 ECS、未接触密码/私钥/Key、未开放任何端口。设计文件为 `docs/archive/specs/2026-08-14-public-ip-mock-demo-design.md`。
 
 ### 2026-08-14 — 公网 IP Mock 演示实施计划
 
 - **技能与输入：** 用户批准书面规格后使用 `writing-plans`；重新核对 `HarnessSettings`、演示入口、Compose、Docker 交付契约和现有部署说明，未修改产品实现。
 - **计划结论：** 采用单 Task 纵向切片，复用现有 Host/Origin 规范化与会话护栏；新增成对的公网 IPv4/HTTP Origin、Compose 覆盖、拒绝未知 Host 的 Nginx 配置和完整撤销步骤。
-- **门禁：** 实施前进行一次仅依据规格/计划的陌生冷启动审计；实现执行 TDD、规约/质量双审查及完整新鲜验证。计划文件为 `docs/superpowers/plans/2026-08-14-public-ip-mock-demo.md`。
+- **门禁：** 实施前进行一次仅依据规格/计划的陌生冷启动审计；实现执行 TDD、规约/质量双审查及完整新鲜验证。计划文件为 `docs/archive/plans/2026-08-14-public-ip-mock-demo.md`。
 - **安全事实：** 未登录 ECS、未安装依赖、未开放端口、未读取或记录密码/私钥/API Key；公网地址仅作为用户批准的非秘密部署目标。
 
 ### 2026-08-14 — 公网 IP Mock 演示实现完成
@@ -1243,7 +1243,7 @@
 - **技能与范围：** 使用 `brainstorming`，读取两份课程要求、全部已跟踪 Markdown、当前产品文档和路径引用；没有移动、删除或重写现有说明，没有修改 Harness 代码。
 - **用户决定：** 新版介绍只陈述已经完成的功能和特色；历史 Superpowers 设计/计划选择移动到 `docs/archive/`，而不是删除。根 `SPEC.md`、`PLAN.md`、`SPEC_PROCESS.md`、`AGENT_LOG.md` 与 README 保留标准文件名。
 - **设计结论：** README 作为产品首页，新建 `docs/FEATURES.md` 解释共学回放纵向流程；顶层 docs 只保留功能、演示、部署与安全说明。历史设计、计划、问题/延期台账和已跟踪 subagent 报告分类归档。缺失的 `REFLECTION.md` 只建立学生本人填写提纲，不代写正文。
-- **安全边界：** 不触碰本机 `.tmp/`、`.venv-py39-backup/` 或未跟踪过程文件；不把真实 Provider、生产公网、多 Agent 等延期能力写成已完成。书面设计为 `docs/superpowers/specs/2026-08-14-documentation-refresh-design.md`。
+- **安全边界：** 不触碰本机 `.tmp/`、`.venv-py39-backup/` 或未跟踪过程文件；不把真实 Provider、生产公网、多 Agent 等延期能力写成已完成。书面设计为 `docs/archive/specs/2026-08-14-documentation-refresh-design.md`。
 
 ### 2026-08-14 — 共学回放式 Harness 文档整理实施计划
 
@@ -1327,3 +1327,10 @@
 ### 2026-08-14 — 共学回放工作台 Task 3 最终复审关闭
 
 - **最终复审：** 独立审查覆盖 `02ac2a7..e40c5ae`，结论 Critical / Important / Minor=`0/0/0`，Ready for Task 4=Yes；审查员独立运行 processControl 得到 `3 passed, 1 skipped`。实现门禁仍为 Python 聚焦 `19 passed`、Vitest `66 passed`、ESLint、TypeScript、Vite build 通过，同一新构建后真实浏览器主路径连续两次通过。本 Task 至此关闭，未进入或修改 Task 4。
+
+### 2026-08-14 — 共学回放工作台 Task 4 历史材料归档（进行中）
+
+- **范围与技能：** 在隔离 worktree `codex/co-learning-workbench-docs` 中执行联合计划的 Task 4；按 `test-driven-development` 先建立文档契约。范围仅包括已跟踪过程文档、活动导航和归档索引，不修改 Harness 产品代码、不联网、不安装依赖，也不访问凭据。
+- **归档前证据与 RED：** 已保存 Git 跟踪 Markdown 清单到受忽略的 Task 报告目录。`test_historical_docs_are_archived_without_losing_evidence` 按预期因 `docs/archive/README.md` 不存在失败，证明归档契约可捕获旧布局。
+- **移动与保护：** 仅执行 `ARCHIVE_MOVES` 中列出的逐项 `git mv`：历史 specs、plans、两份台账与七份已跟踪报告。未使用 `.superpowers` 通配移动，未触碰未跟踪/受忽略报告、`.tmp/`、虚拟环境备份或任何秘密文件。
+- **GREEN（聚焦）：** 新增 `docs/archive/README.md`，并把当前根过程文档导航更新到 archive。归档存在性、Markdown 链接解析和旧路径排除契约均为 `3 passed`；完整 distribution 与审查尚待执行，Task 仍保持进行中。
