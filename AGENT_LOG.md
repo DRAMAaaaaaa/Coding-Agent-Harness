@@ -1340,3 +1340,9 @@
 - **复审核实：** 独立规约审查发现 `scripts/secret_scan.py` 把历史文件名中嵌入的 `sk-` 片段当作 token；实际运行确实输出两份归档计划和交付测试文件。该问题在基线与归档提交均存在，未发现真实凭据；因此此前 Task 4 报告中“秘密扫描通过”的声明已更正，不作为完成证据。
 - **TDD：** 先加入仅含 `task-3-implementer-report.md`、`task-10-report.md` 历史路径的候选文件，以及限定两份归档计划和交付测试的真实 `git grep` 边界测试；旧实现按预期均失败。保留既有未知独立 token 必须失败的回归，不放宽 token 长度或 allowlist。
 - **修复与证据：** Python 扫描模式新增固定宽度字母数字下划线前界，Git POSIX ERE 使用等价的 `(^|[^A-Za-z0-9_])` 前缀分组，避免 Git 不支持 lookbehind；摘要仍只针对秘密本身。提交 `768eb95` 后，秘密扫描测试 `8 passed`、实际 `python scripts/secret_scan.py` 退出 0、归档契约 `3 passed`、`git diff --check` 均通过。Task 4 仍待独立规约与质量复审。
+
+### 2026-08-14 — 共学回放工作台 Task 4 最终复审关闭
+
+- **最终审查：** 受审完整范围为 `640c042..424edbc`；返工后的独立规约符合性与质量审查均为 Critical / Important / Minor=`0/0/0`，Ready for Task 5=Yes。
+- **新鲜验证：** 秘密扫描聚焦测试 `8 passed` 与归档契约 `3 passed`，共 11 项通过；实际 `python scripts/secret_scan.py` 无输出、退出 0，`git diff --check` 退出 0。完整 distribution 已如实记录为 `22 passed, 1 failed`：唯一失败是隔离构建环境在网络受限时无法从 PyPI 安装 `setuptools==83.0.0`，不归因于 Task 4，也不写为全量通过。
+- **关闭边界：** Task 4 的归档映射、秘密扫描边界和过程记录至提交 `424edbc` 均已受审关闭；未开始 Task 5，未修改产品功能或外部环境。
