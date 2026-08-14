@@ -1859,6 +1859,8 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 - **联合计划：** `docs/superpowers/plans/2026-08-14-co-learning-workbench-and-docs.md`；五个严格串行 Task，替代尚未执行的独立文档整理计划作为后续执行入口。
 - **执行状态：** 隔离 worktree 与前端基线已通过；陌生冷启动审计 Task 1=READY，无计划修订。Task 1 已完成，完整技术与过程提交范围为 `fc02856..904e95c`（技术提交 `e4afdf4`、`8b5a26b`、`5a3ead7`、`a81d0b6` 及对应过程记录）；最终独立复审 Critical / Important / Minor=`0/0/0`，聚焦 Vitest `1 file / 24 tests` 通过，Ready for Task 2=Yes。Task 2 已完成，完整受审范围为 `8c6d420..6ab0745`；最终独立复审 C/I/M=`0/0/0`，Ready for Task 3=Yes。Task 3 首轮实现提交为 `ffebc8b`；审查返工提交 `b74ba8b` 为完成强制进程回收门禁，最小扩展到 `scripts/serve_demo.py`、`tests/demo/test_serve_cleanup.py` 与既有 Playwright 进程控制文件，不改变后端 API、部署默认行为或产品功能。返工已完成，待独立复审；Python 聚焦 `19 passed`、进程控制 `3 passed, 1 skipped`、Vitest `66 passed`、ESLint、TypeScript、Vite build 均通过，build 后真实主路径连续两次通过。
 
+- **Task 3 最终 Minor：** 协作退出单测的 5ms 计时器已替换为确定性微任务，不改变产品行为；产品与浏览器断言不使用任意 sleep。
+
 ### 2026-08-14 — 共学回放工作台 Task 2 复审返工（0/2/0）
 
 - 比较 Promise 在 child `getTask` 前立即转换为 resolve/reject 均已处理的结果；`clearTaskContext()` 令上下文 generation 失效，防止项目/新任务切换后旧比较回写。

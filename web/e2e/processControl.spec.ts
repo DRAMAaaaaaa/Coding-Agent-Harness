@@ -13,10 +13,10 @@ test("协作关闭期内退出时不调用 Windows 进程树终止", async () =>
     pid: 21,
     kill(): boolean { return true; },
   });
-  setTimeout(() => {
+  queueMicrotask(() => {
     child.exitCode = 0;
     child.emit("exit", 0, null);
-  }, 5);
+  });
 
   await terminateAndWait(child, {
     cooperativeTimeoutMs: 50,
