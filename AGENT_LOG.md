@@ -1272,3 +1272,10 @@
 - **worktree：** 使用 `using-git-worktrees` 从 `67de2e0` 创建 `E:\Coding Agent Harness\.worktrees\co-learning-workbench-docs`，分支 `codex/co-learning-workbench-docs`；主工作区 `.tmp/`、`.venv-py39-backup/` 未复制或修改。
 - **基线：** 根 `web/node_modules` 是空目录，首次命令未进入测试；改为只复用现有 `foundation` worktree 的完整 Node/Python 依赖 Junction，没有安装或联网。随后 Vitest `28 passed`，ESLint、TypeScript、Vite build 退出 0。
 - **冷启动：** 陌生审计员只读 `SPEC.md`、联合计划与 Task 1 明列的 `types.ts`，结论为 READY；公开签名、阶段/事件规则、RED/GREEN 和验收均无阻塞，未要求计划修订。
+
+### 2026-08-14 — 共学回放工作台 Task 1：六阶段纯函数契约与审查返工
+
+- **技术提交与范围：** 技术提交 `e4afdf4` 仅新增 `web/src/workbench/workflow.ts` 与 `workflow.test.ts`；未修改 App、CSS、E2E、后端或文档结构。所有导出保持纯函数，事件输入只复制排序，不改变调用方输入。
+- **初始 TDD：** 指定 Vitest 命令先按预期因 `./workflow` 模块不存在失败；最小实现后首次 GREEN 暴露治理阻塞回放和可选 payload 收窄缺口，修正后为 `14 passed`。当前轮次完整验证、diff 与摘要的补测曾先实际停在 `EXECUTION`，最小修复后为 `15 passed`。
+- **外部审查与返工：** 外部审查结论 Critical / Important / Minor=`0/3/1`。逐项以 `receiving-code-review` 和 `test-driven-development` 核实：较晚 verification/diff 使更早 final summary 失效的 RED 为 `1 failed, 15 passed`，GREEN 为 `16 passed`；全空白或前置空白 `OUTPUT_LIMIT` 诊断的 RED 为 `2 failed, 16 passed`，GREEN 为 `18 passed`；同 sequence、带时区偏移但字典序与真实时间相反的 RED 为 `1 failed, 18 passed`，改为实际时间排序并以输入索引稳定同一时间后 GREEN 为 `19 passed`。验证诊断没有虚构 hash/bytes 要求。
+- **新鲜证据与状态：** 无 profile 的 `npm.cmd --prefix web run test -- --run src/workbench/workflow.test.ts` 为 `1 passed, 19 passed`；ESLint、TypeScript 与 `git diff --check` 均退出 0。先前 Windows 批量命令异常 `-1073741205` 无断言输出，逐条复验未复现；未安装依赖或联网。返工后等待独立规约符合性与代码质量复审，Task 2 尚未开始。
