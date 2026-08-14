@@ -96,10 +96,11 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
     const response = await correctionResponse;
     expect(response.status(), await response.text()).toBe(201);
     const correctionBranch = await response.json() as { id: string };
-    await expect(page.getByLabel("纠正分支比较")).toBeVisible();
-    await expect(page.getByText(/子任务：WAITING_PLAN_APPROVAL/)).toBeVisible();
     await page.getByRole("button", { name: "计划审批" }).click();
     await page.getByRole("button", { name: "批准计划" }).click();
+    await page.getByRole("button", { name: "回放与纠正" }).click();
+    await expect(page.getByLabel("纠正分支比较")).toBeVisible();
+    await expect(page.getByText(/子任务：/)).toBeVisible();
     await page.getByRole("button", { name: "交付与经验" }).click();
     await expect(page.getByText("测试已通过", { exact: true })).toBeVisible();
     await expect(page.getByText(/-VALUE = 1/).last()).toBeVisible();

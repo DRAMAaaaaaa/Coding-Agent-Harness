@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useLayoutEffect, useRef, useState } from "react";
 import type { HarnessApi, ProviderProfile } from "../types";
 
 interface ProviderSettingsProps {
@@ -20,20 +20,22 @@ export function ProviderSettings({ api, providers, selectedId, disabled, onProvi
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const close = (): void => { setApiKey(""); openerRef.current?.focus(); setOpen(false); };
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
+    const focusables = (): HTMLElement[] => [...(dialogRef.current?.querySelectorAll<HTMLElement>("button, input, select") ?? [])].filter((item) => !item.hasAttribute("disabled"));
+    focusables()[0]?.focus();
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") { event.preventDefault(); close(); return; }
       if (event.key !== "Tab") return;
-      const focusables = [...(dialogRef.current?.querySelectorAll<HTMLElement>("button, input, select") ?? [])].filter((item) => !item.hasAttribute("disabled"));
-      if (!focusables.length) return;
-      const current = focusables.indexOf(document.activeElement as HTMLElement);
-      if (event.shiftKey && (current <= 0)) { event.preventDefault(); focusables.at(-1)?.focus(); }
-      if (!event.shiftKey && current === focusables.length - 1) { event.preventDefault(); focusables[0]?.focus(); }
+      const items = focusables();
+      if (!items.length) return;
+      const current = items.indexOf(document.activeElement as HTMLElement);
+      if (event.shiftKey && current <= 0) { event.preventDefault(); items.at(-1)?.focus(); }
+      if (!event.shiftKey && (current < 0 || current === items.length - 1)) { event.preventDefault(); items[0]?.focus(); }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  });
+  }, [open]);
   const changeKind = (next: ProviderProfile["kind"]): void => { setKind(next); setModel(next === "deepseek" ? "deepseek-chat" : "qwen-plus"); };
   const submit = (event: FormEvent): void => {
     event.preventDefault();

@@ -1291,3 +1291,10 @@
 - **实现：** `App` 缩减为工作台壳；新增 `HarnessWorkbench`、阶段导航、状态栏、Provider 抽屉、技术详情、证据卡、意图卡和分支比较组件，以及六个阶段视图。阶段解锁、最新证据和自动推进仅消费 Task 1 的 `workflow.ts`。Provider 默认 Mock，Key 仅位于抽屉局部 state，并在关闭、配置成功/失败和项目/任务切换时清空；抽屉提供 Escape、焦点恢复与 Tab 循环。
 - **E2E 调试与修复：** 首次新 E2E 在回放页提前等待失败提问而超时。Playwright trace 证明页面仍处于计划运行的 busy 状态且仅有计划卡，根因是测试未等待 `WAITING_USER` 条件；改为先等待可见任务状态再进入回放。随后发现异步 `getIntentCards` 旧响应可覆盖新响应，加入 effect 生命周期保护；E2E 保持条件等待，不增加任意 sleep。分支比较与下一任务项目经验断言均改为通过六阶段可见导航验证。
 - **新鲜验证：** ESLint、TypeScript、Vite build 均退出 0；`npm.cmd --prefix web run test -- --run src/workbench/workflow.test.ts src/App.test.tsx src/api.test.ts` 为 `3 files / 55 tests` 通过；按 build→E2E 顺序运行 `npm.cmd --prefix web run e2e -- harness.spec.ts` 为 `1 passed (11.8s)`。Task 2 实现完成，等待独立规约和代码质量审查；无新增延期项。
+
+### 2026-08-14 — 共学回放工作台 Task 2 审查返工
+
+- **审查输入：** 首次独立审查为 Critical / Important / Minor=`1/6/0`。返工保持 Task 2 前端范围，不修改后端、API、依赖或部署协议。
+- **关键修复：** 纠正分支成功切换 child task 前清除父任务事件、卡片、问答、纠正文本、比较、序号与不确定状态；child 未收到自己的 `PLAN_PROPOSED` 时没有批准入口。比较请求改为不阻塞 child 切换，成功标记在比较请求失败时仍保留，防止重复创建。
+- **其余修复：** 项目经验请求增加 workspace 生命周期保护；项目/新任务/child 切换统一清除问答与纠正状态。Provider 抽屉使用 layout effect 放置初始焦点，Tab/Shift+Tab 在焦点越界时回到首尾。意图卡展示行动、预期、实际、证据序号和状态。SSE 重连回归确认已解锁阶段仍可回看且 mutation 禁用。
+- **新鲜验证：** App/Provider 聚焦 Vitest 为 `2 files / 26 tests` 通过；完整 Task 2 Web 集为 `4 files / 59 tests` 通过，ESLint、TypeScript、Vite build 均退出 0；build 后 Playwright `harness.spec.ts` 为 `1 passed (11.9s)`，`git diff --check` 退出 0。返工待再次独立规约与质量审查。

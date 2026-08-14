@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
-import type { HarnessApi, TaskEvent, Workspace } from "./types";
+import type { HarnessApi, ProjectLearningCard, TaskEvent, Workspace } from "./types";
 
 const taskId = "00000000-0000-0000-0000-000000000001";
 const workspace: Workspace = { id: "00000000-0000-0000-0000-000000000010", default_branch: "main", languages: ["Python"], trust_fingerprint: "a".repeat(64), trusted: false, repository: { tracked_count: 4, test_count: 1, dirty_count: 0, test_paths: ["tests/test_math.py"] } };
@@ -70,6 +70,7 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "需求描述" })).toBeVisible();
     await user.type(screen.getByLabelText("编码需求"), "修复 add 函数");
     await user.click(screen.getByRole("button", { name: "生成计划" }));
+    await goToStage(user, "计划审批");
     expect(await screen.findByRole("heading", { name: "计划审批" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "批准计划" }));
     expect(await screen.findByRole("heading", { name: "执行与验证" })).toBeVisible();
@@ -142,11 +143,75 @@ describe("App", () => {
     await createTrustedTask(user);
     await user.click(await screen.findByRole("button", { name: "批准计划" }));
     await goToStage(user, "回放与纠正");
+    expect(await screen.findByText("VERIFICATION_FAILED")).toBeVisible();
+    expect(screen.getByText("通过")).toBeVisible();
+    expect(screen.getByText("recorded")).toBeVisible();
+    expect(screen.getByText("2")).toBeVisible();
     await user.type(await screen.findByLabelText("纠正说明"), "补充边界");
     await user.click(screen.getByRole("button", { name: "从此纠正" }));
     expect(createCorrectionBranch).toHaveBeenCalledWith(taskId, 2, "补充边界");
+    await Promise.resolve();
+    await goToStage(user, "回放与纠正");
     expect(await screen.findByText(/child passed/)).toBeVisible();
     expect(screen.getByText("+ new")).toBeVisible();
+  });
+
+  it("纠正分支切换子任务时清空父证据，子计划事件到达前不可批准", async () => {
+    const user = userEvent.setup();
+    let resolveComparison: ((value: never) => void) | undefined;
+    const comparison = new Promise<never>((resolve) => { resolveComparison = resolve; });
+    const childTask = { id: "child-1", workspace_id: workspace.id, state: "WAITING_PLAN_APPROVAL" as const };
+    const api = {
+      ...scriptedApi({ events: [taskEvents[0], event(2, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")] }),
+      getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "失败", evidence_sequences: [2], action: "验证", expected_result: "通过", actual_result: "失败", status: "recorded", source_event_sequence: 2, learning_card_id: null }]),
+      createCorrectionBranch: vi.fn(async () => ({ id: "branch-1", workspace_id: workspace.id, parent_task_id: taskId, source_event_sequence: 2, child_task_id: childTask.id, status: "READY" as const, created_at: "2026-08-14T00:00:00Z" })),
+      getCorrectionComparison: vi.fn(async () => await comparison),
+      getTask: vi.fn(async (id: string) => id === childTask.id ? childTask : { id: taskId, workspace_id: workspace.id, state: "WAITING_FINAL_REVIEW" as const }),
+    };
+    api.subscribeEvents = (id, _after, listener) => { if (id === taskId) { [taskEvents[0], event(2, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")].forEach(listener.onEvent); } listener.onConnection("connected"); return () => undefined; };
+    render(<App api={api} />);
+    await createTrustedTask(user);
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "回放与纠正");
+    await user.type(await screen.findByLabelText("纠正说明"), "补充边界");
+    await user.click(screen.getByRole("button", { name: "从此纠正" }));
+    await goToStage(user, "计划审批");
+    expect(await screen.findByRole("heading", { name: "计划审批" })).toBeVisible();
+    expect(screen.queryByText("修复 add 的真实计划")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "批准计划" })).not.toBeInTheDocument();
+    expect(resolveComparison).toBeDefined();
+  });
+
+  it("切换项目时不让慢速项目经验回写到新项目", async () => {
+    const user = userEvent.setup();
+    let resolveA: ((value: { id: string; workspace_id: string; text: string; source_task_id: string; source_event_sequence: number; approved_at: string } | null) => void) | undefined;
+    let resolveB: ((value: { id: string; workspace_id: string; text: string; source_task_id: string; source_event_sequence: number; approved_at: string } | null) => void) | undefined;
+    const api = scriptedApi({ connectProject: vi.fn(async (path: string) => ({ ...workspace, id: path.includes("second") ? "workspace-b" : "workspace-a", trusted: true })) });
+    api.getLatestProjectLearning = vi.fn((id: string): Promise<ProjectLearningCard | null> => new Promise((resolve) => { if (id === "workspace-a") resolveA = resolve; else resolveB = resolve; }));
+    render(<App api={api} />);
+    await user.type(screen.getByLabelText("项目路径"), "C:\\first\\repo");
+    await user.click(screen.getByRole("button", { name: "接入项目" }));
+    await goToStage(user, "项目接入");
+    await user.clear(screen.getByLabelText("项目路径"));
+    await user.type(screen.getByLabelText("项目路径"), "C:\\second\\repo");
+    await user.click(screen.getByRole("button", { name: "接入项目" }));
+    resolveA?.({ id: "old", workspace_id: "workspace-a", text: "旧项目经验", source_task_id: taskId, source_event_sequence: 1, approved_at: "2026-08-14T00:00:00Z" });
+    await Promise.resolve();
+    expect(screen.queryByText("旧项目经验")).not.toBeInTheDocument();
+    resolveB?.({ id: "new", workspace_id: "workspace-b", text: "新项目经验", source_task_id: taskId, source_event_sequence: 1, approved_at: "2026-08-14T00:00:00Z" });
+    expect(await screen.findByText("新项目经验")).toBeVisible();
+  });
+
+  it("SSE 重连时保留已解锁阶段回看并禁用任务变更", async () => {
+    const user = userEvent.setup();
+    const api = scriptedApi({ events: [taskEvents[0]] });
+    api.subscribeEvents = (_id, _after, listener) => { listener.onEvent(taskEvents[0]); listener.onConnection("reconnecting"); return () => undefined; };
+    render(<App api={api} />);
+    await createTrustedTask(user);
+    expect(await screen.findByText(/正在重连/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "批准计划" })).toBeDisabled();
+    await goToStage(user, "项目接入");
+    expect(screen.getByRole("heading", { name: "项目接入" })).toBeVisible();
   });
 
   it("仅为失败卡展示只读提问并显示回答", async () => {

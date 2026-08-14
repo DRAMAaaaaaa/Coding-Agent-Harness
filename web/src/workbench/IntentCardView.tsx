@@ -7,7 +7,7 @@ interface IntentCardViewProps {
 }
 export function IntentCardView({ card, question, answer, correction, busy, branchExists, onQuestion, onAsk, onCorrection, onCreateCorrection }: IntentCardViewProps) {
   const submit = (event: FormEvent, callback: () => void): void => { event.preventDefault(); callback(); };
-  return <article className="intent-card"><h3>{card.intent}</h3><p>{card.actual_result}</p>
+  return <article className="intent-card"><h3>{card.intent}</h3><dl><dt>行动</dt><dd>{card.action}</dd><dt>预期结果</dt><dd>{card.expected_result}</dd><dt>实际结果</dt><dd>{card.actual_result}</dd><dt>证据序号</dt><dd>{card.evidence_sequences.join(", ") || "无"}</dd><dt>状态</dt><dd>{card.status}</dd></dl>
     {card.kind === "verification_failure" && <form onSubmit={(event) => submit(event, onAsk)}><label htmlFor={`failure-question-${card.id}`}>失败原因提问</label><input id={`failure-question-${card.id}`} value={question} maxLength={4096} onChange={(event) => onQuestion(event.target.value)} required /><button type="submit" disabled={busy}>提问</button>{answer && <p>{answer}</p>}</form>}
     {card.kind === "verification_failure" && !branchExists && <form onSubmit={(event) => submit(event, onCreateCorrection)}><label htmlFor={`correction-${card.id}`}>纠正说明</label><input id={`correction-${card.id}`} value={correction} maxLength={8192} onChange={(event) => onCorrection(event.target.value)} required /><button type="submit" disabled={busy}>从此纠正</button></form>}
   </article>;

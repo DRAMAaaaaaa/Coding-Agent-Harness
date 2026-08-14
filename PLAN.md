@@ -1857,4 +1857,4 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 - **实施边界：** 复用现有 API，不新增后端能力；Mock 是默认路径，DeepSeek/Qwen 放在高级设置；桌面答辩优先并保持窄屏可操作。
 - **联合顺序：** 前端契约 → 组件/视觉 → 浏览器 E2E → 历史归档 → 最终界面对应的介绍文档 → 完整门禁与分支收尾。
 - **联合计划：** `docs/superpowers/plans/2026-08-14-co-learning-workbench-and-docs.md`；五个严格串行 Task，替代尚未执行的独立文档整理计划作为后续执行入口。
-- **执行状态：** 隔离 worktree 与前端基线已通过；陌生冷启动审计 Task 1=READY，无计划修订。Task 1 已完成，完整技术与过程提交范围为 `fc02856..904e95c`（技术提交 `e4afdf4`、`8b5a26b`、`5a3ead7`、`a81d0b6` 及对应过程记录）；最终独立复审 Critical / Important / Minor=`0/0/0`，聚焦 Vitest `1 file / 24 tests` 通过，Ready for Task 2=Yes。Task 2 已完成实现与新鲜门禁，等待独立规约/质量审查后回填提交哈希。
+- **执行状态：** 隔离 worktree 与前端基线已通过；陌生冷启动审计 Task 1=READY，无计划修订。Task 1 已完成，完整技术与过程提交范围为 `fc02856..904e95c`（技术提交 `e4afdf4`、`8b5a26b`、`5a3ead7`、`a81d0b6` 及对应过程记录）；最终独立复审 Critical / Important / Minor=`0/0/0`，聚焦 Vitest `1 file / 24 tests` 通过，Ready for Task 2=Yes。Task 2 首次审查为 C/I/M=`1/6/0`；返工已完成并重新取得 Web 门禁，等待独立复审后回填提交哈希。
