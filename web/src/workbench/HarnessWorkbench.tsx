@@ -37,6 +37,7 @@ export function HarnessWorkbench({ api }: HarnessWorkbenchProps) {
   const [selectedStage, setSelectedStage] = useState<WorkbenchStage>("PROJECT");
   const lastSequence = useRef(0);
   const previousLatest = useRef<WorkbenchStage>("PROJECT");
+  const contextGeneration = useRef(0);
   const taskId = task?.id;
 
   useEffect(() => { if (api.listProviders) void api.listProviders().then(setProviders).catch(() => setProviders([])); }, [api]);
@@ -89,6 +90,7 @@ export function HarnessWorkbench({ api }: HarnessWorkbenchProps) {
     } finally { setBusy(undefined); }
   };
   const clearTaskContext = (): void => {
+    contextGeneration.current += 1;
     setEvents([]); setCards([]); setQuestion(""); setAnswer(""); setCorrection(""); setComparison(undefined); setBranchCreated(false); lastSequence.current = 0; setStateUnknown(false);
   };
   const resetProjectContext = (): void => {
@@ -100,7 +102,17 @@ export function HarnessWorkbench({ api }: HarnessWorkbenchProps) {
   const approvePlan = (): void => { if (!task) return; void run("approve-plan", async () => { const approved = await api.approvePlan(task.id); setTask(approved); setTask(await api.runTask(task.id)); setSelectedStage("EXECUTION"); setMessage("计划已批准，任务已触发运行。"); }, task.id); };
   const continueRun = (): void => { if (!task) return; void run("run", async () => setTask(await api.runTask(task.id)), task.id); };
   const ask = (card: IntentCard): void => { if (!task || !api.askQuestion) return; void run("question", async () => setAnswer((await api.askQuestion!(task.id, card.id, question)).content)); };
-  const createCorrection = (card: IntentCard): void => { if (!task || !api.createCorrectionBranch || !api.getCorrectionComparison) return; void run("correction", async () => { const branch = await api.createCorrectionBranch!(task.id, card.source_event_sequence, correction); setBranchCreated(true); const comparisonRequest = api.getCorrectionComparison!(branch.id); if (branch.child_task_id) { const child = await api.getTask(branch.child_task_id); clearTaskContext(); setBranchCreated(true); setTask(child); setSelectedStage("PLAN"); } void comparisonRequest.then(setComparison).catch(() => undefined); }); };
+  const createCorrection = (card: IntentCard): void => { if (!task || !api.createCorrectionBranch || !api.getCorrectionComparison) return; void run("correction", async () => {
+    const branch = await api.createCorrectionBranch!(task.id, card.source_event_sequence, correction);
+    setBranchCreated(true);
+    const comparisonResult = api.getCorrectionComparison!(branch.id).then((next) => next, () => undefined);
+    if (branch.child_task_id) {
+      const child = await api.getTask(branch.child_task_id);
+      clearTaskContext(); setBranchCreated(true); setTask(child); setSelectedStage("PLAN");
+    }
+    const comparisonGeneration = contextGeneration.current;
+    void comparisonResult.then((next) => { if (next && comparisonGeneration === contextGeneration.current) setComparison(next); });
+  }); };
   const approveFinal = (): void => { if (!task) return; void run("approve-final", async () => { setTask(await api.approveFinal(task.id)); setMessage("已提交最终审查批准。"); }, task.id); };
   const approveLearning = (card: IntentCard): void => { if (!task || !api.approveProjectLearning) return; void run("project-learning", async () => { const saved = await api.approveProjectLearning!(task.id, card.source_event_sequence, learningText ?? evidence.finalDiagnostic ?? ""); setProjectLearning(saved); setMessage("项目经验已批准，将在下一任务中引用。"); }); };
   const showPlanApproval = !stateUnknown && task?.state === "WAITING_PLAN_APPROVAL" && evidence.planDiagnostic !== undefined;

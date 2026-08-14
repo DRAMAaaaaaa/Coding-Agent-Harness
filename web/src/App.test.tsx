@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -192,6 +192,70 @@ describe("App", () => {
     await Promise.resolve();
     expect(screen.queryByLabelText("纠正说明")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "从此纠正" })).not.toBeInTheDocument();
+  });
+
+  it("比较立即 reject 且子任务获取失败时不留下未处理 rejection", async () => {
+    const user = userEvent.setup();
+    let rejectChild: ((reason?: unknown) => void) | undefined;
+    let comparisonRejectionHandled = false;
+    let childFetchSawComparisonHandler = false;
+    const child = new Promise<never>((_resolve, reject) => { rejectChild = reject; });
+    const immediateRejectedComparison = {
+      then: (_resolve: (value: never) => unknown, reject: (reason: unknown) => unknown) => {
+        comparisonRejectionHandled = true;
+        reject(new Error("comparison offline"));
+        return Promise.resolve(undefined);
+      },
+    } as unknown as Promise<never>;
+    const api = {
+      ...scriptedApi({ events: [taskEvents[0], event(2, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")] }),
+      getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "失败", evidence_sequences: [2], action: "验证", expected_result: "通过", actual_result: "失败", status: "recorded", source_event_sequence: 2, learning_card_id: null }]),
+      createCorrectionBranch: vi.fn(async () => ({ id: "branch-1", workspace_id: workspace.id, parent_task_id: taskId, source_event_sequence: 2, child_task_id: "child-1", status: "READY" as const, created_at: "2026-08-14T00:00:00Z" })),
+      getCorrectionComparison: vi.fn(() => immediateRejectedComparison),
+      getTask: vi.fn(async () => { childFetchSawComparisonHandler = comparisonRejectionHandled; await child; }),
+    };
+    render(<App api={api} />);
+    await createTrustedTask(user);
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "回放与纠正");
+    await user.type(await screen.findByLabelText("纠正说明"), "保持收口");
+    await user.click(screen.getByRole("button", { name: "从此纠正" }));
+    rejectChild?.(new Error("child unavailable"));
+    expect(await screen.findByRole("status")).toBeVisible();
+    expect(childFetchSawComparisonHandler).toBe(true);
+  });
+
+  it("新项目建立后忽略旧纠正分支的慢比较结果", async () => {
+    const user = userEvent.setup();
+    let resolveComparison: ((value: { branch_id: string; parent_state: string; child_state: string | null; parent_verification: string | null; child_verification: string | null; parent_diff: string; child_diff: string | null }) => void) | undefined;
+    const comparison = new Promise<{ branch_id: string; parent_state: string; child_state: string | null; parent_verification: string | null; child_verification: string | null; parent_diff: string; child_diff: string | null }>((resolve) => { resolveComparison = resolve; });
+    const api = {
+      ...scriptedApi({ events: [taskEvents[0], event(2, "VERIFICATION_FAILED", { reason_code: "TEST_FAILURE" }, "WAITING_USER", "WAITING_USER")], connectProject: vi.fn(async (path: string) => ({ ...workspace, id: path.includes("new") ? "workspace-new" : workspace.id, trusted: path.includes("new") })) }),
+      getIntentCards: vi.fn(async () => [{ id: "failure-card", task_id: taskId, kind: "verification_failure" as const, intent: "失败", evidence_sequences: [2], action: "验证", expected_result: "通过", actual_result: "失败", status: "recorded", source_event_sequence: 2, learning_card_id: null }]),
+      createCorrectionBranch: vi.fn(async () => ({ id: "branch-1", workspace_id: workspace.id, parent_task_id: taskId, source_event_sequence: 2, child_task_id: null, status: "READY" as const, created_at: "2026-08-14T00:00:00Z" })),
+      getCorrectionComparison: vi.fn(async () => await comparison),
+    };
+    render(<App api={api} />);
+    await createTrustedTask(user);
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "回放与纠正");
+    await user.type(await screen.findByLabelText("纠正说明"), "旧比较");
+    await user.click(screen.getByRole("button", { name: "从此纠正" }));
+    await goToStage(user, "项目接入");
+    const path = screen.getByLabelText("项目路径");
+    await user.clear(path);
+    await user.type(path, "C:\\new\\repo");
+    await user.click(screen.getByRole("button", { name: "接入项目" }));
+    await user.click(await screen.findByRole("button", { name: "生成计划" }));
+    await user.click(await screen.findByRole("button", { name: "批准计划" }));
+    await goToStage(user, "回放与纠正");
+    await act(async () => {
+      resolveComparison?.({ branch_id: "branch-1", parent_state: "WAITING_USER", child_state: null, parent_verification: "旧比较失败", child_verification: null, parent_diff: "- old", child_diff: null });
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(/旧比较失败/)).not.toBeInTheDocument();
   });
 
   it("新任务不预填旧任务的提问和纠正说明", async () => {
