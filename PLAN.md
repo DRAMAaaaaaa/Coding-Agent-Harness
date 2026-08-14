@@ -1,3 +1,11 @@
+## 2026-08-14 Task 2 审查后 TDD 契约补救
+
+- 状态：首次审查 C/I/M=`1/6/0` 的返工提交为 `fb4f1db`；二次送审前补足边界契约，待独立规约和质量复审。
+- `resetVersion` 使用 `useEffect([resetVersion])` 清空未提交 Key；新增多控件 dialog 的初始焦点、外部焦点 Tab/Shift+Tab 回环测试。
+- 增加分支 reject 保留文本、comparison reject 无重复入口、新任务不预填旧 question/correction、Intent 字段对齐的可见回归。
+- 过程偏差如实补救：Provider focus、branch marker、Intent 字段和清理上下文均经可回退 mutation RED 后恢复 GREEN，不伪称为初始 RED。
+- 新鲜门禁：Vitest `5 files / 64 tests`、ESLint、TypeScript、Vite build、build 后 Playwright `harness.spec.ts`=`1 passed (11.7s)`；文档更新后仍需跑 `git diff --check`。
+
 # Coding Agent Harness 实施计划
 
 ## 2026-08-10：恢复 Provider WebUI 真实连接验收

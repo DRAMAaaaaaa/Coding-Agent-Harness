@@ -1,3 +1,11 @@
+## 2026-08-14 — Task 2 审查后契约补救
+
+- 按 `receiving-code-review`、`test-driven-development`、`systematic-debugging` 补齐送审前证据；未改写 `6cb189e`/`fb4f1db`，未联网、未安装依赖、未记录凭据。
+- `resetVersion` 缺少 effect 时实际 RED：rerender 后 API Key 仍为测试占位值。实现 `useEffect([resetVersion])` 后 GREEN；局部 lint 豁免有明确理由：父级发出的同步会话边界必须销毁未提交凭据，不改为不确定定时清理。
+- 新增独立回归：分支 reject 保留纠正说明；comparison reject 后无重复入口；新任务不预填旧 question/correction；Intent 意图—行动—预期—实际—证据/状态对齐。
+- 事后 mutation 补救已真实执行：删除 Provider 初始 focus、首次 `setBranchCreated(true)`、Intent 字段渲染、question/correction 清理时，各最小测试按预期 FAIL；恢复后 GREEN。它们不是原始 TDD RED。
+- 新鲜验证：Vitest `5 files / 64 tests`、ESLint、TypeScript、Vite build 通过；新 build 后 Playwright `harness.spec.ts`=`1 passed (11.7s)`。待文档变更后执行 diff 检查和提交，再送复审。
+
 # 智能体工作日志
 
 本日志按时间顺序记录 AI4SE 项目的过程证据。日志中严禁出现凭据或虚构行为。
