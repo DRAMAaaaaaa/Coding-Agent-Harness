@@ -229,7 +229,7 @@ git commit -m "feat: 建立六阶段工作流契约"
 
 ### Task 2：组件化工作台、Provider 抽屉与专业教学视觉
 
-**状态：** 首次审查为 C/I/M=`1/6/0`；返工 `fb4f1db`、TDD 契约补救 `ac24ec4`、过程记录 `c4baff0`、comparison 异步隔离 `092e6d7`/关联夹具类型修复 `3b8f81a` 已提交。当前复审为 C/I/M=`0/2/0`；待最终独立规约与代码质量审查。
+**状态：** 已完成，受审范围 `8c6d420..6ab0745`。最终独立复审 C/I/M=`0/0/0`，Ready for Task 3=Yes；审查员聚焦 App 测试 `30/30` 与差异检查均通过。
 
 **Files:**
 - Modify: `web/src/App.tsx`
