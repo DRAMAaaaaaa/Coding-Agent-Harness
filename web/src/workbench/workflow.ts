@@ -65,12 +65,15 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
   let hasVerificationFailure = false;
   let hasInvalidVerification = false;
   let hasInvalidDiff = false;
+  let hasInvalidFinalSummary = false;
   const approvals: Array<{ reason: string; scope: string }> = [];
   const tools = new Map<string, string>();
 
   for (const item of sortedEvents(events)) {
     if (item.event_type === "PLAN_PROPOSED") {
       const diagnostic = completeDiagnostic(item.payload);
+      plan = undefined;
+      planDiagnostic = undefined;
       if (diagnostic !== undefined) {
         plan = item;
         planDiagnostic = diagnostic;
@@ -127,6 +130,9 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
     }
     if (item.event_type === "FINAL_SUMMARY_PROPOSED") {
       const diagnostic = completeDiagnostic(item.payload);
+      finalSummary = undefined;
+      finalDiagnostic = undefined;
+      hasInvalidFinalSummary = diagnostic === undefined;
       if (diagnostic !== undefined) {
         finalSummary = item;
         finalDiagnostic = diagnostic;
@@ -134,7 +140,7 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
     }
   }
 
-  return { plan, planDiagnostic, verification, verificationDiagnostic, diff, diffDiagnostic, finalSummary, finalDiagnostic, approvals, hasVerificationFailure: hasVerificationFailure || hasInvalidVerification || hasInvalidDiff };
+  return { plan, planDiagnostic, verification, verificationDiagnostic, diff, diffDiagnostic, finalSummary, finalDiagnostic, approvals, hasVerificationFailure: hasVerificationFailure || hasInvalidVerification || hasInvalidDiff || hasInvalidFinalSummary };
 }
 
 export function unlockedStages(snapshot: WorkflowSnapshot): WorkbenchStage[] {

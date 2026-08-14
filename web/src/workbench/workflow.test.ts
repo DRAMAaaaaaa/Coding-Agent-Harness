@@ -115,6 +115,26 @@ describe("六阶段工作流", () => {
     expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events, cards: [] })).toBe("REPLAY");
   });
 
+  it.each(["  [OUTPUT_LIMIT bytes=4]", "   "])("无效的较晚计划淘汰旧计划 %#", (diagnostic) => {
+    const events = [
+      event(1, "PLAN_PROPOSED", content("旧计划")),
+      event(2, "PLAN_PROPOSED", content(diagnostic)),
+    ];
+    expect(deriveEvidence(events)).toMatchObject({ plan: undefined, planDiagnostic: undefined });
+  });
+
+  it("无效的较晚摘要淘汰旧摘要，并从交付退回回放", () => {
+    const events = [
+      event(1, "VERIFICATION_SUCCEEDED", { run: { ok: true, diagnostic: "验证" } }),
+      event(2, "TOOL_EXECUTION_STARTED", { execution_id: "diff", action: { tool: "git_diff" } }),
+      event(3, "TOOL_EXECUTION_COMPLETED", { execution_id: "diff", result: { ok: true, ...content("diff") } }),
+      event(4, "FINAL_SUMMARY_PROPOSED", content("旧摘要")),
+      event(5, "FINAL_SUMMARY_PROPOSED", content("  [OUTPUT_LIMIT bytes=4]")),
+    ];
+    expect(deriveEvidence(events)).toMatchObject({ finalSummary: undefined, finalDiagnostic: undefined });
+    expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events, cards: [] })).toBe("REPLAY");
+  });
+
   it.each([content(""), content(`[OUTPUT_LIMIT bytes=4 sha256=${"c".repeat(64)}]`), { ...content("计划"), content_bytes: 1 }])(
     "拒绝不完整内容 %#", (payload) => expect(completeDiagnostic(payload)).toBeUndefined(),
   );
