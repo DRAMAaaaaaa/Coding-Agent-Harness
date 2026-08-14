@@ -9,6 +9,7 @@ interface TerminableChild extends EventEmitter {
 }
 
 interface TerminationOptions {
+  cooperativeTimeoutMs?: number;
   gracefulTimeoutMs?: number;
   forceTimeoutMs?: number;
   platform?: NodeJS.Platform;
@@ -109,9 +110,12 @@ export async function terminateAndWait(
   child: TerminableChild,
   options: TerminationOptions = {},
 ): Promise<void> {
+  const cooperativeTimeoutMs = options.cooperativeTimeoutMs ?? 0;
   const gracefulTimeoutMs = options.gracefulTimeoutMs ?? 1_000;
   const forceTimeoutMs = options.forceTimeoutMs ?? 3_000;
   const platform = options.platform ?? process.platform;
+
+  if (cooperativeTimeoutMs > 0 && await waitForExit(child, cooperativeTimeoutMs)) return;
 
   if (platform === "win32") {
     if (hasExited(child)) return;

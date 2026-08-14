@@ -64,7 +64,7 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
   await mkdir(isolatedGitHome);
   const child = spawn(python, [
     "scripts/serve_demo.py", "--ready-file", readyFile, "--runtime-root", runtimeRoot,
-    "--keep-alive",
+    "--keep-alive", "--shutdown-on-stdin-close",
   ], {
     cwd: repoRoot,
     detached: process.platform !== "win32",
@@ -102,12 +102,34 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
     await expect(page.getByLabel("纠正分支比较")).toBeVisible();
     await expect(page.getByText(/子任务：/)).toBeVisible();
     await page.setViewportSize({ width: 720, height: 900 });
-    const comparisonGrid = page.getByLabel("纠正分支比较");
-    expect(await comparisonGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns)).not.toMatch(/\s/);
     const providerSettings = page.getByRole("button", { name: "高级设置" });
     await expect(providerSettings).toBeEnabled();
     await providerSettings.focus();
     await expect(providerSettings).toBeFocused();
+    const stageNavigator = page.getByRole("navigation", { name: "任务阶段" });
+    const stageNavigatorStyle = await stageNavigator.evaluate((element) => getComputedStyle(element));
+    expect(stageNavigatorStyle.gridTemplateColumns).not.toMatch(/\s/);
+    expect(stageNavigatorStyle.position).toBe("static");
+    await page.getByRole("button", { name: "执行与验证" }).click();
+    const executionPanel = page.getByRole("heading", { name: "执行与验证" }).locator("..");
+    const evidenceGrid = executionPanel.locator(".evidence-grid");
+    await expect(evidenceGrid).toBeVisible();
+    expect(await evidenceGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns)).not.toMatch(/\s/);
+    await page.getByRole("button", { name: "项目接入" }).click();
+    const projectPanel = page.getByRole("heading", { name: "项目接入" }).locator("..");
+    const inlineForm = projectPanel.locator(".inline-form");
+    await expect(inlineForm).toBeVisible();
+    expect(await inlineForm.evaluate((element) => getComputedStyle(element).flexDirection)).toBe("column");
+    const projectPathInput = page.getByLabel("项目路径");
+    await projectPathInput.focus();
+    await expect(projectPathInput).toBeFocused();
+    const connectProjectButton = page.getByRole("button", { name: "接入项目" });
+    await expect(connectProjectButton).toBeEnabled();
+    await connectProjectButton.focus();
+    await expect(connectProjectButton).toBeFocused();
+    await page.getByRole("button", { name: "回放与纠正" }).click();
+    const comparisonGrid = page.getByLabel("纠正分支比较");
+    expect(await comparisonGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns)).not.toMatch(/\s/);
     await page.getByRole("button", { name: "交付与经验" }).click();
     await expect(page.getByText("测试已通过", { exact: true })).toBeVisible();
     await expect(page.getByText(/-VALUE = 1/).last()).toBeVisible();
@@ -150,7 +172,7 @@ test("真实浏览器完成受治理的 Harness 主路径并回收工作树", as
     if (previousUserProfile === undefined) delete process.env.USERPROFILE;
     else process.env.USERPROFILE = previousUserProfile;
     child.stdin?.end();
-    await terminateAndWait(child);
+    await terminateAndWait(child, { cooperativeTimeoutMs: 12_000 });
     await rm(scratch, { recursive: true, force: true });
   }
 });

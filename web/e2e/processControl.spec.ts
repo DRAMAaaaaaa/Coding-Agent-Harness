@@ -4,6 +4,30 @@ import { EventEmitter } from "node:events";
 
 import { terminateAndWait } from "./processControl";
 
+test("协作关闭期内退出时不调用 Windows 进程树终止", async () => {
+  const processEvents = new EventEmitter();
+  const treeCalls: boolean[] = [];
+  const child = Object.assign(processEvents, {
+    exitCode: null as number | null,
+    signalCode: null as NodeJS.Signals | null,
+    pid: 21,
+    kill(): boolean { return true; },
+  });
+  setTimeout(() => {
+    child.exitCode = 0;
+    child.emit("exit", 0, null);
+  }, 5);
+
+  await terminateAndWait(child, {
+    cooperativeTimeoutMs: 50,
+    platform: "win32",
+    windowsTreeTerminator: async (_pid, force) => { treeCalls.push(force); },
+  });
+
+  expect(treeCalls).toEqual([]);
+  expect(child.exitCode).toBe(0);
+});
+
 test("子进程忽略优雅退出时会强制终止并等待退出", async () => {
   const processEvents = new EventEmitter();
   const directSignals: Array<NodeJS.Signals | number | undefined> = [];

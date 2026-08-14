@@ -67,6 +67,35 @@ def test_main_reads_public_target_environment_into_serve(
     assert serve_demo.main() == 0
     assert captured["public_host"] == "47.76.86.198"
     assert captured["public_origin"] == "http://47.76.86.198"
+    assert captured["shutdown_on_stdin_close"] is False
+
+
+def test_main_passes_explicit_stdin_shutdown_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_serve(*_args: object, **options: object) -> int:
+        captured.update(options)
+        return 0
+
+    monkeypatch.setattr(serve_demo, "_serve", fake_serve)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "serve_demo.py",
+            "--ready-file",
+            str(tmp_path / "ready.json"),
+            "--runtime-root",
+            str(tmp_path / "runtime"),
+            "--shutdown-on-stdin-close",
+        ],
+    )
+
+    assert serve_demo.main() == 0
+    assert captured["shutdown_on_stdin_close"] is True
 
 
 class _Server:
@@ -179,6 +208,35 @@ async def test_serve_keep_alive_omits_the_single_task_completion_callback(
     with pytest.raises(RuntimeError, match="stop after construction"):
         await serve_demo._serve(tmp_path / "runtime", tmp_path / "ready.json", 10, keep_alive=True)
     assert captured["on_completed"] is None
+
+
+async def test_keep_alive_stops_and_cleans_when_stdin_closes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    listener, database, router = _stub_serve_dependencies(monkeypatch, tmp_path)
+
+    def trigger_eof(
+        loop: asyncio.AbstractEventLoop,
+        stdin_closed: asyncio.Event,
+    ) -> None:
+        loop.call_soon(stdin_closed.set)
+
+    monkeypatch.setattr(serve_demo, "_start_stdin_eof_watcher", trigger_eof)
+
+    assert await asyncio.wait_for(
+        serve_demo._serve(
+            runtime_root,
+            tmp_path / "ready.json",
+            10,
+            keep_alive=True,
+            shutdown_on_stdin_close=True,
+        ),
+        timeout=2,
+    ) == 0
+    assert listener.closed and database.closed and router.cleaned
+    assert not (runtime_root / "state").exists()
 
 
 async def test_cleanup_continues_after_router_failure(tmp_path: Path) -> None:

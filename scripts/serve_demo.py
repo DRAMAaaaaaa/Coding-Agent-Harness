@@ -10,6 +10,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 from tempfile import TemporaryDirectory, mkdtemp
 from typing import Callable, Protocol
 
@@ -164,6 +165,27 @@ def _write_ready(path: Path, payload: dict[str, str]) -> None:
     temporary.replace(path)
 
 
+def _start_stdin_eof_watcher(
+    loop: asyncio.AbstractEventLoop,
+    stdin_closed: asyncio.Event,
+) -> None:
+    def watch() -> None:
+        try:
+            sys.stdin.buffer.read()
+        except (OSError, ValueError):
+            pass
+        try:
+            loop.call_soon_threadsafe(stdin_closed.set)
+        except RuntimeError:
+            pass
+
+    threading.Thread(
+        target=watch,
+        name="harness-demo-stdin-eof",
+        daemon=True,
+    ).start()
+
+
 async def _stop_server(
     server: _ServerLike | None,
     server_task: asyncio.Task[object] | None,
@@ -283,6 +305,7 @@ async def _serve(
     public_origin: str | None = None,
     project_source: Path | None = None,
     keep_alive: bool = False,
+    shutdown_on_stdin_close: bool = False,
 ) -> int:
     state_root = runtime_root / "state"
     database: Database | None = None
@@ -308,6 +331,9 @@ async def _serve(
             port, public_host, public_origin,
         )
         completed = asyncio.Event()
+        stdin_closed = asyncio.Event()
+        if shutdown_on_stdin_close:
+            _start_stdin_eof_watcher(asyncio.get_running_loop(), stdin_closed)
         workspaces = WorkspaceRepository(database)
         tasks = TaskRepository(database)
         event_store = EventStore(database)
@@ -382,13 +408,29 @@ async def _serve(
                 "worktree_root": str(state_root),
             },
         )
+        waiters: list[asyncio.Task[bool]] = []
+        if not keep_alive:
+            waiters.append(asyncio.create_task(completed.wait()))
+        if shutdown_on_stdin_close:
+            waiters.append(asyncio.create_task(stdin_closed.wait()))
         try:
-            await asyncio.wait_for(completed.wait(), timeout=max_seconds)
-        except TimeoutError:
-            result = 1
-        else:
+            if waiters:
+                done, _ = await asyncio.wait(
+                    waiters,
+                    timeout=max_seconds,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                result = 0 if done else 1
+            else:
+                await asyncio.sleep(max_seconds)
+                result = 1
+        finally:
+            for waiter in waiters:
+                if not waiter.done():
+                    waiter.cancel()
+            await asyncio.gather(*waiters, return_exceptions=True)
+        if result == 0:
             await asyncio.sleep(0.5)
-            result = 0
     except BaseException as error:
         primary_error = error
     cleanup_error: BaseException | None = None
@@ -425,6 +467,7 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--public-host", default=os.environ.get("HARNESS_PUBLIC_HOST"))
     parser.add_argument("--public-origin", default=os.environ.get("HARNESS_PUBLIC_ORIGIN"))
     parser.add_argument("--keep-alive", action="store_true", help="允许同一演示会话连续创建多个任务")
+    parser.add_argument("--shutdown-on-stdin-close", action="store_true")
     return parser.parse_args()
 
 
@@ -447,6 +490,7 @@ def main() -> int:
                 public_origin=arguments.public_origin,
                 project_source=arguments.project_source,
                 keep_alive=arguments.keep_alive,
+                shutdown_on_stdin_close=arguments.shutdown_on_stdin_close,
             )
         )
     with TemporaryDirectory(prefix="harness-web-demo-") as directory:
@@ -461,6 +505,7 @@ def main() -> int:
                 public_origin=arguments.public_origin,
                 project_source=arguments.project_source,
                 keep_alive=arguments.keep_alive,
+                shutdown_on_stdin_close=arguments.shutdown_on_stdin_close,
             )
         )
 
