@@ -1857,4 +1857,4 @@ CL1-1 实现前，必须让不同类型的陌生智能体仅依据更新后的 `
 - **实施边界：** 复用现有 API，不新增后端能力；Mock 是默认路径，DeepSeek/Qwen 放在高级设置；桌面答辩优先并保持窄屏可操作。
 - **联合顺序：** 前端契约 → 组件/视觉 → 浏览器 E2E → 历史归档 → 最终界面对应的介绍文档 → 完整门禁与分支收尾。
 - **联合计划：** `docs/superpowers/plans/2026-08-14-co-learning-workbench-and-docs.md`；五个严格串行 Task，替代尚未执行的独立文档整理计划作为后续执行入口。
-- **执行状态：** 隔离 worktree 与前端基线已通过；陌生冷启动审计 Task 1=READY，无计划修订。Task 1 技术提交为 `e4afdf4`；外部审查为 Critical / Important / Minor=`0/3/1`，三项 Important 与一项 Minor 已按逐项 RED→GREEN 返工，等待独立复审。Task 2 未开始。
+- **执行状态：** 隔离 worktree 与前端基线已通过；陌生冷启动审计 Task 1=READY，无计划修订。Task 1 初始技术提交为 `e4afdf4`，首次外部审查为 Critical / Important / Minor=`0/3/1`；其返工复审为 `0/1/0`，新增门禁修复提交为 `8b5a26b`，已逐项 RED→GREEN，等待再次独立复审。Task 2 未开始。
