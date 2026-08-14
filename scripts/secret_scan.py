@@ -8,11 +8,11 @@ import sys
 
 
 PATTERN = (
-    r"(?:sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|"
+    r"(?<![A-Za-z0-9_])(?:sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|"
     r"BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY)"
 )
 GIT_PATTERN = (
-    r"(sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|"
+    r"(^|[^A-Za-z0-9_])(sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|"
     r"BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY)"
 )
 ALLOWED_MATCHES = {

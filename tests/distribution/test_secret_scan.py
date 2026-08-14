@@ -81,6 +81,27 @@ def test_scan_reports_only_unknown_filename_and_fails(
     assert token not in captured.out
 
 
+def test_scan_ignores_historical_paths_that_only_contain_filename_fragments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    filename = "historical-paths.md"
+    (tmp_path / filename).write_text(
+        "\n".join(
+            (
+                ".superpowers/sdd/task-3-implementer-report.md",
+                ".superpowers/sdd/task-10-report.md",
+            )
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = _run_scan(monkeypatch, returncode=0, output=filename)
+
+    assert result == 0
+    assert capsys.readouterr().out == ""
+
+
 def test_git_pattern_is_compatible_with_git_grep() -> None:
     result = subprocess.run(
         ["git", "grep", "-I", "-l", "-E", secret_scan.GIT_PATTERN, "--", "."],
@@ -91,3 +112,27 @@ def test_git_pattern_is_compatible_with_git_grep() -> None:
     )
 
     assert result.returncode in {0, 1}
+
+
+def test_git_pattern_does_not_match_archive_or_delivery_filename_fragments() -> None:
+    result = subprocess.run(
+        [
+            "git",
+            "grep",
+            "-I",
+            "-l",
+            "-E",
+            secret_scan.GIT_PATTERN,
+            "--",
+            "docs/archive/plans/2026-08-14-co-learning-workbench-and-docs.md",
+            "docs/archive/plans/2026-08-14-documentation-refresh.md",
+            "tests/distribution/test_delivery_files.py",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
