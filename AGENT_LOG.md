@@ -1315,3 +1315,11 @@
 - **RED：** 先完成 Vite build，再把 720×900 真实浏览器契约加入已经跑通的桌面主路径。在纠正分支比较可见后，旧 `.comparison-grid` 的 computed `grid-template-columns` 为两列（`538.203px 538.219px`），准确违反单列断言；首个放置在下一任务后的比较查询因该任务没有分支而失败，已立即移动到实际存在的纠正比较节点，未把该定位错误或超时计作产品 RED。
 - **GREEN 与可访问性：** 以 `@media (max-width: 759px)` 将阶段导航、证据网格、纠正比较和内联表单改为单列，并取消阶段导航 sticky；高级设置继续以角色和名称定位，等待其从任务运行状态恢复可用后聚焦并通过断言，没有新增 `data-testid` 或隐藏测试文本。
 - **新鲜验证：** Web Vitest `66 passed`、ESLint、TypeScript typecheck、Vite build 与 `git diff --check` 均退出 0；build 后 Playwright 真实主路径 `1 passed (11.5s)`，覆盖失败提问、纠正、交付、项目经验以及 720px 比较与键盘聚焦。尚待独立规约符合性审查与代码质量审查后才可关闭本 Task。
+
+### 2026-08-14 — 共学回放工作台 Task 3 审查返工
+
+- **审查与根因：** 使用 `receiving-code-review`、`systematic-debugging` 与 `test-driven-development` 处理 I1/I2。受限 Windows 环境中集成 E2E 的业务主路径完成后，旧清理调用两次 `taskkill`；临时诊断证明非强制与 `/F` 两次均在约 45ms 以 code `1` 和“拒绝访问”退出，ChildProcess 在 4.12 秒内没有 `exit`、`close` 或 `error` 事件。临时诊断随后完整移除。根因是测试把正常关闭完全依赖环境可能禁止的进程终止工具，而 helper 又只把它作为兜底路径处理。
+- **最小范围扩展：** 为完成强制进程回收门禁，Task 3 仅扩展 `serve_demo.py`、对应清理测试和既有 Playwright 进程控制：显式 `--shutdown-on-stdin-close` 默认关闭，只有 E2E 启用；daemon watcher 在 stdin EOF 时线程安全触发 asyncio Event，keep-alive 服务正常进入既有资源清理。`terminateAndWait` 新增默认 `0` 的协作等待，超时后仍保留原 Windows/POSIX 进程树终止兜底；没有网络 shutdown endpoint、后端 API 或部署默认语义变化。
+- **I2 RED → GREEN：** CLI RED 为 flag 未识别，服务 RED 为 watcher 缺失，进程控制 RED 为协作期 child 已退出却仍调用 Windows tree terminator；GREEN 后 Python 两项 `2 passed`、进程控制 `3 passed, 1 skipped`，受限沙箱内真实 E2E 不再进入 `taskkill` 并通过。默认关闭安全契约另以可回退 mutation `default=True` 得到预期失败，恢复后通过。
+- **I1 补救证据：** 720px 浏览器以语义导航、标题、标签与按钮定位，新增阶段导航单列/`position: static`、执行证据单列、项目内联表单纵向及输入/按钮聚焦可用、回放比较单列。因 CSS 已在首轮实现，分别移除三条 media 规则取得事后 mutation RED：`sticky`、`316.609px 316.609px` 双列和 `row`；逐条恢复后完整主路径通过，没有 `data-testid`、隐藏文本、sleep 或重新接入项目。
+- **提交与验证：** 修复/测试提交 `b74ba8b`。Python 清理聚焦 `19 passed`、Ruff、进程控制 `3 passed, 1 skipped`、Web Vitest `66 passed`、ESLint、TypeScript、Vite build 全部通过；同一新构建后真实主路径连续两次为 `1 passed (13.2s)`、`1 passed (13.0s)`，`git diff --check` 通过。当前待独立规约与质量复审，不提前关闭 Task 3。
