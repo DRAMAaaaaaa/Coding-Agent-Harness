@@ -63,9 +63,6 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
   let finalSummary: TaskEvent | undefined;
   let finalDiagnostic: string | undefined;
   let hasVerificationFailure = false;
-  let hasInvalidVerification = false;
-  let hasInvalidDiff = false;
-  let hasInvalidFinalSummary = false;
   const approvals: Array<{ reason: string; scope: string }> = [];
   const tools = new Map<string, string>();
 
@@ -85,7 +82,6 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
       verificationDiagnostic = undefined;
       finalSummary = undefined;
       finalDiagnostic = undefined;
-      hasInvalidVerification = diagnostic === undefined;
       if (diagnostic !== undefined) {
         verification = item;
         verificationDiagnostic = diagnostic;
@@ -111,8 +107,6 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
         diffDiagnostic = undefined;
         finalSummary = undefined;
         finalDiagnostic = undefined;
-        hasInvalidVerification = false;
-        hasInvalidDiff = false;
       }
       const id = text(item.payload.execution_id);
       const diagnostic = completeDiagnostic(result);
@@ -121,7 +115,6 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
         diffDiagnostic = undefined;
         finalSummary = undefined;
         finalDiagnostic = undefined;
-        hasInvalidDiff = diagnostic === undefined;
         if (diagnostic !== undefined) {
           diff = item;
           diffDiagnostic = diagnostic;
@@ -132,7 +125,6 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
       const diagnostic = completeDiagnostic(item.payload);
       finalSummary = undefined;
       finalDiagnostic = undefined;
-      hasInvalidFinalSummary = diagnostic === undefined;
       if (diagnostic !== undefined) {
         finalSummary = item;
         finalDiagnostic = diagnostic;
@@ -140,7 +132,7 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
     }
   }
 
-  return { plan, planDiagnostic, verification, verificationDiagnostic, diff, diffDiagnostic, finalSummary, finalDiagnostic, approvals, hasVerificationFailure: hasVerificationFailure || hasInvalidVerification || hasInvalidDiff || hasInvalidFinalSummary };
+  return { plan, planDiagnostic, verification, verificationDiagnostic, diff, diffDiagnostic, finalSummary, finalDiagnostic, approvals, hasVerificationFailure };
 }
 
 export function unlockedStages(snapshot: WorkflowSnapshot): WorkbenchStage[] {

@@ -87,7 +87,7 @@ describe("六阶段工作流", () => {
     expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events, cards: [] })).toBe("EXECUTION");
   });
 
-  it("无效的较晚验证淘汰旧验证和摘要，并退回回放", () => {
+  it("无效的较晚验证淘汰旧验证和摘要，并阻断交付", () => {
     const events = [
       event(1, "VERIFICATION_SUCCEEDED", { run: { ok: true, diagnostic: "旧验证" } }),
       event(2, "TOOL_EXECUTION_STARTED", { execution_id: "diff", action: { tool: "git_diff" } }),
@@ -96,10 +96,10 @@ describe("六阶段工作流", () => {
       event(5, "VERIFICATION_SUCCEEDED", { run: { ok: true, diagnostic: "  [OUTPUT_LIMIT bytes=4]" } }),
     ];
     expect(deriveEvidence(events)).toMatchObject({ verificationDiagnostic: undefined, finalDiagnostic: undefined });
-    expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events, cards: [] })).toBe("REPLAY");
+    expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events, cards: [] })).toBe("EXECUTION");
   });
 
-  it("无效的较晚 git diff 淘汰旧 diff 和摘要，并退回回放", () => {
+  it("无效的较晚 git diff 淘汰旧 diff 和摘要，并阻断交付", () => {
     const events = [
       event(1, "VERIFICATION_SUCCEEDED", { run: { ok: true, diagnostic: "验证" } }),
       event(2, "TOOL_EXECUTION_STARTED", { execution_id: "diff-old", action: { tool: "git_diff" } }),
@@ -112,7 +112,7 @@ describe("六阶段工作流", () => {
     ];
     expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events: events.slice(0, 6), cards: [] })).toBe("DELIVERY");
     expect(deriveEvidence(events)).toMatchObject({ diffDiagnostic: undefined, finalDiagnostic: undefined });
-    expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events, cards: [] })).toBe("REPLAY");
+    expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events, cards: [] })).toBe("EXECUTION");
   });
 
   it.each(["  [OUTPUT_LIMIT bytes=4]", "   "])("无效的较晚计划淘汰旧计划 %#", (diagnostic) => {
@@ -123,7 +123,7 @@ describe("六阶段工作流", () => {
     expect(deriveEvidence(events)).toMatchObject({ plan: undefined, planDiagnostic: undefined });
   });
 
-  it("无效的较晚摘要淘汰旧摘要，并从交付退回回放", () => {
+  it("无效的较晚摘要淘汰旧摘要，并阻断交付", () => {
     const events = [
       event(1, "VERIFICATION_SUCCEEDED", { run: { ok: true, diagnostic: "验证" } }),
       event(2, "TOOL_EXECUTION_STARTED", { execution_id: "diff", action: { tool: "git_diff" } }),
@@ -132,7 +132,7 @@ describe("六阶段工作流", () => {
       event(5, "FINAL_SUMMARY_PROPOSED", content("  [OUTPUT_LIMIT bytes=4]")),
     ];
     expect(deriveEvidence(events)).toMatchObject({ finalSummary: undefined, finalDiagnostic: undefined });
-    expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events, cards: [] })).toBe("REPLAY");
+    expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events, cards: [] })).toBe("EXECUTION");
   });
 
   it.each([content(""), content(`[OUTPUT_LIMIT bytes=4 sha256=${"c".repeat(64)}]`), { ...content("计划"), content_bytes: 1 }])(
