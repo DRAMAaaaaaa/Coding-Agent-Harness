@@ -87,6 +87,34 @@ describe("六阶段工作流", () => {
     expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events, cards: [] })).toBe("EXECUTION");
   });
 
+  it("无效的较晚验证淘汰旧验证和摘要，并退回回放", () => {
+    const events = [
+      event(1, "VERIFICATION_SUCCEEDED", { run: { ok: true, diagnostic: "旧验证" } }),
+      event(2, "TOOL_EXECUTION_STARTED", { execution_id: "diff", action: { tool: "git_diff" } }),
+      event(3, "TOOL_EXECUTION_COMPLETED", { execution_id: "diff", result: { ok: true, ...content("旧 diff") } }),
+      event(4, "FINAL_SUMMARY_PROPOSED", content("旧摘要")),
+      event(5, "VERIFICATION_SUCCEEDED", { run: { ok: true, diagnostic: "  [OUTPUT_LIMIT bytes=4]" } }),
+    ];
+    expect(deriveEvidence(events)).toMatchObject({ verificationDiagnostic: undefined, finalDiagnostic: undefined });
+    expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events, cards: [] })).toBe("REPLAY");
+  });
+
+  it("无效的较晚 git diff 淘汰旧 diff 和摘要，并退回回放", () => {
+    const events = [
+      event(1, "VERIFICATION_SUCCEEDED", { run: { ok: true, diagnostic: "验证" } }),
+      event(2, "TOOL_EXECUTION_STARTED", { execution_id: "diff-old", action: { tool: "git_diff" } }),
+      event(3, "TOOL_EXECUTION_COMPLETED", { execution_id: "diff-old", result: { ok: true, ...content("旧 diff") } }),
+      event(4, "FINAL_SUMMARY_PROPOSED", content("旧摘要")),
+      event(5, "TOOL_EXECUTION_STARTED", { execution_id: "read", action: { tool: "read_file" } }),
+      event(6, "TOOL_EXECUTION_COMPLETED", { execution_id: "read", result: { ok: true } }),
+      event(7, "TOOL_EXECUTION_STARTED", { execution_id: "diff-new", action: { tool: "git_diff" } }),
+      event(8, "TOOL_EXECUTION_COMPLETED", { execution_id: "diff-new", result: { ok: true, ...content(" [OUTPUT_LIMIT bytes=4]") } }),
+    ];
+    expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events: events.slice(0, 6), cards: [] })).toBe("DELIVERY");
+    expect(deriveEvidence(events)).toMatchObject({ diffDiagnostic: undefined, finalDiagnostic: undefined });
+    expect(latestAvailableStage({ workspace: workspace(true), task: task("EXECUTING"), events, cards: [] })).toBe("REPLAY");
+  });
+
   it.each([content(""), content(`[OUTPUT_LIMIT bytes=4 sha256=${"c".repeat(64)}]`), { ...content("计划"), content_bytes: 1 }])(
     "拒绝不完整内容 %#", (payload) => expect(completeDiagnostic(payload)).toBeUndefined(),
   );

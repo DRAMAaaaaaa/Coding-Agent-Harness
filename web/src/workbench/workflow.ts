@@ -63,6 +63,8 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
   let finalSummary: TaskEvent | undefined;
   let finalDiagnostic: string | undefined;
   let hasVerificationFailure = false;
+  let hasInvalidVerification = false;
+  let hasInvalidDiff = false;
   const approvals: Array<{ reason: string; scope: string }> = [];
   const tools = new Map<string, string>();
 
@@ -76,11 +78,14 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
     }
     if (item.event_type === "VERIFICATION_SUCCEEDED") {
       const diagnostic = diagnosticText(object(item.payload.run)?.diagnostic);
+      verification = undefined;
+      verificationDiagnostic = undefined;
+      finalSummary = undefined;
+      finalDiagnostic = undefined;
+      hasInvalidVerification = diagnostic === undefined;
       if (diagnostic !== undefined) {
         verification = item;
         verificationDiagnostic = diagnostic;
-        finalSummary = undefined;
-        finalDiagnostic = undefined;
       }
     }
     if (item.event_type === "VERIFICATION_FAILED") hasVerificationFailure = true;
@@ -103,14 +108,21 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
         diffDiagnostic = undefined;
         finalSummary = undefined;
         finalDiagnostic = undefined;
+        hasInvalidVerification = false;
+        hasInvalidDiff = false;
       }
       const id = text(item.payload.execution_id);
       const diagnostic = completeDiagnostic(result);
-      if (id !== undefined && tools.get(id) === "git_diff" && diagnostic !== undefined) {
-        diff = item;
-        diffDiagnostic = diagnostic;
+      if (id !== undefined && tools.get(id) === "git_diff") {
+        diff = undefined;
+        diffDiagnostic = undefined;
         finalSummary = undefined;
         finalDiagnostic = undefined;
+        hasInvalidDiff = diagnostic === undefined;
+        if (diagnostic !== undefined) {
+          diff = item;
+          diffDiagnostic = diagnostic;
+        }
       }
     }
     if (item.event_type === "FINAL_SUMMARY_PROPOSED") {
@@ -122,7 +134,7 @@ export function deriveEvidence(events: readonly TaskEvent[]): WorkflowEvidence {
     }
   }
 
-  return { plan, planDiagnostic, verification, verificationDiagnostic, diff, diffDiagnostic, finalSummary, finalDiagnostic, approvals, hasVerificationFailure };
+  return { plan, planDiagnostic, verification, verificationDiagnostic, diff, diffDiagnostic, finalSummary, finalDiagnostic, approvals, hasVerificationFailure: hasVerificationFailure || hasInvalidVerification || hasInvalidDiff };
 }
 
 export function unlockedStages(snapshot: WorkflowSnapshot): WorkbenchStage[] {
